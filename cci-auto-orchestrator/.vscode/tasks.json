@@ -1,0 +1,50 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Smoke Check (Server + Public URL)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "./scripts/smoke_server_check.ps1",
+        "-HostAddr",
+        "127.0.0.1",
+        "-Port",
+        "8000"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Start Public URL (Auto Fallback)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "./scripts/start_public_tunnel.ps1",
+        "-Provider",
+        "ngrok",
+        "-NgrokDomain",
+        "unshirred-examiningly-kyoko.ngrok-free.dev",
+        "-LocalPort",
+        "8000",
+        "-StopExisting"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}
