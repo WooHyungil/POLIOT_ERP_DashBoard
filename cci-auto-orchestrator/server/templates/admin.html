@@ -4,39 +4,72 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CCI Admin Panel</title>
-  <></><></>
-        <></>
-      </div>
-      <></>
-        <></><></></a>
-      <></></a>
-      <></></a>
-    </nav>
-  </aside>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260318a" />
+  <script src="/static/auto_logout.js"></script>
+</head>
+<body class="has-side-nav">
+  {% include "components/side_nav.html" %}
 
   <main class="container">
     <header class="topbar topbar-brand">
       <div class="brand-left">
+        <div class="brand-mark" aria-hidden="true">
+          <span class="dot dot-a"></span>
+          <span class="dot dot-b"></span>
+          <span class="dot dot-c"></span>
+        </div>
         <div>
-          <></>
-        <></>
-        <></>        <></>
-        <></>
-        <div class="admin-split">
-          <section class="admin-subpanel">
-            <></>
-            <div class="button-row" style="margin-bottom:10px;">
-              <></><></><></><></>
-            <div class="button-row" style="margin-bottom:10px;">
-              <></>
-        <div class="button-row" style="margin-bottom:10px;">
-          <></><></><></><></><></><></><></><></><></>
-          <></>
-          <></>
+          <p class="eyebrow">Enterprise QA Orchestration</p>
+          <h1>Admin Panel</h1>
+          <p class="meta-text">관리자 권한으로 계정과 운영 정보를 관리합니다.</p>
         </div>
-        <></>
+      </div>
+      <nav class="topnav">
+        <a class="navlink" href="/">개요</a>
+        <a class="navlink" href="/manage">관리</a>
+        <a class="navlink active" href="/admin">관리자</a>
+        <span class="topbar-nav-sep" aria-hidden="true"></span>
+        <span id="topbarUserName" class="topbar-username" hidden></span>
+        <span id="topbarCountdown" class="topbar-countdown" hidden></span>
+        <a class="navlink btn-ghost" href="/mypage" style="white-space:nowrap;">마이페이지</a>
+        <form method="post" action="/auth/logout" style="margin:0;display:contents;">
+          <button class="navlink" type="submit" style="white-space:nowrap;">로그아웃</button>
+        </form>
+      </nav>
+    </header>
+
+    <section class="grid grid-wide">
+      <article class="card" id="adminPeopleTab">
+        <h2>인원 관리</h2>
+        <p class="hint">현재 관리자 데이터 스크립트를 점검 중입니다. 기본 사용자 목록은 아래 표에서 확인 가능합니다.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>이메일</th>
+                <th>이름</th>
+                <th>권한</th>
+                <th>승인 상태</th>
+                <th>로그인 상태</th>
+                <th>작업</th>
+              </tr>
+            </thead>
+            <tbody id="memberRows"></tbody>
+          </table>
         </div>
-        <></></tr>
+      </article>
+
+      <article class="card" id="adminIssueTab">
+        <h2>인원별 이슈 통계</h2>
+        <p class="hint">상세 통계 모듈 재연결 중입니다.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>항목</th>
+                <th>값</th>
+              </tr>
             </thead>
             <tbody id="memberDetailBreakdownBody"></tbody>
           </table>
@@ -45,21 +78,7 @@
     </section>
   </main>
 
-  <div id="employeeEditModal" class="modal" hidden>
-    <></>
-          <></>
-          <></>
-          <></>
-          <button type="button" class="btn-ghost" data-close-asset-modal>취소</button>
-        </div>
-      </form>
-    </section>
-  </div>
-
-  <script src="/static/side_nav.js?v=20260317b"></script>
+  <script src="/static/side_nav.js?v=20260318b"></script>
   <script src="/static/admin.js?v=20260317n"></script>
 </body>
 </html>
-
-
-

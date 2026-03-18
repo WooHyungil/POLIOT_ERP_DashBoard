@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -55,9 +55,9 @@
         <h2>QA 빠른 메뉴</h2>
         <p class="hint">QA 메뉴를 클릭하면 상세 메뉴가 열립니다. 최근 이슈 차트와 정기배포 현황을 빠르게 확인하세요.</p>
         <div class="button-row">
-          <a class="navlink" href="/qa#closingSummarySection">Summary</a>
-          <a class="navlink" href="/qa#regularReleaseSection">정기배포 현황</a>
-          <a class="navlink active" href="/qa#recentIssueChartSection">최근 이슈 통계 차트</a>
+          <a class="navlink" data-qa-target-hash="#closingSummarySection" href="/qa#closingSummarySection">Summary</a>
+          <a class="navlink" data-qa-target-hash="#regularReleaseSection" href="/qa#regularReleaseSection">정기배포 현황</a>
+          <a class="navlink" data-qa-target-hash="#recentIssueChartSection" href="/qa#recentIssueChartSection">최근 이슈 통계 차트</a>
           <a class="navlink" href="/admin#adminIssueTab" data-requires-admin="true">관리자 통계로 이동</a>
           <a class="navlink" href="/remote">원격 리모컨 이동</a>
           <a class="navlink" href="/">개요로 이동</a>
@@ -190,13 +190,7 @@
     </section>
   </main>
   <div id="toastStack" class="toast-stack"></div>
-  <script src="/static/side_nav.js?v=20260312a"></script>
+  <script src="/static/side_nav.js?v=20260318b"></script>
   <script src="/static/qa_dashboard.js?v=20260313h"></script>
 </body>
 </html>
-
-
-
-
-
-

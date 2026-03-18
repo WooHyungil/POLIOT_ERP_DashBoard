@@ -4,45 +4,154 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CCI Manage Panel</title>
-  <></><></>
-        <></>
-      </div>
-      <></>
-        <></><></></a>
-      <></></a>
-      <></></a>
-    </nav>
-  </aside>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260318a" />
+  <script src="/static/auto_logout.js"></script>
+</head>
+<body class="has-side-nav">
+  {% include "components/side_nav.html" %}
 
   <main class="container">
     <header class="topbar topbar-brand">
       <div class="brand-left">
+        <div class="brand-mark" aria-hidden="true">
+          <span class="dot dot-a"></span>
+          <span class="dot dot-b"></span>
+          <span class="dot dot-c"></span>
+        </div>
         <div>
-          <></>
-        <></>
-        <></>        <></>
-        <></>
+          <p class="eyebrow">Enterprise QA Orchestration</p>
+          <h1>Manage Center</h1>
+          <p class="meta-text">자산/일정/인원 관련 관리 기능을 한 곳에서 운영합니다.</p>
+        </div>
       </div>
-      <></>
-        <></>
-              <></>
-              <></>
-                  <></>
-        <></><></><></><></>
+      <nav class="topnav">
+        <a class="navlink" href="/">개요</a>
+        <a class="navlink active" href="/manage">관리</a>
+        <a class="navlink" href="/qa">QA 대시보드</a>
+        <a class="navlink" href="/remote">원격 리모컨</a>
+        <span class="topbar-nav-sep" aria-hidden="true"></span>
+        <span id="topbarUserName" class="topbar-username" hidden></span>
+        <span id="topbarCountdown" class="topbar-countdown" hidden></span>
+        <a class="navlink btn-ghost" href="/mypage" style="white-space:nowrap;">마이페이지</a>
+        <form method="post" action="/auth/logout" style="margin:0;display:contents;">
+          <button class="navlink" type="submit" style="white-space:nowrap;">로그아웃</button>
+        </form>
+      </nav>
+    </header>
+
+    <section class="card" id="manageScheduleTab" hidden>
+      <h2>일정 관리</h2>
+      <p class="hint">일정 관리 화면은 준비 중입니다.</p>
+    </section>
+
+    <section class="card" id="managePeopleTab" hidden>
+      <h2>인원 관리</h2>
+      <p class="hint">인원 관리 화면은 준비 중입니다.</p>
+    </section>
+
+    <section class="card" id="manageUsimTab" hidden>
+      <h2>USIM 관리</h2>
+      <p class="hint">USIM 관리 화면은 준비 중입니다.</p>
+    </section>
+
+    <section class="card" id="manageInOutTab" hidden>
+      <h2>입출고 관리</h2>
+      <p class="hint">입출고 관리 화면은 준비 중입니다.</p>
+    </section>
+
+    <section class="grid grid-wide" id="manageDeviceTab">
+      <article class="card card-control">
+        <h2>자산 등록/수정</h2>
+        <form id="assetForm">
+          <input id="assetId" type="hidden" />
+          <div class="manage-form-grid">
+            <label>구 관리번호<input id="assetOldNo" type="text" /></label>
+            <label>NEW 관리 번호<input id="assetNewNo" type="text" /></label>
+            <label>OS<input id="assetOsType" type="text" /></label>
+            <label>제조사<input id="assetMaker" type="text" /></label>
+            <label>기기형태<input id="assetFormFactor" type="text" /></label>
+            <label>구매기기<input id="assetPurchaseDevice" type="text" /></label>
+            <label>OS 버전<input id="assetOsVersion" type="text" /></label>
+            <label>최종 OS 지원 버전<input id="assetOsMax" type="text" /></label>
+            <label>모델번호<input id="assetModelNo" type="text" /></label>
+            <label>제조번호(S/N)<input id="assetSerial" type="text" /></label>
+            <label>사용 향지<input id="assetRegion" type="text" /></label>
+            <label>사용 브랜드<input id="assetUseBrand" type="text" /></label>
+            <label>기기 소지자<input id="assetOwner" type="text" /></label>
+            <label>엠콜스 어싸인<input id="assetAssignee" type="text" /></label>
+            <label>비고<input id="assetMemo" type="text" /></label>
+            <label>디키 여부<input id="assetDicky" type="text" /></label>
+            <label>무선 MAC<input id="assetMac" type="text" /></label>
+            <label>해상도<input id="assetResolution" type="text" /></label>
+            <label>케이스<input id="assetCase" type="text" /></label>
+            <label>구매년도<input id="assetYear" type="text" /></label>
+            <label>구매날짜<input id="assetDate" type="text" /></label>
+            <label>구매비용<input id="assetCost" type="text" /></label>
+            <label>브랜드<input id="assetBrand" type="text" /></label>
+            <label>보유처<input id="assetHolder" type="text" /></label>
+            <label>영수증 번호<input id="assetReceipt" type="text" /></label>
+            <label>실물 사진 번호<input id="assetPhoto" type="text" /></label>
+            <label>구동 여부<input id="assetOperable" type="text" /></label>
+            <label>비고(기타)<input id="assetEtc" type="text" /></label>
+            <label>구매 프로젝트<input id="assetProject" type="text" /></label>
+            <label>엠콜스 티켓 NO<input id="assetTicket" type="text" /></label>
+          </div>
+          <div class="button-row" style="margin-top:12px;">
+            <button type="submit">저장</button>
+            <button id="assetResetBtn" type="button" class="btn-ghost">초기화</button>
+          </div>
+        </form>
+      </article>
+
+      <article class="card card-table">
+        <h2>자산 목록</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>구 관리번호</th>
+                <th>NEW 관리 번호</th>
+                <th>OS</th>
+                <th>제조사</th>
+                <th>기기형태</th>
+                <th>구매기기</th>
+                <th>OS 버전</th>
+                <th>최종 OS 지원 버전</th>
+                <th>모델번호</th>
+                <th>제조번호(S/N)</th>
+                <th>사용 향지</th>
+                <th>사용 브랜드</th>
+                <th>기기 소지자</th>
+                <th>엠콜스 어싸인</th>
+                <th>비고</th>
+                <th>디키 여부</th>
+                <th>무선 MAC</th>
+                <th>해상도</th>
+                <th>케이스</th>
+                <th>구매년도</th>
+                <th>구매날짜</th>
+                <th>구매비용</th>
+                <th>브랜드</th>
+                <th>보유처</th>
+                <th>영수증 번호</th>
+                <th>실물 사진 번호</th>
+                <th>구동 여부</th>
+                <th>비고(기타)</th>
+                <th>구매 프로젝트</th>
+                <th>엠콜스 티켓 NO</th>
+                <th>소지자/어싸인 비교</th>
+                <th>작업</th>
               </tr>
             </thead>
-            <tbody id="manageAssetRows"></tbody>
+            <tbody id="assetRows"></tbody>
           </table>
         </div>
       </article>
     </section>
   </main>
 
-  <script src="/static/side_nav.js?v=20260317b"></script>
+  <script src="/static/side_nav.js?v=20260318b"></script>
   <script src="/static/manage.js?v=20260317c"></script>
 </body>
 </html>
-
-
-
-

@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment
@@ -225,6 +226,16 @@ app = FastAPI(title="CCI Automation Orchestrator")
 APP_SESSION_SECRET = os.getenv("CCI_SESSION_SECRET", "cci-dashboard-session-secret-2026").strip()
 SESSION_MAX_AGE_SECONDS = 60 * 60 * 1
 app.add_middleware(SessionMiddleware, secret_key=APP_SESSION_SECRET, max_age=SESSION_MAX_AGE_SECONDS)
+
+# Middleware to skip ngrok browser warning
+class NgrokWarningSkipMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["ngrok-skip-browser-warning"] = "true"
+        response.headers["ngrok-skip-browser-warning-for-user-agent"] = "*"
+        return response
+
+app.add_middleware(NgrokWarningSkipMiddleware)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 app.mount("/reports", StaticFiles(directory=str(REPORT_DIR)), name="reports")
 app.mount("/artifacts", StaticFiles(directory=str(ARTIFACT_DIR)), name="artifacts")
@@ -1048,11 +1059,23 @@ def admin_user_delete(user_email: str, request: Request):
 
     users = _load_users()
     next_users = [x for x in users if str(x.get("email", "")).strip().lower() != target]
+    employees = _load_json_array(EMPLOYEES_FILE)
+    next_employees = [
+        x
+        for x in employees
+        if str(x.get("account_email", "")).strip().lower() != target
+    ]
     _save_users(next_users)
+    if len(next_employees) != len(employees):
+        _save_json_array(EMPLOYEES_FILE, next_employees)
     if len(next_users) < len(users):
+        removed_employee_count = len(employees) - len(next_employees)
+        details = [f"대상: {target}"]
+        if removed_employee_count > 0:
+            details.append(f"직원 연동 데이터 삭제: {removed_employee_count}건")
         _append_audit_update(
             "회원 계정 삭제",
-            [f"대상: {target}"],
+            details,
             kind="removed",
             scope="인원 관리",
             actor=admin_user,
@@ -1746,7 +1769,7 @@ def _load_git_overview_updates(limit: int = 30) -> list[dict]:
             f"--pretty=format:{marker}|%h|%ad|%s",
             "--name-status",
         ]
-        raw = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, timeout=2.0)
+        raw = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, encoding="utf-8", timeout=2.0)
     except Exception:
         return []
 
@@ -1822,7 +1845,7 @@ def _load_git_worktree_updates() -> list[dict]:
     repo_root = str(BASE_DIR.parent)
     try:
         cmd = ["git", "-C", repo_root, "status", "--porcelain"]
-        raw = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, timeout=1.5)
+        raw = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, encoding="utf-8", timeout=1.5)
     except Exception:
         return []
 

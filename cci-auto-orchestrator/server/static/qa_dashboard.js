@@ -156,6 +156,12 @@ function applyQaHashMode() {
   const closing = document.getElementById("closingSummarySection");
   if (!overview || !recent || !regular || !closing) return;
 
+  const quickLinks = Array.from(document.querySelectorAll("[data-qa-target-hash]"));
+  for (const link of quickLinks) {
+    const targetHash = String(link.getAttribute("data-qa-target-hash") || "").trim();
+    link.classList.toggle("active", !!targetHash && targetHash === hash);
+  }
+
   if (body) {
     body.classList.remove("qa-mode-all", "qa-mode-recent", "qa-mode-regular", "qa-mode-closing");
   }
@@ -186,7 +192,7 @@ function applyQaHashMode() {
   }
 
   overview.hidden = false;
-  recent.hidden = false;
+  recent.hidden = true;
   regular.hidden = true;
   closing.hidden = true;
   if (body) body.classList.add("qa-mode-all");

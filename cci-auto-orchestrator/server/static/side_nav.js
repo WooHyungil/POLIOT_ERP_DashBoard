@@ -131,10 +131,10 @@
         nameEl.hidden = false;
       }
 
-      // 자동 로그아웃 카운트다운 (3시간)
+      // 자동 로그아웃 카운트다운 (1시간)
       const countdownEl = document.getElementById("topbarCountdown");
       if (countdownEl && loginAt) {
-        const SESSION_MS = 3 * 60 * 60 * 1000;
+        const SESSION_MS = 60 * 60 * 1000;
         // login_at은 UTC ISO 형식 (timezone suffix 없음) → 'Z' 추가
         const loginTime = new Date(loginAt.endsWith("Z") ? loginAt : loginAt + "Z").getTime();
 

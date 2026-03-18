@@ -85,7 +85,7 @@
       {
         "id": "fixed-asset-manage",
         "name": "자산관리",
-        "url": "/manage#assetsTab",
+        "url": "/manage#manageDeviceTab",
         "fixed": true
       },
       {
