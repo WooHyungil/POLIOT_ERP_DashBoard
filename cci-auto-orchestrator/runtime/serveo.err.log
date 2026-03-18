@@ -1,0 +1,52 @@
+OpenSSH_for_Windows_9.5p2, LibreSSL 3.8.2
+debug1: Connecting to serveo.net [5.255.123.12] port 22.
+debug1: Connection established.
+debug1: identity file C:\\Users\\poliot\\.ssh\\id_ed25519 type 3
+debug1: identity file C:\\Users\\poliot\\.ssh\\id_ed25519-cert type -1
+debug1: Local version string SSH-2.0-OpenSSH_for_Windows_9.5
+debug1: Remote protocol version 2.0, remote software version Go
+debug1: compat_banner: no match: Go
+debug1: Authenticating to serveo.net:22 as 'poliot'
+debug1: load_hostkeys: fopen C:\\Users\\poliot/.ssh/known_hosts2: No such file or directory
+debug1: load_hostkeys: fopen __PROGRAMDATA__\\ssh/ssh_known_hosts: No such file or directory
+debug1: load_hostkeys: fopen __PROGRAMDATA__\\ssh/ssh_known_hosts2: No such file or directory
+debug1: SSH2_MSG_KEXINIT sent
+debug1: SSH2_MSG_KEXINIT received
+debug1: kex: algorithm: curve25519-sha256
+debug1: kex: host key algorithm: rsa-sha2-512
+debug1: kex: server->client cipher: chacha20-poly1305@openssh.com MAC: <implicit> compression: none
+debug1: kex: client->server cipher: chacha20-poly1305@openssh.com MAC: <implicit> compression: none
+debug1: expecting SSH2_MSG_KEX_ECDH_REPLY
+debug1: SSH2_MSG_KEX_ECDH_REPLY received
+debug1: Server host key: ssh-rsa SHA256:07jcXlJ4SkBnyTmaVnmTpXuBiRx2+Q2adxbttO9gt0M
+debug1: load_hostkeys: fopen C:\\Users\\poliot/.ssh/known_hosts2: No such file or directory
+debug1: load_hostkeys: fopen __PROGRAMDATA__\\ssh/ssh_known_hosts: No such file or directory
+debug1: load_hostkeys: fopen __PROGRAMDATA__\\ssh/ssh_known_hosts2: No such file or directory
+debug1: Host 'serveo.net' is known and matches the RSA host key.
+debug1: Found key in C:\\Users\\poliot/.ssh/known_hosts:3
+debug1: ssh_packet_send2_wrapped: resetting send seqnr 3
+debug1: rekey out after 134217728 blocks
+debug1: SSH2_MSG_NEWKEYS sent
+debug1: expecting SSH2_MSG_NEWKEYS
+debug1: ssh_packet_read_poll2: resetting read seqnr 3
+debug1: SSH2_MSG_NEWKEYS received
+debug1: rekey in after 134217728 blocks
+debug1: get_agent_identities: ssh_get_authentication_socket: No such file or directory
+debug1: Will attempt key: C:\\Users\\poliot\\.ssh\\id_ed25519 ED25519 SHA256:EGQY/bH+3X45Lc4Tyk1hsroHe7Kl4PFawNVWpvr17XI explicit
+debug1: SSH2_MSG_EXT_INFO received
+debug1: kex_input_ext_info: server-sig-algs=<ssh-ed25519,sk-ssh-ed25519@openssh.com,sk-ecdsa-sha2-nistp256@openssh.com,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-256,rsa-sha2-512,ssh-rsa,ssh-dss>
+debug1: kex_ext_info_check_ver: ping@openssh.com=<0>
+debug1: SSH2_MSG_SERVICE_ACCEPT received
+debug1: Authentications that can continue: publickey,keyboard-interactive
+debug1: Next authentication method: publickey
+debug1: Offering public key: C:\\Users\\poliot\\.ssh\\id_ed25519 ED25519 SHA256:EGQY/bH+3X45Lc4Tyk1hsroHe7Kl4PFawNVWpvr17XI explicit
+debug1: Authentications that can continue: publickey,keyboard-interactive
+debug1: Next authentication method: keyboard-interactive
+Authenticated to serveo.net ([5.255.123.12]:22) using "keyboard-interactive".
+debug1: Remote connections from cci-dashboard:80 forwarded to local address 127.0.0.1:8000
+debug1: ssh_init_forwarding: expecting replies for 1 forwards
+debug1: channel 0: new session [client-session] (inactive timeout: 0)
+debug1: Entering interactive session.
+debug1: pledge: filesystem
+debug1: remote forward failure for: listen cci-dashboard:80, connect 127.0.0.1:8000
+Error: remote port forwarding failed for listen port 80

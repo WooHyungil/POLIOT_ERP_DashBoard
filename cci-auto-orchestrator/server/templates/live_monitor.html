@@ -1,0 +1,148 @@
+﻿<!doctype html>
+<html lang="ko">
+<head>
+    <script src="/static/auto_logout.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CCI Live Monitor</title>
+  <!-- FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260318a" />
+</head>
+<body class="has-side-nav">
+  {% include "components/side_nav.html" %}
+        <span class="side-nav-text">관리자</span>
+      </a>
+      <div class="side-nav-parent-group">
+        <button class="side-nav-link side-nav-parent" type="button" data-path="/test" data-submenu-target="testSubmenu">
+          <span class="side-nav-icon">TS</span><span class="side-nav-text">테스트</span><span class="side-nav-caret">&gt;</span>
+        </button>
+        <div class="side-nav-submenu" id="testSubmenu">
+          <a class="side-nav-sublink" data-path="/defects" href="/defects">1. 결함 상세</a>
+          <a class="side-nav-sublink" data-path="/excel" href="/excel">2. 엑셀 센터</a>
+          <a class="side-nav-sublink" data-path="/remote" href="/remote">3. 원격 리모컨</a>
+          <a class="side-nav-sublink" data-path="/live" href="/live">4. 라이브 모니터</a>
+        </div>
+      </div>
+    </nav>
+  </aside>
+  <main class="container">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Enterprise QA Orchestration</p>
+        <h1>Live Monitor</h1>
+      </div>
+      <nav class="topnav">
+        <a class="navlink" href="/">개요</a>
+        <a class="navlink" href="/remote">원격 리모컨</a>
+        <a class="navlink" href="/defects">결함 상세</a>
+        <a class="navlink" href="/excel">엑셀 센터</a>
+        <a class="navlink active" href="/live">라이브 모니터</a>
+        <a class="navlink" href="/#shortcutManagerSection">바로가기</a>
+        <span class="topbar-nav-sep" aria-hidden="true"></span>
+        <span id="topbarUserName" class="topbar-username" hidden></span>
+        <span id="topbarCountdown" class="topbar-countdown" hidden></span>
+        <a class="navlink btn-ghost" href="/mypage" style="white-space:nowrap;">마이페이지</a>
+        <form method="post" action="/auth/logout" style="margin:0;display:contents;">
+          <button class="navlink" type="submit" style="white-space:nowrap;">로그아웃</button>
+        </form>
+      </nav>
+    </header>
+
+    <section class="grid grid-wide">
+      <article class="card card-control">
+        <h2>실행 제어</h2>
+        <div class="button-row">
+          <button id="loadBuiltinBtn" type="button" class="btn-ghost">기본 테스트케이스 로드</button>
+          <button id="quickDemoBtn" type="button" class="btn-secondary">퀵 데모 실행</button>
+          <button id="runLatestUploadBtn" type="button" class="btn-secondary">업로드 엑셀로 실행(Android)</button>
+        </div>
+        <div class="button-row">
+          <button id="validateDevicesBtn" type="button" class="btn-secondary">단말 연동 확인</button>
+          <button id="startCompareBtn" type="button" class="btn-secondary">수동 비교 시작</button>
+          <button id="stopCompareBtn" type="button" class="btn-ghost">수동 비교 중지</button>
+        </div>
+        <p id="compareStatus" class="hint"></p>
+        <p id="deviceValidation" class="hint"></p>
+        <p id="latestSourceInfo" class="hint"></p>
+        <form id="runForm">
+          <label>실행 횟수<input type="number" name="repeat_count" min="1" value="1" /></label>
+          <label class="check"><input type="checkbox" name="run_android" checked /> Android</label>
+          <label class="check"><input type="checkbox" name="run_ios" /> iOS</label>
+          <button type="submit">테스트 시작</button>
+        </form>
+        <button id="exportResultBtn" class="btn-secondary" type="button">결과 엑셀 내보내기</button>
+        <p id="runResult" class="hint"></p>
+      </article>
+      <article class="card card-status">
+        <h2>실시간 요약</h2>
+        <div id="summary"></div>
+      </article>
+      <article class="card card-status">
+        <h2>시스템 통계</h2>
+        <div id="systemStats" class="stats-grid"></div>
+      </article>
+    </section>
+
+    <section class="grid grid-wide">
+      <article class="card card-table">
+        <h2>실행 진행 테이블</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Task</th><th>단말</th><th>TC</th><th>엑셀행</th><th>회차</th><th>상태</th><th>사유</th></tr></thead>
+            <tbody id="progressTable"></tbody>
+          </table>
+        </div>
+      </article>
+      <article class="card card-table">
+        <h2>이슈 스트림</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>시간</th><th>단말</th><th>TC</th><th>내용</th></tr></thead>
+            <tbody id="issueTable"></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="card card-table" style="grid-column: 1 / -1;">
+        <h2>실시간 단말 화면</h2>
+        <p class="hint">Android는 ADB 실시간 캡처로 표시됩니다. 이미지를 클릭하면 해당 좌표를 단말 탭으로 전송합니다.</p>
+        <div class="button-row">
+          <button id="refreshFeedBtn" type="button" class="btn-ghost">화면 강제 새로고침</button>
+        </div>
+        <div id="deviceFeeds" class="device-feed-grid">
+          {% if data and data.devices %}
+            {% for d in data.devices %}
+            <article class="device-feed-card">
+              <header>
+                <strong>{{ d.name }}</strong>
+                <span>{{ d.platform }} | {{ d.device_id }}</span>
+              </header>
+              <div class="device-shot">
+                {% if d.platform == 'android' %}
+                  <img src="/api/devices/{{ d.device_id }}/live-shot?t=init" alt="{{ d.name }}" loading="eager" fetchpriority="high" />
+                {% else %}
+                  <div class="feed-empty">iOS는 스냅샷 기반 표시</div>
+                {% endif %}
+              </div>
+            </article>
+            {% endfor %}
+          {% else %}
+            <p class="hint">연결 단말이 없습니다.</p>
+          {% endif %}
+        </div>
+      </article>
+    </section>
+  </main>
+  <script src="/static/side_nav.js?v=20260312a"></script>
+  <script src="/static/live_monitor.js?v=20260311b"></script>
+</body>
+</html>
+
+
+
+
+
+

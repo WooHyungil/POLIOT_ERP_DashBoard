@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Run Report a2689659-89b6-4112-b463-fbe857be211f</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 20px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
+    th { background: #f7f7f7; }
+    .ok { color: #0a7d3b; font-weight: 600; }
+    .bad { color: #b42318; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>CCI Run Report</h1>
+  <p><b>Run ID:</b> a2689659-89b6-4112-b463-fbe857be211f</p>
+  <p><b>Status:</b> completed</p>
+  <p><b>Repeat:</b> 1</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Task ID</th><th>Device</th><th>TC</th><th>Iteration</th><th>Status</th><th>Issue</th><th>Screenshot</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>c0a002ac-0b8c-45b4-8397-273550db4b9a</td><td>a01</td><td>MANUAL_TC_001</td><td>1</td><td>nt</td><td>동작 불가: Appium 세션 생성 실패 (Message: Neither ANDROID_HOME nor ANDROID_SDK_ROOT environment variable was exported. Read https://developer.android.com/studio/command-line/variables for more details
+Stacktrace:
+UnknownError: Neither ANDROID_HOME nor ANDROID_SDK_ROOT environment variable was exported. Read https://developer.android.com/studio/command-line/variables for more details
+    at getResponseForW3CError (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\node_modules\@appium\base-driver\lib\protocol\errors.ts:1103:34)
+    at asyncHandler (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\node_modules\@appium\base-driver\lib\protocol\protocol.ts:507:57)
+The above error is caused by
+Error: Neither ANDROID_HOME nor ANDROID_SDK_ROOT environment variable was exported. Read https://developer.android.com/studio/command-line/variables for more details
+    at requireSdkRoot (C:\Users\poliot\.appium\node_modules\appium-uiautomator2-driver\node_modules\appium-adb\lib\helpers.ts:53:11)
+    at Function.createADB (C:\Users\poliot\.appium\node_modules\appium-uiautomator2-driver\node_modules\appium-adb\lib\adb.ts:137:39)
+    at AndroidUiautomator2Driver.createBaseADB (C:\Users\poliot\.appium\node_modules\appium-uiautomator2-driver\node_modules\appium-android-driver\lib\commands\device\utils.ts:153:20)
+    at AndroidUiautomator2Driver.getDeviceInfoFromCaps (C:\Users\poliot\.appium\node_modules\appium-uiautomator2-driver\node_modules\appium-android-driver\lib\commands\device\common.ts:26:45)
+    at AndroidUiautomator2Driver.createSession (C:\Users\poliot\.appium\node_modules\appium-uiautomator2-driver\lib\driver.ts:346:41)
+    at AppiumDriver.createSession (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\lib\appium.js:360:35))</td><td>-</td></tr>
+    </tbody>
+  </table>
+</body>
+</html>

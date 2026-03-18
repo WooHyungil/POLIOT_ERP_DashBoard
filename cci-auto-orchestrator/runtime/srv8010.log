@@ -1,0 +1,519 @@
+﻿python.exe : ERROR:    Exception in ASGI application
+위치 줄:1 문자:79
++ ... hestrator"; & "C:/Users/poliot/OneDrive/바탕 화면/자동화 프로그램/.venv/Scripts/ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR:    Exception in ASGI appli 
+   cation:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\sta
+rlette\_utils.py", line 79, in collapse_excgroups
+  |     yield
+  |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\sta
+rlette\middleware\base.py", line 183, in __call__
+  |     async with anyio.create_task_group() as task_group:
+  |                ~~~~~~~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\any
+io\_backends\_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  |         "unhandled errors in a TaskGroup", self._exceptions
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\u
+vicorn\protocols\http\h11_impl.py", line 403, in run_asgi
+    |     result = await app(  # type: ignore[func-returns-value]
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |         self.scope, self.receive, self.send
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     )
+    |     ^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\u
+vicorn\middleware\proxy_headers.py", line 60, in __call__
+    |     return await self.app(scope, receive, send)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\f
+astapi\applications.py", line 1054, in __call__
+    |     await super().__call__(scope, receive, send)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\applications.py", line 113, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\errors.py", line 186, in __call__
+    |     raise exc
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\errors.py", line 164, in __call__
+    |     await self.app(scope, receive, _send)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\base.py", line 182, in __call__
+    |     with recv_stream, send_stream, collapse_excgroups():
+    |                                    ~~~~~~~~~~~~~~~~~~^^
+    |   File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\conte
+xtlib.py", line 162, in __exit__
+    |     self.gen.throw(value)
+    |     ~~~~~~~~~~~~~~^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\_utils.py", line 85, in collapse_excgroups
+    |     raise exc
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\base.py", line 184, in __call__
+    |     response = await self.dispatch_func(request, call_next)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\cci-auto-orchestrator\ser
+ver\app\main.py", line 448, in auth_guard_middleware
+    |     return await call_next(request)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\base.py", line 159, in call_next
+    |     raise app_exc
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\base.py", line 144, in coro
+    |     await self.app(scope, receive_or_disconnect, send_no_error)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\sessions.py", line 85, in __call__
+    |     await self.app(scope, receive, send_wrapper)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\exceptions.py", line 63, in __call__
+    |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, se
+nd)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\routing.py", line 716, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\routing.py", line 736, in app
+    |     await route.handle(scope, receive, send)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\routing.py", line 290, in handle
+    |     await self.app(scope, receive, send)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\routing.py", line 78, in app
+    |     await wrap_app_handling_exceptions(app, request)(scope, receive, send
+)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\routing.py", line 75, in app
+    |     response = await f(request)
+    |                ^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\f
+astapi\routing.py", line 302, in app
+    |     raw_response = await run_endpoint_function(
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     ...<3 lines>...
+    |     )
+    |     ^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\f
+astapi\routing.py", line 213, in run_endpoint_function
+    |     return await dependant.call(**values)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\cci-auto-orchestrator\ser
+ver\app\main.py", line 666, in put_user_shortcut_state
+    |     payload = await request.json()
+    |               ^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\requests.py", line 250, in json
+    |     self._json = json.loads(body)
+    |                  ~~~~~~~~~~^^^^^^
+    |   File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\json\
+__init__.py", line 346, in loads
+    |     return _default_decoder.decode(s)
+    |            ~~~~~~~~~~~~~~~~~~~~~~~^^^
+    |   File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\json\
+decoder.py", line 345, in decode
+    |     obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+    |                ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\json\
+decoder.py", line 361, in raw_decode
+    |     obj, end = self.scan_once(s, idx)
+    |                ~~~~~~~~~~~~~~^^^^^^^^
+    | json.decoder.JSONDecodeError: Expecting property name enclosed in double 
+quotes: line 1 column 2 (char 1)
+    +------------------------------------
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\uvicorn
+\protocols\http\h11_impl.py", line 403, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\uvicorn
+\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\fastapi
+\applications.py", line 1054, in __call__
+    await super().__call__(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\applications.py", line 113, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\base.py", line 182, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+                                   ~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\contextlib.
+py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\_utils.py", line 85, in collapse_excgroups
+    raise exc
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\base.py", line 184, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\cci-auto-orchestrator\server\ap
+p\main.py", line 448, in auth_guard_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\base.py", line 159, in call_next
+    raise app_exc
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\sessions.py", line 85, in __call__
+    await self.app(scope, receive, send_wrapper)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\routing.py", line 78, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\routing.py", line 75, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\fastapi
+\routing.py", line 302, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\fastapi
+\routing.py", line 213, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\cci-auto-orchestrator\server\ap
+p\main.py", line 666, in put_user_shortcut_state
+    payload = await request.json()
+              ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\requests.py", line 250, in json
+    self._json = json.loads(body)
+                 ~~~~~~~~~~^^^^^^
+  File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\json\__init
+__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\json\decode
+r.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\json\decode
+r.py", line 361, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ~~~~~~~~~~~~~~^^^^^^^^
+json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes
+: line 1 column 2 (char 1)
+ERROR:    Exception in ASGI application
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\sta
+rlette\_utils.py", line 79, in collapse_excgroups
+  |     yield
+  |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\sta
+rlette\middleware\base.py", line 183, in __call__
+  |     async with anyio.create_task_group() as task_group:
+  |                ~~~~~~~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\any
+io\_backends\_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  |         "unhandled errors in a TaskGroup", self._exceptions
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\u
+vicorn\protocols\http\h11_impl.py", line 403, in run_asgi
+    |     result = await app(  # type: ignore[func-returns-value]
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |         self.scope, self.receive, self.send
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     )
+    |     ^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\u
+vicorn\middleware\proxy_headers.py", line 60, in __call__
+    |     return await self.app(scope, receive, send)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\f
+astapi\applications.py", line 1054, in __call__
+    |     await super().__call__(scope, receive, send)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\applications.py", line 113, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\errors.py", line 186, in __call__
+    |     raise exc
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\errors.py", line 164, in __call__
+    |     await self.app(scope, receive, _send)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\base.py", line 182, in __call__
+    |     with recv_stream, send_stream, collapse_excgroups():
+    |                                    ~~~~~~~~~~~~~~~~~~^^
+    |   File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\conte
+xtlib.py", line 162, in __exit__
+    |     self.gen.throw(value)
+    |     ~~~~~~~~~~~~~~^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\_utils.py", line 85, in collapse_excgroups
+    |     raise exc
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\base.py", line 184, in __call__
+    |     response = await self.dispatch_func(request, call_next)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\cci-auto-orchestrator\ser
+ver\app\main.py", line 448, in auth_guard_middleware
+    |     return await call_next(request)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\base.py", line 159, in call_next
+    |     raise app_exc
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\base.py", line 144, in coro
+    |     await self.app(scope, receive_or_disconnect, send_no_error)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\sessions.py", line 85, in __call__
+    |     await self.app(scope, receive, send_wrapper)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\middleware\exceptions.py", line 63, in __call__
+    |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, se
+nd)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\routing.py", line 716, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\routing.py", line 736, in app
+    |     await route.handle(scope, receive, send)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\routing.py", line 290, in handle
+    |     await self.app(scope, receive, send)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\routing.py", line 78, in app
+    |     await wrap_app_handling_exceptions(app, request)(scope, receive, send
+)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\routing.py", line 75, in app
+    |     response = await f(request)
+    |                ^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\f
+astapi\routing.py", line 302, in app
+    |     raw_response = await run_endpoint_function(
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     ...<3 lines>...
+    |     )
+    |     ^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\f
+astapi\routing.py", line 213, in run_endpoint_function
+    |     return await dependant.call(**values)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\cci-auto-orchestrator\ser
+ver\app\main.py", line 666, in put_user_shortcut_state
+    |     payload = await request.json()
+    |               ^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\s
+tarlette\requests.py", line 250, in json
+    |     self._json = json.loads(body)
+    |                  ~~~~~~~~~~^^^^^^
+    |   File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\json\
+__init__.py", line 346, in loads
+    |     return _default_decoder.decode(s)
+    |            ~~~~~~~~~~~~~~~~~~~~~~~^^^
+    |   File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\json\
+decoder.py", line 345, in decode
+    |     obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+    |                ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\json\
+decoder.py", line 361, in raw_decode
+    |     obj, end = self.scan_once(s, idx)
+    |                ~~~~~~~~~~~~~~^^^^^^^^
+    | json.decoder.JSONDecodeError: Expecting property name enclosed in double 
+quotes: line 1 column 2 (char 1)
+    +------------------------------------
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\uvicorn
+\protocols\http\h11_impl.py", line 403, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\uvicorn
+\middleware\proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\fastapi
+\applications.py", line 1054, in __call__
+    await super().__call__(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\applications.py", line 113, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\base.py", line 182, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+                                   ~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\contextlib.
+py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\_utils.py", line 85, in collapse_excgroups
+    raise exc
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\base.py", line 184, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\cci-auto-orchestrator\server\ap
+p\main.py", line 448, in auth_guard_middleware
+    return await call_next(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\base.py", line 159, in call_next
+    raise app_exc
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\sessions.py", line 85, in __call__
+    await self.app(scope, receive, send_wrapper)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\routing.py", line 78, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\routing.py", line 75, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\fastapi
+\routing.py", line 302, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\fastapi
+\routing.py", line 213, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\cci-auto-orchestrator\server\ap
+p\main.py", line 666, in put_user_shortcut_state
+    payload = await request.json()
+              ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\.venv\Lib\site-packages\starlet
+te\requests.py", line 250, in json
+    self._json = json.loads(body)
+                 ~~~~~~~~~~^^^^^^
+  File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\json\__init
+__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\json\decode
+r.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\poliot\AppData\Local\Programs\Python\Python313\Lib\json\decode
+r.py", line 361, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ~~~~~~~~~~~~~~^^^^^^^^
+json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes
+: line 1 column 2 (char 1)

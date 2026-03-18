@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>留덉씠?섏씠吏 ??CCI</title>
+  <link rel="stylesheet" href="/static/styles.css?v=20260318a" />
+</head>
+<body class="has-side-nav">
+  <aside class="side-nav" id="sideNav" aria-label="二쇱슂 硫붾돱">
+    <button id="sideNavToggle" class="side-nav-toggle" type="button" aria-expanded="false">MENU</button>
+    <nav class="side-nav-menu">
+      <a class="side-nav-link" data-path="/" href="/"><span class="side-nav-icon">OV</span><span class="side-nav-text">媛쒖슂</span></a>
+      <button class="side-nav-link side-nav-parent" type="button" data-path="/qa" data-submenu-target="qaSubmenu">
+        <span class="side-nav-icon">QA</span><span class="side-nav-text">QA ??쒕낫??/span><span class="side-nav-caret">&gt;</span>
+      </button>
+      <div class="side-nav-submenu" id="qaSubmenu">
+        <a class="side-nav-sublink" data-path="/qa" data-hash="#closingSummarySection" href="/qa#closingSummarySection">Summary</a>
+        <a class="side-nav-sublink" data-path="/qa" data-hash="#recentIssueChartSection" href="/qa#recentIssueChartSection">理쒓렐 ?댁뒋 ?듦퀎 李⑦듃</a>
+        <a class="side-nav-sublink" data-path="/qa" data-hash="#regularReleaseSection" href="/qa#regularReleaseSection">?뺢린諛고룷 ?꾪솴</a>
+      </div>
+      <a class="side-nav-link" data-path="/remote" href="/remote"><span class="side-nav-icon">RC</span><span class="side-nav-text">?먭꺽 由щえ而?/span></a>
+      <button class="side-nav-link side-nav-parent" type="button" data-path="/manage" data-submenu-target="manageSubmenu">
+        <span class="side-nav-icon">MG</span><span class="side-nav-text">愿由?/span><span class="side-nav-caret">&gt;</span>
+      </button>
+      <div class="side-nav-submenu" id="manageSubmenu">
+        <a class="side-nav-sublink" data-path="/manage" data-hash="#manageScheduleTab" href="/manage#manageScheduleTab">1. ?쇱젙愿由?/a>
+        <a class="side-nav-sublink" data-path="/manage" data-hash="#manageDeviceTab" href="/manage#manageDeviceTab">2. ?⑤쭚愿由?/a>
+      </div>
+      <button class="side-nav-link side-nav-parent" type="button" data-path="/admin" data-submenu-target="adminSubmenu" data-requires-admin="true">
+        <span class="side-nav-icon">AD</span><span class="side-nav-text">愿由ъ옄</span><span class="side-nav-caret">&gt;</span>
+      </button>
+      <div class="side-nav-submenu" id="adminSubmenu" data-requires-admin="true">
+        <a class="side-nav-sublink" data-path="/admin" data-hash="#adminPeopleTab" href="/admin#adminPeopleTab" data-requires-admin="true">1. ?몄썝愿由?/a>
+        <a class="side-nav-sublink" data-path="/admin" data-hash="#adminIssueTab" href="/admin#adminIssueTab" data-requires-admin="true">2. ?몄썝蹂??댁뒋 ?듦퀎</a>
+      </div>
+      <a class="side-nav-link" data-path="/defects" href="/defects"><span class="side-nav-icon">DF</span><span class="side-nav-text">寃고븿 ?곸꽭</span></a>
+      <a class="side-nav-link" data-path="/excel" href="/excel"><span class="side-nav-icon">XL</span><span class="side-nav-text">?묒? ?쇳꽣</span></a>
+      <a class="side-nav-link" data-path="/live" href="/live"><span class="side-nav-icon">LV</span><span class="side-nav-text">?쇱씠釉?紐⑤땲??/span></a>
+      <a class="side-nav-link active" data-path="/mypage" href="/mypage"><span class="side-nav-icon">MY</span><span class="side-nav-text">留덉씠?섏씠吏</span></a>
+    </nav>
+  </aside>
+
+  <main class="container">
+    <header class="topbar topbar-brand">
+      <div class="brand-left">
+        <div>
+          <p class="eyebrow">My Account</p>
+          <h1>留덉씠?섏씠吏</h1>
+          <p class="meta-text">怨꾩젙 ?뺣낫瑜??섏젙?섍퀬 利됱떆 ??ν빀?덈떎.</p>
+        </div>
+      </div>
+      <nav class="topnav">
+        <a class="navlink" href="/">媛쒖슂</a>
+        <a class="navlink" href="/manage">愿由?/a>
+        <a class="navlink" href="/qa">QA ??쒕낫??/a>
+        <span class="topbar-nav-sep" aria-hidden="true"></span>
+        <span id="topbarUserName" class="topbar-username" hidden></span>
+        <span id="topbarCountdown" class="topbar-countdown" hidden></span>
+        <a class="navlink active" href="/mypage" style="white-space:nowrap;">留덉씠?섏씠吏</a>
+        <form method="post" action="/auth/logout" style="margin:0;display:contents;">
+          <button class="navlink" type="submit" style="white-space:nowrap;">濡쒓렇?꾩썐</button>
+        </form>
+      </nav>
+    </header>
+
+    <section class="card card-guidance" style="margin-bottom:16px;">
+      <h2>??怨꾩젙 ?뺣낫</h2>
+      <p class="hint">?대쫫, 鍮꾨?踰덊샇, 怨꾩젙 ?뺣낫(?뚯냽/吏곸콉), 二쇱냼瑜??섏젙?????덉뒿?덈떎. 蹂寃??ы빆? 利됱떆 諛섏쁺?⑸땲??</p>
+      <p id="mypageFlash" class="hint" style="min-height:22px;"></p>
+    </section>
+
+    <section class="grid manage-grid">
+      <article class="card manage-panel">
+        <h2>怨꾩젙 ?뺣낫 ?섏젙</h2>
+        <form id="mypageForm">
+          <div class="mypage-form-grid">
+            <label>
+              ?대찓??(蹂寃?遺덇?)
+              <input id="mypageEmail" type="email" disabled style="background:#f5f8fc;color:#6a7f99;" />
+            </label>
+            <label>
+              ?대쫫
+              <input id="mypageName" type="text" placeholder="?띻만?? maxlength="60" />
+            </label>
+            <label class="full-span">
+              怨꾩젙 ?뺣낫 (?뚯냽 / 吏곸콉 ??
+              <input id="mypageAddress" type="text" placeholder="?? 媛쒕컻? / ?섏꽍" maxlength="200" />
+            </label>
+          </div>
+
+          <hr style="margin:16px 0;border:none;border-top:1px solid var(--line);" />
+
+          <h3 style="margin:0 0 10px;font-size:0.96rem;">鍮꾨?踰덊샇 蹂寃?<span style="font-size:0.78rem;font-weight:400;color:var(--muted);">(蹂寃쏀븯吏 ?딆쑝?ㅻ㈃ 鍮덉뭏?쇰줈 ?먯꽭??</span></h3>
+          <div class="mypage-form-grid">
+            <label>
+              ??鍮꾨?踰덊샇
+              <input id="mypagePw1" type="password" placeholder="8???댁긽" autocomplete="new-password" minlength="8" maxlength="100" />
+            </label>
+            <label>
+              鍮꾨?踰덊샇 ?뺤씤
+              <input id="mypagePw2" type="password" placeholder="?숈씪?섍쾶 ?낅젰" autocomplete="new-password" minlength="8" maxlength="100" />
+            </label>
+          </div>
+
+          <div class="button-row" style="margin-top:16px;">
+            <button type="submit">???/button>
+            <button type="button" class="btn-ghost" onclick="window.history.back()">痍⑥냼</button>
+          </div>
+        </form>
+      </article>
+    </section>
+  </main>
+
+  <script src="/static/side_nav.js"></script>
+  <script>
+  (function () {
+    const emailEl = document.getElementById("mypageEmail");
+    const nameEl  = document.getElementById("mypageName");
+    const addrEl  = document.getElementById("mypageAddress");
+    const flash   = document.getElementById("mypageFlash");
+    const form    = document.getElementById("mypageForm");
+
+    function setFlash(msg, tone) {
+      flash.textContent = msg;
+      flash.setAttribute("data-tone", tone || "");
+      flash.style.color = tone === "ok"    ? "#1f6a3f"
+                        : tone === "error" ? "#9d1c1c"
+                        : "#915d00";
+    }
+
+    // ?꾩옱 怨꾩젙 ?뺣낫 遺덈윭?ㅺ린
+    fetch("/api/auth/me", { credentials: "same-origin" })
+      .then(r => r.ok ? r.json() : Promise.reject(r))
+      .then(data => {
+        const u = data.user || {};
+        if (emailEl) emailEl.value = u.email || "";
+        if (nameEl)  nameEl.value  = u.name  || "";
+        if (addrEl)  addrEl.value  = u.address || "";
+      })
+      .catch(() => setFlash("怨꾩젙 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??", "error"));
+
+    // ???쒖텧
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+
+      const pw1 = document.getElementById("mypagePw1").value;
+      const pw2 = document.getElementById("mypagePw2").value;
+
+      if (pw1 || pw2) {
+        if (pw1 !== pw2) {
+          setFlash("鍮꾨?踰덊샇媛 ?쇱튂?섏? ?딆뒿?덈떎.", "error");
+          return;
+        }
+        if (pw1.length < 8) {
+          setFlash("鍮꾨?踰덊샇??8???댁긽?댁뼱???⑸땲??", "error");
+          return;
+        }
+      }
+
+      const payload = {
+        name:    nameEl.value.trim(),
+        address: addrEl.value.trim(),
+      };
+      if (pw1) payload.password = pw1;
+
+      try {
+        const res = await fetch("/api/user/me", {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          setFlash("저장되었습니다.", "ok");
+          // 비밀번호 입력 초기화
+          document.getElementById("mypagePw1").value = "";
+          document.getElementById("mypagePw2").value = "";
+          // 상단 유저 이름 갱신
+          const topbarName = document.getElementById("topbarUserName");
+          if (topbarName && data.user?.name) {
+            topbarName.textContent = data.user.name + "님";
+          }
+        } else {
+          setFlash(data.detail || "저장 중 오류가 발생했습니다.", "error");
+        }
+      } catch {
+        setFlash("네트워크 오류가 발생했습니다.", "error");
+      }
+    });
+  })();
+  </script>
+</body>
+</html>
+

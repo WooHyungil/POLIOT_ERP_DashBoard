@@ -1,0 +1,118 @@
+﻿<!doctype html>
+<html lang="ko">
+<head>
+    <script src="/static/auto_logout.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CCI QA DefectList Editor</title>
+  <!-- FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260318a" />
+</head>
+<body class="has-side-nav">
+  <aside class="side-nav" id="sideNav" aria-label="주요 메뉴">
+    <button id="sideNavToggle" class="side-nav-toggle" type="button" aria-expanded="false">MENU</button>
+    <nav class="side-nav-menu">
+      <a class="side-nav-link" data-path="/" href="/">
+        <span class="side-nav-icon"><i class="fa-solid fa-house"></i></span>
+        <span class="side-nav-text">메인</span>
+      </a>
+      <a class="side-nav-link" data-path="/" data-hash="#shortcutManagerSection" href="#shortcutManagerSection" data-view="shortcuts">
+        <span class="side-nav-icon"><i class="fa-solid fa-bolt"></i></span>
+        <span class="side-nav-text">바로가기</span>
+      </a>
+      <div class="side-nav-parent-group">
+        <button class="side-nav-link side-nav-parent" type="button" data-path="/qa" data-submenu-target="qaSubmenu">
+          <span class="side-nav-icon"><i class="fa-solid fa-chart-line"></i></span><span class="side-nav-text">QA 대시보드</span><span class="side-nav-caret">&gt;</span>
+        </button>
+        <div class="side-nav-submenu" id="qaSubmenu">
+          <a class="side-nav-sublink" data-path="/qa/summary" href="/qa/summary">1. Summary</a>
+          <a class="side-nav-sublink" data-path="/qa/release" href="/qa/release">2. 정기배포현황</a>
+          <a class="side-nav-sublink" data-path="/qa/recent" href="/qa/recent">3. 최근이슈통계차트</a>
+        </div>
+      </div>
+      <a class="side-nav-link" data-path="/manage" href="/manage">
+        <span class="side-nav-icon"><i class="fa-solid fa-gear"></i></span>
+        <span class="side-nav-text">관리</span>
+      </a>
+      <a class="side-nav-link" data-path="/admin" href="/admin">
+        <span class="side-nav-icon"><i class="fa-solid fa-user-shield"></i></span>
+        <span class="side-nav-text">관리자</span>
+      </a>
+      <div class="side-nav-parent-group">
+        <button class="side-nav-link side-nav-parent" type="button" data-path="/test" data-submenu-target="testSubmenu">
+          <span class="side-nav-icon">TS</span><span class="side-nav-text">테스트</span><span class="side-nav-caret">&gt;</span>
+        </button>
+        <div class="side-nav-submenu" id="testSubmenu">
+          <a class="side-nav-sublink" data-path="/defects" href="/defects">1. 결함 상세</a>
+          <a class="side-nav-sublink" data-path="/excel" href="/excel">2. 엑셀 센터</a>
+          <a class="side-nav-sublink" data-path="/remote" href="/remote">3. 원격 리모컨</a>
+          <a class="side-nav-sublink" data-path="/live" href="/live">4. 라이브 모니터</a>
+        </div>
+      </div>
+    </nav>
+  </aside>
+
+  <main class="container">
+    <header class="topbar topbar-brand">
+      <div class="brand-left">
+        <div class="brand-mark" aria-hidden="true">
+          <span class="dot dot-a"></span>
+          <span class="dot dot-b"></span>
+          <span class="dot dot-c"></span>
+        </div>
+        <div>
+          <p class="eyebrow">Enterprise QA Orchestration</p>
+          <h1>QA DefectList Editor</h1>
+          <p class="meta-text">DefectList(B18:Z) 데이터를 편집하고 DefectList_Raw 기준 참고 정보를 함께 확인합니다.</p>
+        </div>
+      </div>
+      <nav class="topnav">
+        <a class="navlink" href="/">개요</a>
+        <a class="navlink" href="/qa">QA 대시보드</a>
+        <a class="navlink" href="/defects">결함 상세</a>
+        <a class="navlink" href="/excel">엑셀 센터</a>
+        <a class="navlink" href="/#shortcutManagerSection">바로가기</a>
+        <span class="topbar-nav-sep" aria-hidden="true"></span>
+        <span id="topbarUserName" class="topbar-username" hidden></span>
+        <span id="topbarCountdown" class="topbar-countdown" hidden></span>
+        <a class="navlink btn-ghost" href="/mypage" style="white-space:nowrap;">마이페이지</a>
+        <form method="post" action="/auth/logout" style="margin:0;display:contents;">
+          <button class="navlink" type="submit" style="white-space:nowrap;">로그아웃</button>
+        </form>
+      </nav>
+    </header>
+
+    <section class="card card-guidance" aria-label="편집 도구">
+      <h2>편집 도구</h2>
+      <div class="button-row">
+        <button id="editorRefreshBtn" type="button" class="btn-secondary">DefectList 다시 불러오기</button>
+        <button id="rawRefreshBtn" type="button" class="btn-ghost">DefectList_Raw 최신화 후 재조회</button>
+        <a class="navlink" href="/qa">QA 대시보드로 이동</a>
+      </div>
+      <p id="editorHint" class="hint">B~I는 편집 컬럼입니다. G 컬럼은 자유 메모로 입력 가능합니다.</p>
+      <div id="editorStats" class="stats-grid"></div>
+    </section>
+
+    <section class="card card-table" aria-label="DefectList 편집 테이블">
+      <h2>DefectList (B18:Z)</h2>
+      <div class="table-wrap" style="max-height:72vh;">
+        <table id="defectlistEditorTable" class="recent-status-table">
+          <thead id="defectlistEditorHead"></thead>
+          <tbody id="defectlistEditorBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="toastStack" class="toast-stack"></div>
+  <script src="/static/side_nav.js?v=20260312a"></script>
+  <script src="/static/qa_defectlist_editor.js?v=20260313a"></script>
+</body>
+</html>
+
+
+
+
+
+

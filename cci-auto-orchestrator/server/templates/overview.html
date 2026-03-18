@@ -1,0 +1,171 @@
+﻿<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CCI Overview</title>
+  <!-- FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260318a" />
+  <script src="/static/auto_logout.js"></script>
+</head>
+<body class="has-side-nav">
+  {% include "components/side_nav.html" %}
+  <main class="container">
+    <header class="topbar topbar-brand">
+      <div class="topbar-main-row">
+        <div class="brand-left">
+          <div class="brand-logo-wrap" aria-hidden="true">
+            <img class="brand-logo-img" src="/static/company_logo.png" alt="company logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+            <div class="brand-mark" style="display:none;">
+              <span class="dot dot-a"></span>
+              <span class="dot dot-b"></span>
+              <span class="dot dot-c"></span>
+            </div>
+          </div>
+          <div>
+            <p class="eyebrow">Enterprise QA Orchestration</p>
+            <h1>POLIOT Device Control Center</h1>
+            <p class="meta-text">개요 페이지는 운영 통계 중심으로 구성하고, 단말 제어는 원격 리모컨 페이지에서 수행합니다.</p>
+          </div>
+        </div>
+        <nav class="topnav">
+          <a class="navlink active" href="/">메인</a>
+          <a class="navlink" href="#shortcutManagerSection" data-view="shortcuts">바로가기</a>
+          <a class="navlink" href="/qa">QA 대시보드</a>
+          <a class="navlink" href="/manage">관리</a>
+          <a class="navlink" href="/admin">관리자</a>
+          <div class="navlink-dropdown">
+            <button class="navlink navlink-parent" type="button" aria-haspopup="true" aria-expanded="false">테스트 ▾</button>
+            <div class="navlink-submenu">
+              <a class="navlink" href="/defects">1. 결함 상세</a>
+              <a class="navlink" href="/excel">2. 엑셀 센터</a>
+              <a class="navlink" href="/remote">3. 원격 리모컨</a>
+              <a class="navlink" href="/live">4. 라이브 모니터</a>
+            </div>
+          </div>
+        </nav>
+        <div class="topbar-fixed-actions">
+          <span class="topbar-logout-hint">1시간 동안 아무런 동작이 없으면 자동 로그아웃 됩니다</span>
+          <a class="navlink btn-ghost" href="/mypage" style="white-space:nowrap;">마이페이지</a>
+          <form method="post" action="/auth/logout" style="margin:0;display:contents;">
+            <button class="navlink" type="submit" style="white-space:nowrap;">로그아웃</button>
+          </form>
+        </div>
+      </div>
+    </header>
+
+    <section class="grid grid-overview overview-layout" id="overviewMainContent" aria-label="개요 빠른 접근">
+      <article class="card card-guidance overview-recent overview-nav-card" data-link="/qa#recentIssueChartSection" role="button" tabindex="0" aria-label="최근 이슈 통계 차트로 이동">
+        <h2>최근 이슈 통계</h2>
+        <p id="overviewRecentRangeHint" class="hint">최근 30일 Status Top 기준 이슈 분포를 원형 차트로 표시합니다.</p>
+        <div class="overview-pie-wrap">
+          <div id="overviewRecentDonut" class="overview-donut" aria-hidden="true"></div>
+          <ul id="overviewRecentLegend" class="overview-legend">
+            <li class="hint">차트 로딩 중...</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="card card-guidance overview-regular overview-nav-card" data-link="/qa#regularReleaseSection" role="button" tabindex="0" aria-label="정기배포 현황으로 이동">
+        <h2>정기배포 통계</h2>
+        <p class="hint">정기배포 버전별 이슈 분포를 원형 차트로 확인하고, 선택 시 정기배포 상세 페이지로 이동합니다.</p>
+        <div class="overview-pie-wrap">
+          <div id="overviewRegularDonut" class="overview-donut" aria-hidden="true"></div>
+          <ul id="overviewRegularLegend" class="overview-legend">
+            <li class="hint">차트 로딩 중...</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="card card-guidance overview-summary overview-nav-card" data-link="/qa#closingSummarySection" role="button" tabindex="0" aria-label="Summary 섹션으로 이동">
+        <h2>Summary 통계</h2>
+        <p id="overviewSummaryCycleHint" class="hint">현재 월 기준 Summary 사이클(현재/이전) 분포를 원형 차트로 표시합니다.</p>
+        <div class="summary-slider" id="overviewSummarySlider" aria-label="Summary 사이클 슬라이더">
+          <button id="overviewSummaryPrevBtn" class="summary-slider-btn" type="button" aria-label="이전 사이클">&#8249;</button>
+          <div class="summary-slider-viewport">
+            <div id="overviewSummaryTrack" class="summary-slider-track">
+              <div class="summary-slide">로딩 중...</div>
+            </div>
+          </div>
+          <button id="overviewSummaryNextBtn" class="summary-slider-btn" type="button" aria-label="다음 사이클">&#8250;</button>
+        </div>
+        <div class="overview-pie-wrap">
+          <div id="overviewSummaryDonut" class="overview-donut" aria-hidden="true"></div>
+          <ul id="overviewSummaryLegend" class="overview-legend">
+            <li class="hint">차트 로딩 중...</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="card card-guidance card-update-log overview-updates">
+        <h2>업데이트 공지사항</h2>
+        <p class="hint">개요는 최신 변경 이력을 자동 반영합니다. 빠진 기능, 신규 기능, 최신화 내용을 한눈에 확인할 수 있습니다.</p>
+        <div id="overviewUpdateLog" class="update-log-list">
+          <p class="hint">업데이트 로그를 불러오는 중...</p>
+        </div>
+      </article>
+    </section>
+
+    <section id="shortcutPage" hidden class="shortcut-page">
+      <!-- ① 상단 툴바: 바로가기 버튼 + 액션 -->
+      <div class="sc-toolbar">
+        <button type="button" id="shortcutManageToggleBtn" class="sc-tb-btn" title="관리 패널 열기/닫기">⚙ 관리</button>
+        <div class="sc-tb-divider"></div>
+        <div id="shortcutToolbarList" class="sc-tb-list"></div>
+        <div class="sc-tb-spacer"></div>
+        <button id="shortcutCloseAllBtn" class="sc-tb-btn" type="button">모든 창 닫기</button>
+        <button type="button" class="sc-tb-btn" id="shortcutBackBtn">← 개요</button>
+      </div>
+      <!-- ② 관리 패널 (접기/펼치기) -->
+      <div id="shortcutManagerPanel" class="sc-manager-panel" hidden>
+        <div class="sc-manager-head">
+          <h2 id="shortcutManagerSection">바로가기 관리</h2>
+          <button type="button" id="shortcutManagerCloseBtn" class="btn-ghost">✕ 닫기</button>
+        </div>
+        <form id="shortcutForm" class="shortcut-form">
+          <input type="hidden" id="shortcutEditId" value="" />
+          <input id="shortcutNameInput" type="text" placeholder="바로가기 이름 (예: CONTROL_MASTER Figma)" maxlength="80" required />
+          <input id="shortcutUrlInput" type="text" placeholder="https://..." required />
+          <div class="button-row">
+            <button id="shortcutSaveBtn" type="submit">저장</button>
+            <button id="shortcutResetBtn" class="btn-ghost" type="button">초기화</button>
+          </div>
+        </form>
+        <div id="shortcutList" class="shortcut-list">
+          <p class="hint">바로가기 로딩 중...</p>
+        </div>
+      </div>
+      <!-- ③ 전체 공간 웹뷰 데스크톱 -->
+      <div id="shortcutDesktop" class="shortcut-desktop"></div>
+    </section>
+  </main>
+
+  <div id="updateDetailModal" class="modal" hidden>
+    <div class="modal-backdrop" data-modal-close="true"></div>
+    <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="updateDetailTitle">
+      <header class="modal-head">
+        <h3 id="updateDetailTitle">업데이트 상세</h3>
+        <button id="updateDetailCloseBtn" type="button" class="btn-ghost">닫기</button>
+      </header>
+      <div class="modal-body">
+        <p id="updateDetailMeta" class="update-meta">-</p>
+        <p id="updateDetailSource" class="hint">-</p>
+        <ul id="updateDetailList" class="modal-detail-list">
+          <li>상세 내용이 없습니다.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <div id="toastStack" class="toast-stack"></div>
+  <script src="/static/side_nav.js?v=20260312a"></script>
+  <script src="/static/overview.js?v=20260317n"></script>
+</body>
+</html>
+
+
+
+
+
+

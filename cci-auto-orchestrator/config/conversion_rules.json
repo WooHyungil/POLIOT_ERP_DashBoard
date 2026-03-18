@@ -1,0 +1,200 @@
+[ 
+  {
+    "contains": "control",
+    "action": "wait",
+    "target": "",
+    "locator": "none",
+    "value": "1"
+  },
+  {
+    "contains": "로그인",
+    "action": "click",
+    "target": "kia_login_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "로그아웃",
+    "action": "click",
+    "target": "kia_logout_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "동의",
+    "action": "click",
+    "target": "kia_agree_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "확인 버튼",
+    "action": "click",
+    "target": "kia_confirm_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "취소",
+    "action": "click",
+    "target": "kia_cancel_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "잠금",
+    "action": "click",
+    "target": "kia_lock_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "잠금해제",
+    "action": "click",
+    "target": "kia_unlock_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "시동",
+    "action": "click",
+    "target": "kia_engine_start_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "공조",
+    "action": "click",
+    "target": "kia_climate_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "온도",
+    "action": "input",
+    "target": "kia_climate_temp_input",
+    "locator": "accessibility id",
+    "value": "22"
+  },
+  {
+    "contains": "horn",
+    "action": "click",
+    "target": "kia_horn_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "flash",
+    "action": "click",
+    "target": "kia_flash_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "map",
+    "action": "click",
+    "target": "kia_tab_map",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "my car",
+    "action": "click",
+    "target": "kia_tab_mycar",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "widget",
+    "action": "click",
+    "target": "kia_tab_widget",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "shortcut",
+    "action": "click",
+    "target": "kia_tab_shortcut",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "검색",
+    "action": "input",
+    "target": "kia_search_input",
+    "locator": "accessibility id",
+    "value": "kia"
+  },
+  {
+    "contains": "주소",
+    "action": "input",
+    "target": "kia_address_input",
+    "locator": "accessibility id",
+    "value": "Berlin"
+  },
+  {
+    "contains": "출발",
+    "action": "click",
+    "target": "kia_start_navigation_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "목적지",
+    "action": "click",
+    "target": "kia_destination_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "새로고침",
+    "action": "click",
+    "target": "kia_refresh_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "갱신",
+    "action": "click",
+    "target": "kia_refresh_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "알림",
+    "action": "click",
+    "target": "kia_notification_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "설정",
+    "action": "click",
+    "target": "kia_settings_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "프로필",
+    "action": "click",
+    "target": "kia_profile_button",
+    "locator": "accessibility id"
+  },
+  {
+    "contains": "정상",
+    "action": "assert_contains",
+    "target": "PAGE_SOURCE",
+    "locator": "none"
+  },
+  {
+    "contains": "표시",
+    "action": "assert_contains",
+    "target": "PAGE_SOURCE",
+    "locator": "none"
+  },
+  {
+    "contains": "노출",
+    "action": "assert_contains",
+    "target": "PAGE_SOURCE",
+    "locator": "none"
+  },
+  {
+    "contains": "확인",
+    "action": "assert_contains",
+    "target": "PAGE_SOURCE",
+    "locator": "none"
+  },
+  {
+    "contains": "wait",
+    "action": "wait",
+    "target": "",
+    "locator": "none",
+    "value": "2"
+  },
+  {
+    "contains": "대기",
+    "action": "wait",
+    "target": "",
+    "locator": "none",
+    "value": "2"
+  }
+]

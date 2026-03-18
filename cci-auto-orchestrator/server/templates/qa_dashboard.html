@@ -1,0 +1,202 @@
+﻿<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CCI QA Dashboard</title>
+  <!-- FontAwesome CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260318a" />
+</head>
+<body class="has-side-nav">
+  {% include "components/side_nav.html" %}
+  <main class="container">
+    <header class="topbar topbar-brand">
+      <div class="brand-left">
+        <div class="brand-mark" aria-hidden="true">
+          <span class="dot dot-a"></span>
+          <span class="dot dot-b"></span>
+          <span class="dot dot-c"></span>
+        </div>
+        <div>
+          <p class="eyebrow">Enterprise QA Orchestration</p>
+          <h1>QA Test Dashboard</h1>
+          <p class="meta-text">실행 요약과 시스템 상태를 QA 전용으로 확인합니다.</p>
+        </div>
+      </div>
+      <nav class="topnav">
+        <a class="navlink" href="/">개요</a>
+        <a class="navlink active" href="/qa">QA 대시보드</a>
+        <a class="navlink" href="/remote">원격 리모컨</a>
+        <a class="navlink" href="/defects">결함 상세</a>
+        <a class="navlink" href="/excel">엑셀 센터</a>
+        <a class="navlink" href="/live">라이브 모니터</a>
+        <a class="navlink" href="/#shortcutManagerSection">바로가기</a>
+        <span class="topbar-nav-sep" aria-hidden="true"></span>
+        <span id="topbarUserName" class="topbar-username" hidden></span>
+        <span id="topbarCountdown" class="topbar-countdown" hidden></span>
+        <a class="navlink btn-ghost" href="/mypage" style="white-space:nowrap;">마이페이지</a>
+        <form method="post" action="/auth/logout" style="margin:0;display:contents;">
+          <button class="navlink" type="submit" style="white-space:nowrap;">로그아웃</button>
+        </form>
+      </nav>
+    </header>
+
+    <section class="card card-guidance qa-erp-toolbar" aria-label="QA 빠른 작업">
+      <div class="qa-erp-toolbar-title">QA 작업 툴바</div>
+      <div class="button-row">
+        <button id="defectSheetRefreshBtn" type="button" class="btn-secondary">DefectList_Raw 최신화</button>
+      </div>
+      <p id="defectSheetSyncHint" class="hint">DefectList_Raw 최신화 버튼으로 시트 변경분을 즉시 반영할 수 있습니다.</p>
+    </section>
+
+    <section class="grid grid-wide" id="qaOverviewSection">
+      <article class="card card-guidance" style="grid-column: 1 / -1;">
+        <h2>QA 빠른 메뉴</h2>
+        <p class="hint">QA 메뉴를 클릭하면 상세 메뉴가 열립니다. 최근 이슈 차트와 정기배포 현황을 빠르게 확인하세요.</p>
+        <div class="button-row">
+          <a class="navlink" href="/qa#closingSummarySection">Summary</a>
+          <a class="navlink" href="/qa#regularReleaseSection">정기배포 현황</a>
+          <a class="navlink active" href="/qa#recentIssueChartSection">최근 이슈 통계 차트</a>
+          <a class="navlink" href="/admin#adminIssueTab" data-requires-admin="true">관리자 통계로 이동</a>
+          <a class="navlink" href="/remote">원격 리모컨 이동</a>
+          <a class="navlink" href="/">개요로 이동</a>
+        </div>
+      </article>
+      <article class="card card-status" style="grid-column: 1 / -1;">
+        <h2>품질 통계</h2>
+        <div id="qualityStats" class="stats-grid"></div>
+      </article>
+    </section>
+
+    <section class="grid grid-wide" id="recentIssueChartSection">
+      <article class="card card-table" style="grid-column: 1 / -1;">
+        <h2>최근 이슈 통계 차트</h2>
+        <div id="issueChart" class="chart-bars"></div>
+        <hr />
+        <h3>티켓 상태 현황</h3>
+        <div class="button-row status-filter-row" id="recentStatusToolbar">
+          <button type="button" class="btn-ghost recent-status-btn" data-status="Open">Open</button>
+          <button type="button" class="btn-ghost recent-status-btn" data-status="Resolved">Resolved</button>
+          <button type="button" class="btn-ghost recent-status-btn" data-status="In Progress">In Progress</button>
+          <button type="button" class="btn-ghost recent-status-btn" data-status="Reopened">Reopened</button>
+          <button type="button" class="btn-ghost recent-status-btn" data-status="Pending">Pending</button>
+          <span class="filter-sep">|</span>
+          <button type="button" class="btn-ghost recent-group-btn" data-group="KOA">KOA</button>
+          <button type="button" class="btn-ghost recent-group-btn" data-group="HOA">HOA</button>
+          <button type="button" class="btn-ghost recent-group-btn" data-group="GOA">GOA</button>
+        </div>
+        <p id="recentStatusHint" class="hint"></p>
+        <div class="table-wrap recent-status-wrap" style="margin-top:10px;">
+          <table id="recentStatusTable" class="recent-status-table">
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Reporter</th>
+                <th>Created</th>
+                <th>Fix Version/s</th>
+                <th>Components</th>
+                <th>Labels</th>
+                <th>Summary</th>
+              </tr>
+            </thead>
+            <tbody id="recentStatusBody"></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid" id="regularReleaseSection">
+      <article class="card card-table" style="grid-column: 1 / -1;">
+        <h2>정기배포 현황</h2>
+        <div class="button-row">
+          <button id="regularReleaseRefreshBtn" type="button" class="btn-secondary">DefectList_Raw 최신화</button>
+        </div>
+        <p id="regularReleaseSyncHint" class="hint">정기배포 현황에서 즉시 최신 데이터를 반영하려면 최신화 버튼을 눌러 주세요.</p>
+        <div id="regularReleaseSummary" class="stats-grid"></div>
+        <div class="table-wrap" style="margin-top:10px; max-height:64vh;">
+          <table class="regular-release-table" id="regularReleaseTable">
+            <thead id="regularReleaseHead"></thead>
+            <tbody id="regularReleaseBody"></tbody>
+          </table>
+        </div>
+        <p id="regularReleaseDetailHint" class="hint" style="margin-top:10px;"></p>
+        <div class="table-wrap" style="margin-top:10px;">
+          <table id="regularReleaseDetailTable" class="recent-status-table">
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Reporter</th>
+                <th>Created</th>
+                <th>Fix Version/s</th>
+                <th>Components</th>
+                <th>Labels</th>
+                <th>Summary</th>
+              </tr>
+            </thead>
+            <tbody id="regularReleaseDetailBody"></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid" id="closingSummarySection">
+      <article class="card card-table" style="grid-column: 1 / -1;">
+        <h2>Summary</h2>
+        <div id="closingSummaryTabs" class="button-row"></div>
+        <div id="closingSummaryCards" class="stats-grid" style="margin-top:10px;"></div>
+        <p id="closingSummaryHint" class="hint"></p>
+        <div class="table-wrap" style="margin-top:10px;">
+          <table id="closingSummaryTable" class="recent-status-table">
+            <thead id="closingSummaryHead"></thead>
+            <tbody id="closingSummaryBody"></tbody>
+          </table>
+        </div>
+        <div class="button-row status-filter-row" id="closingSummaryDetailToolbar" style="margin-top:10px;">
+          <button type="button" class="btn-ghost closing-status-btn" data-status="Open">Open</button>
+          <button type="button" class="btn-ghost closing-status-btn" data-status="Resolved">Resolved</button>
+          <button type="button" class="btn-ghost closing-status-btn" data-status="In Progress">In Progress</button>
+          <button type="button" class="btn-ghost closing-status-btn" data-status="Reopened">Reopened</button>
+          <button type="button" class="btn-ghost closing-status-btn" data-status="Pending">Pending</button>
+          <span class="filter-sep">|</span>
+          <button type="button" class="btn-ghost closing-group-btn" data-group="KOA">KOA</button>
+          <button type="button" class="btn-ghost closing-group-btn" data-group="HOA">HOA</button>
+          <button type="button" class="btn-ghost closing-group-btn" data-group="GOA">GOA</button>
+        </div>
+        <p id="closingSummaryDetailHint" class="hint" style="margin-top:10px;"></p>
+        <div class="table-wrap" style="margin-top:10px;">
+          <table id="closingSummaryDetailTable" class="recent-status-table">
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Reporter</th>
+                <th>Created</th>
+                <th>Fix Version/s</th>
+                <th>Components</th>
+                <th>Labels</th>
+                <th>Summary</th>
+              </tr>
+            </thead>
+            <tbody id="closingSummaryDetailBody"></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+  </main>
+  <div id="toastStack" class="toast-stack"></div>
+  <script src="/static/side_nav.js?v=20260312a"></script>
+  <script src="/static/qa_dashboard.js?v=20260313h"></script>
+</body>
+</html>
+
+
+
+
+
+

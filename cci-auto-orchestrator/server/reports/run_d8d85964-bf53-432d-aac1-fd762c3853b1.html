@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Run Report d8d85964-bf53-432d-aac1-fd762c3853b1</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 20px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
+    th { background: #f7f7f7; }
+    .ok { color: #0a7d3b; font-weight: 600; }
+    .bad { color: #b42318; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>CCI Run Report</h1>
+  <p><b>Run ID:</b> d8d85964-bf53-432d-aac1-fd762c3853b1</p>
+  <p><b>Status:</b> completed</p>
+  <p><b>Repeat:</b> 1</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Task ID</th><th>Device</th><th>TC</th><th>Iteration</th><th>Status</th><th>Issue</th><th>Screenshot</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>f65ad3b5-cf5b-448d-8eda-ca0829ca2b7c</td><td>a01</td><td>BUILTIN_SMOKE_001</td><td>1</td><td>nt</td><td>Message: 'GET /session/71af6e1b-2d76-4446-974a-c1643eabcd3f/source' cannot be proxied to UiAutomator2 server because the instrumentation process is not running (probably crashed). Check the server log and/or the logcat output for more details
+Stacktrace:
+InvalidContextError: 'GET /session/71af6e1b-2d76-4446-974a-c1643eabcd3f/source' cannot be proxied to UiAutomator2 server because the instrumentation process is not running (probably crashed). Check the server log and/or the logcat output for more details
+    at UIA2Proxy.proxyCommand (C:\Users\poliot\.appium\node_modules\appium-uiautomator2-driver\lib\uiautomator2.ts:47:13)
+    at UIA2Proxy.proxyReqRes (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\node_modules\@appium\base-driver\lib\jsonwp-proxy\proxy.js:399:43)
+    at runCommandPromise (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\node_modules\@appium\base-driver\lib\basedriver\driver.ts:116:20)
+    at C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\node_modules\async-lock\lib\index.js:171:12
+    at AsyncLock._promiseTry (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\node_modules\async-lock\lib\index.js:306:31)
+    at exec (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\node_modules\async-lock\lib\index.js:170:9)
+    at AsyncLock.acquire (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\node_modules\async-lock\lib\index.js:189:3)
+    at AndroidUiautomator2Driver.executeCommand (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\node_modules\@appium\base-driver\lib\basedriver\driver.ts:160:39)
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at defaultBehavior (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\lib\appium.js:730:14)
+    at AppiumDriver.executeWrappedCommand (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\lib\appium.js:843:16)
+    at AppiumDriver.executeCommand (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\lib\appium.js:742:17)
+    at doJwpProxy (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\node_modules\@appium\base-driver\lib\protocol\protocol.ts:559:5)
+    at asyncHandler (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\node_modules\@appium\base-driver\lib\protocol\protocol.ts:346:11) | screenshot_error=Message: 'GET /screenshot' cannot be proxied to UiAutomator2 server because the instrumentation process is not running (probably crashed). Check the server log and/or the logcat output for more details
+Stacktrace:
+UnknownError: 'GET /screenshot' cannot be proxied to UiAutomator2 server because the instrumentation process is not running (probably crashed). Check the server log and/or the logcat output for more details
+    at UIA2Proxy.command (C:\Users\poliot\AppData\Roaming\npm\node_modules\appium\node_modules\@appium\base-driver\lib\jsonwp-proxy\proxy.js:332:13)
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at AndroidUiautomator2Driver.getScreenshot (C:\Users\poliot\.appium\node_modules\appium-uiautomator2-driver\lib\commands\screenshot.ts:82:17)</td><td>-</td></tr><tr><td>3fe5fa1b-7187-4e35-9c64-b080adff7af1</td><td>a01</td><td>BUILTIN_SMOKE_002</td><td>1</td><td>passed</td><td>-</td><td>-</td></tr>
+    </tbody>
+  </table>
+</body>
+</html>
