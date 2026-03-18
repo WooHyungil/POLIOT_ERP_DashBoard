@@ -1,4 +1,49 @@
-﻿.venv/
+﻿# Python
+.venv/
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Runtime & Temporary Files
+runtime/
+*.log
+*.pid
+*.sock
+
+# Sensitive Information
+*.txt
+cookies*.txt
+admin_cookies.txt
+user_cookies.txt
+
+# Database & Data Files (auto-generated)
+server/db/
+server/artifacts/
+server/exports/
+server/reports/
+server/uploads/
+
+# OS
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Environment
+.env
+.env.local
+*.env
+
+# Editor backups
+*.bak
 

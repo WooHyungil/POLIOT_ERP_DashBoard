@@ -1,12 +1,85 @@
 # CCI 자동화 UI 테스트 오케스트레이터 (Windows MVP)
 
 이 프로젝트는 다음을 제공합니다.
-- 중앙 서버 + 대시보드
-- 엑셀 테스트케이스 업로드(비동기) + AI 변환
+- 중앙 서버 + 대시보드 UI
+- 엑셀 테스트케이스 업로드(비동기) + AI 기반 변환
 - Android/iOS 단말 에이전트 병렬 실행
 - 실행 횟수 설정, 원클릭 시작
-- 실패 이슈 자동 수집/리포트
+- 실패 이슈 자동 수집/리포트 생성
 - 단말 이름 설정 및 상태 모니터링
+- 공개 터널 (ngrok ↔ serveo 자동 폴백)
+
+---
+
+## 📁 프로젝트 구조
+
+```
+cci-auto-orchestrator/
+├── config/                 # ⚙️ 설정 파일
+│   ├── core/              # 핵심 설정 (사용자, 회사, 직원)
+│   ├── devices/           # 기기 설정 및 정보
+│   ├── samples/           # 테스트 샘플 데이터
+│   └── README.md          # 설정 파일 가이드
+│
+├── scripts/               # 🔧 실행 스크립트
+│   ├── tunnel/           # 공개 터널 관리
+│   ├── server/           # 로컬 서버 관리
+│   ├── management/       # 기기 및 시스템 관리
+│   ├── archive/          # 레거시 스크립트
+│   └── README.md         # 스크립트 가이드
+│
+├── server/               # 🖥️ FastAPI 웹 서버
+│   ├── app/              # 핵심 애플리케이션 (main.py, models.py 등)
+│   ├── static/           # 정적 파일 (CSS, JS)
+│   ├── templates/        # HTML 템플릿 (대시보드)
+│   ├── db/               # 데이터베이스 (자동 생성)
+│   ├── artifacts/        # 생성된 파일들 (자동 생성)
+│   ├── exports/          # 내보내기 파일 (자동 생성)
+│   ├── reports/          # 테스트 리포트 (자동 생성)
+│   └── uploads/          # 업로드 파일 (자동 생성)
+│
+├── runtime/              # 🔄 런타임 상태 파일 (자동 생성)
+│   ├── *.log             # 실행 로그
+│   ├── public_url.txt    # 현재 공개 URL
+│   └── *.json            # 상태 정보
+│
+├── agent/                # 🤖 자동화 에이전트
+│   └── device_agent.py  # 기기 제어 에이전트
+│
+├── tools/                # 🛠️ 유틸리티
+│   └── smoke_rbac_test.py # RBAC 테스트
+│
+├── .vscode/              # VS Code 설정
+│   └── tasks.json        # 자동화 작업
+│
+├── .venv/                # Python 가상 환경
+│
+└── START_PUBLIC_URL.bat   # 🚀 공개 URL 시작 (권장)
+```
+
+---
+
+## 🚀 빠른 시작
+
+### 가장 간단한 방법
+```bash
+# 1. 더블클릭으로 실행
+START_PUBLIC_URL.bat
+```
+
+### 수동 제어
+```powershell
+# 1. 공개 터널만 시작
+.\scripts\tunnel\start_public_tunnel.ps1
+
+# 2. 공개 URL 확인
+.\scripts\tunnel\get_public_tunnel_url.ps1
+
+# 3. 서버 헬스 체크
+.\scripts\server\smoke_server_check.ps1
+```
+
+---
 
 ## 1. 사전 준비
 - Python 3.10+
@@ -16,37 +89,19 @@
   - Android: `appium driver install uiautomator2`
   - iOS: `appium driver install xcuitest`
 
-## 2. 서버 실행 (노트북에서 1회)
-```powershell
-cd "c:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\cci-auto-orchestrator"
-.\scripts\start_server.ps1
+## 2. 서버 실행
+
+### 방법 1: 자동 시작 (권장)
+```bash
+START_PUBLIC_URL.bat 더블클릭
 ```
-또는
-```bat
-.\scripts\run_all.bat
-```
+→ 자동으로 터널 + 서버 시작
 
-가장 쉬운 실행(더블클릭):
-- `START_CCI_AUTOMATION.bat` 더블클릭
-- 실행 시 `adb`로 연결된 Android 단말을 자동 감지해서 `config/devices.json`을 갱신하고 Appium + Agent까지 자동 실행
-- 실행 로그에 `LAN Share URL`이 표시되며, 같은 네트워크의 다른 PC에서 해당 주소로 접속 가능
-
-프로젝트 폴더 바깥에서 실행:
-- `c:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\바로실행_CCI_자동화.bat` 더블클릭
-
-다른 사람에게 링크 공유:
-- 같은 사내망/와이파이에서 `LAN Share URL`(예: `http://192.168.0.21:8000`) 전달
-- 접속이 안 되면 Windows 방화벽에서 인바운드 TCP `8000` 허용 필요
-- 외부 인터넷(망 밖) 공유는 별도 터널(Cloudflare Tunnel/Ngrok) 구성이 필요
-- 개요(`/`)의 `공유 접속` 카드에서 `LAN/Local/Public` 주소를 각각 복사 가능
-- 개요(`/`)의 `공유 실행 명령 복사` 버튼으로 `--host 0.0.0.0` 실행 명령을 바로 공유 가능
-
-메뉴 진입 문제(예: `/qa`, `/remote`, `/defects` 404) 해결:
-- 구버전 서버 프로세스가 포트를 점유한 경우 발생할 수 있음
-- `scripts/start_server.ps1`는 실행 전 해당 포트 리스너를 자동 종료하도록 개선됨
-- 증상 지속 시 `openapi.json`에서 `/qa`, `/remote`, `/defects` 경로 존재 여부를 먼저 확인
-
-대시보드: `http://127.0.0.1:8000`
+### 방법 2: VS Code 작업 사용
+1. Ctrl+Shift+P → "Tasks: Run Task" 선택
+2. 다음 중 선택:
+   - "Smoke Check (Server + Public URL)" - 서버 + 공개 URL 확인
+   - "Start Public URL (Auto Fallback)" - 공개 터널 시작
 
 ## 화면 구성 (분리 운영)
 - `http://127.0.0.1:8000/` : 개요 (단말/이슈/요약)

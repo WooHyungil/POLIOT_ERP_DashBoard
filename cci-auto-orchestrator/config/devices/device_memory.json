@@ -1,0 +1,18 @@
+{
+  "android:R3CN408N2RF": {
+    "platform": "android",
+    "udid": "R3CN408N2RF",
+    "device_id": "adb_r3cn408n",
+    "name": "SM_G986N",
+    "updated_at": "2026-03-17T03:41:23",
+    "created_at": "2026-03-11T07:02:41"
+  },
+  "android:R3CY203W1JY": {
+    "platform": "android",
+    "udid": "R3CY203W1JY",
+    "device_id": "adb_r3cy203w",
+    "name": "SM_F741N",
+    "updated_at": "2026-03-18T02:26:06",
+    "created_at": "2026-03-11T07:02:41"
+  }
+}

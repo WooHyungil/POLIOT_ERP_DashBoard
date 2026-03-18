@@ -4,51 +4,8 @@
     "password_hash": "c5300f388b20bc1edb9d20108553775d71f3b314a578f969885bd50d48e7a396",
     "role": "admin",
     "name": "hiss0723",
-    "created_at": "2026-03-16T10:49:26",
-    "shortcut_items": [
-      {
-        "id": "fixed-defectlist",
-        "name": "[EU]_DefectList",
-        "url": "https://docs.google.com/spreadsheets/d/1vEiIZM--JUzh7WYX8DLTqi8dysplrOY7n20nNT18eL8/edit?gid=407769955#gid=407769955",
-        "fixed": true
-      },
-      {
-        "id": "fixed-fulltc",
-        "name": "[EU]_Full_TC",
-        "url": "https://docs.google.com/spreadsheets/d/1UP6ruF4DlPwzNgVuEastRcxoky1SihNlsqIWMTIkQuI/edit?gid=529386068#gid=529386068&fvid=1436018023",
-        "fixed": true
-      },
-      {
-        "id": "fixed-sanity-check",
-        "name": "[EU]_Sanity/Check",
-        "url": "https://docs.google.com/spreadsheets/d/11bv1DKhFLLIHXiq3JChsJrqoyU4BBats53-fVoteVxw/edit?gid=1196102142#gid=1196102142",
-        "fixed": true
-      },
-      {
-        "id": "fixed-spec-sheet",
-        "name": "[EU]_사양시트",
-        "url": "https://docs.google.com/spreadsheets/d/1ldoiVk1mc3dwpFhK4zh0aV15YFtFyCYSmFr9A8Tp35s/edit?gid=636517542#gid=636517542",
-        "fixed": true
-      },
-      {
-        "id": "fixed-asset-manage",
-        "name": "[EU]_단말관리",
-        "url": "https://docs.google.com/spreadsheets/d/1anqfp6zx7PJrsUmvhqhiuvK4ptwCXX_Ilnl89WccfBI/edit?gid=301763855#gid=301763855",
-        "fixed": true
-      },
-      {
-        "id": "fixed-schedule",
-        "name": "[EU]_일정관리",
-        "url": "https://docs.google.com/spreadsheets/d/1QNRyS2gj4_QEigFiQGVaytGaISJjDF3e0N5C4Jf-v7k/edit?gid=0#gid=0",
-        "fixed": true
-      },
-      {
-        "id": "fixed-account",
-        "name": "[EU]_계정관리",
-        "url": "https://docs.google.com/spreadsheets/d/16jL3vexlJx0hav91Z603QGd-dJ34UjNpfapHASmoV3o/edit?gid=1838534105#gid=1838534105",
-        "fixed": true
-      }
-    ],
+    "created_at": "2026-03-18T14:33:05",
+    "shortcut_items": [],
     "shortcut_windows": []
   },
   {
@@ -56,72 +13,8 @@
     "password_hash": "85904d5b46f68756643d6a5babac45e698638b6758cddac5b2b17c72a9c2444c",
     "role": "admin",
     "name": "sue",
-    "created_at": "2026-03-16T10:49:26",
-    "shortcut_items": [
-      {
-        "id": "fixed-defectlist",
-        "name": "DefectList",
-        "url": "/qa#recentIssueChartSection",
-        "fixed": true
-      },
-      {
-        "id": "fixed-fulltc",
-        "name": "Full_TC",
-        "url": "/defects",
-        "fixed": true
-      },
-      {
-        "id": "fixed-sanity-check",
-        "name": "Sanity-Check",
-        "url": "/live",
-        "fixed": true
-      },
-      {
-        "id": "fixed-spec-sheet",
-        "name": "사양시트",
-        "url": "/excel",
-        "fixed": true
-      },
-      {
-        "id": "fixed-asset-manage",
-        "name": "자산관리",
-        "url": "/manage#manageDeviceTab",
-        "fixed": true
-      },
-      {
-        "id": "fixed-schedule",
-        "name": "일정관리",
-        "url": "https://calendar.google.com/",
-        "fixed": true
-      },
-      {
-        "id": "fixed-account",
-        "name": "계정관리",
-        "url": "https://accounts.google.com/",
-        "fixed": true
-      },
-      {
-        "id": "custom-x1",
-        "name": "MyLink",
-        "url": "https://example.com",
-        "fixed": false
-      }
-    ],
-    "shortcut_windows": [
-      {
-        "id": "custom-x1",
-        "left": "",
-        "top": "",
-        "width": "400",
-        "height": "300",
-        "is_minimized": false,
-        "is_maximized": false,
-        "is_snapped_left": false,
-        "is_snapped_right": false
-      }
-    ],
-    "approved": true,
-    "can_login": true,
-    "approved_at": "2026-03-17T00:04:58"
+    "created_at": "2026-03-18T14:33:05",
+    "shortcut_items": [],
+    "shortcut_windows": []
   }
 ]

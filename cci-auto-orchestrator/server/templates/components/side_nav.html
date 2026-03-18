@@ -1,72 +1,111 @@
 <aside class="side-nav" id="sideNav" aria-label="주요 메뉴">
-	<button id="sideNavToggle" class="side-nav-toggle" type="button" aria-expanded="false">MENU</button>
+	<button id="sideNavToggle" class="side-nav-toggle" type="button" aria-expanded="false">☰ MENU</button>
 
+	<!-- 사용자 고정 메뉴 (상단) -->
 	<div class="side-nav-fixed-top">
 		<a class="side-nav-link" data-path="/mypage" href="/mypage" title="마이페이지">
-			<span class="side-nav-icon">MY</span>
+			<span class="side-nav-icon">👤</span>
 			<span class="side-nav-text">마이페이지</span>
 		</a>
 		<form method="post" action="/auth/logout" style="margin:0;">
 			<button class="side-nav-link" type="submit" title="로그아웃" style="width:100%;">
-				<span class="side-nav-icon">LO</span>
+				<span class="side-nav-icon">🚪</span>
 				<span class="side-nav-text">로그아웃</span>
 			</button>
 		</form>
 	</div>
 
+	<!-- 주 메뉴 -->
 	<nav class="side-nav-menu">
-		<a class="side-nav-link" data-path="/" href="/" title="개요">
-			<span class="side-nav-icon">OV</span>
+		<!-- 개요 -->
+		<a class="side-nav-link" data-path="/" href="/" title="대시보드 개요">
+			<span class="side-nav-icon">🏠</span>
 			<span class="side-nav-text">개요</span>
 		</a>
 
-		<button class="side-nav-link side-nav-parent" type="button" data-path="/qa" data-submenu-target="qaSubmenu" title="QA 대시보드">
-			<span class="side-nav-icon">QA</span>
+		<!-- 섹션: 테스트 (🧪) -->
+		<div class="side-nav-section-label">🧪 테스트</div>
+
+		<button class="side-nav-link side-nav-parent" type="button" data-path="/qa" data-submenu-target="qaSubmenu" title="QA 테스트 관리">
+			<span class="side-nav-icon">📊</span>
 			<span class="side-nav-text">QA 대시보드</span>
-			<span class="side-nav-caret">&gt;</span>
+			<span class="side-nav-caret">▼</span>
 		</button>
 		<div class="side-nav-submenu" id="qaSubmenu">
-			<a class="side-nav-sublink" data-path="/qa" data-hash="#closingSummarySection" href="/qa#closingSummarySection">1. Summary</a>
-			<a class="side-nav-sublink" data-path="/qa" data-hash="#recentIssueChartSection" href="/qa#recentIssueChartSection">2. 최근이슈통계차트</a>
-			<a class="side-nav-sublink" data-path="/qa" data-hash="#regularReleaseSection" href="/qa#regularReleaseSection">3. 정기배포현황</a>
+			<a class="side-nav-sublink" data-path="/qa" data-hash="#closingSummarySection" href="/qa#closingSummarySection">📈 Summary</a>
+			<a class="side-nav-sublink" data-path="/qa" data-hash="#recentIssueChartSection" href="/qa#recentIssueChartSection">📉 최근이슈통계</a>
+			<a class="side-nav-sublink" data-path="/qa" data-hash="#regularReleaseSection" href="/qa#regularReleaseSection">🚀 정기배포현황</a>
 		</div>
 
-		<a class="side-nav-link" data-path="/remote" href="/remote" title="원격 리모컨">
-			<span class="side-nav-icon">RC</span>
-			<span class="side-nav-text">원격 리모컨</span>
+		<a class="side-nav-link" data-path="/defects" href="/defects" title="결함 및 이슈">
+			<span class="side-nav-icon">🐞</span>
+			<span class="side-nav-text">결함 목록</span>
 		</a>
 
-		<button class="side-nav-link side-nav-parent" type="button" data-path="/manage" data-submenu-target="manageSubmenu" title="관리">
-			<span class="side-nav-icon">MG</span>
-			<span class="side-nav-text">관리</span>
-			<span class="side-nav-caret">&gt;</span>
+		<a class="side-nav-link" data-path="/excel" href="/excel" title="엑셀 파일 업로드">
+			<span class="side-nav-icon">📥</span>
+			<span class="side-nav-text">엑셀 업로드</span>
+		</a>
+
+		<!-- 섹션: 원격 제어 (📱) -->
+		<div class="side-nav-section-label">📱 원격 제어</div>
+
+		<a class="side-nav-link" data-path="/remote" href="/remote" title="원격 제어 패널">
+			<span class="side-nav-icon">🎮</span>
+			<span class="side-nav-text">제어 패널</span>
+		</a>
+
+		<a class="side-nav-link" data-path="/monitor" href="/monitor" title="라이브 모니터링">
+			<span class="side-nav-icon">👁️</span>
+			<span class="side-nav-text">모니터링</span>
+		</a>
+
+		<!-- 섹션: 분석 (📊) -->
+		<div class="side-nav-section-label">📊 분석</div>
+
+		<a class="side-nav-link" data-path="/dashboard" href="/dashboard" title="시각화 대시보드">
+			<span class="side-nav-icon">📈</span>
+			<span class="side-nav-text">대시보드</span>
+		</a>
+
+		<!-- 섹션: 관리 (⚙️) -->
+		<div class="side-nav-section-label">⚙️ 관리</div>
+
+		<button class="side-nav-link side-nav-parent" type="button" data-path="/manage" data-submenu-target="manageSubmenu" title="시스템 관리">
+			<span class="side-nav-icon">🔧</span>
+			<span class="side-nav-text">시스템</span>
+			<span class="side-nav-caret">▼</span>
 		</button>
 		<div class="side-nav-submenu" id="manageSubmenu">
-			<a class="side-nav-sublink" data-path="/manage" data-hash="#manageScheduleTab" href="/manage#manageScheduleTab">1. 일정관리</a>
-			<a class="side-nav-sublink" data-path="/manage" data-hash="#manageDeviceTab" href="/manage#manageDeviceTab">2. 단말관리</a>
+			<a class="side-nav-sublink" data-path="/manage" data-hash="#manageScheduleTab" href="/manage#manageScheduleTab">📅 일정관리</a>
+			<a class="side-nav-sublink" data-path="/manage" data-hash="#manageDeviceTab" href="/manage#manageDeviceTab">📱 단말관리</a>
 		</div>
 
-		<button class="side-nav-link side-nav-parent" type="button" data-path="/admin" data-submenu-target="adminSubmenu" data-requires-admin="true" title="관리자">
-			<span class="side-nav-icon">AD</span>
+		<button class="side-nav-link side-nav-parent" type="button" data-path="/admin" data-submenu-target="adminSubmenu" data-requires-admin="true" title="관리자 기능">
+			<span class="side-nav-icon">🛡️</span>
 			<span class="side-nav-text">관리자</span>
-			<span class="side-nav-caret">&gt;</span>
+			<span class="side-nav-caret">▼</span>
 		</button>
 		<div class="side-nav-submenu" id="adminSubmenu" data-requires-admin="true">
-			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminPeopleTab" href="/admin#adminPeopleTab" data-requires-admin="true">1. 인원관리</a>
-			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminIssueTab" href="/admin#adminIssueTab" data-requires-admin="true">2. 인원별이슈통계</a>
+			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminPeopleTab" href="/admin#adminPeopleTab" data-requires-admin="true">👥 인원관리</a>
+			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminIssueTab" href="/admin#adminIssueTab" data-requires-admin="true">📊 통계</a>
 		</div>
-
-		<a class="side-nav-link" data-path="/defects" href="/defects" title="결함 상세">
-			<span class="side-nav-icon">DF</span>
-			<span class="side-nav-text">결함 상세</span>
-		</a>
-		<a class="side-nav-link" data-path="/excel" href="/excel" title="엑셀 센터">
-			<span class="side-nav-icon">XL</span>
-			<span class="side-nav-text">엑셀 센터</span>
-		</a>
-		<a class="side-nav-link" data-path="/live" href="/live" title="라이브 모니터">
-			<span class="side-nav-icon">LV</span>
-			<span class="side-nav-text">라이브 모니터</span>
-		</a>
 	</nav>
+
+	<!-- CSS 스타일 추가 -->
+	<style>
+		.side-nav-section-label {
+			padding: 12px 16px 8px;
+			font-size: 12px;
+			font-weight: 600;
+			color: #666;
+			text-transform: uppercase;
+			border-top: 1px solid #e0e0e0;
+			margin-top: 8px;
+		}
+
+		.side-nav-caret::before {
+			content: '';
+		}
+	</style>
 </aside>
