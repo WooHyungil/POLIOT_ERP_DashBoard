@@ -11,6 +11,9 @@ let lastMemberStats = [];
 let memberSearchRows = [];
 let currentRecentStatus = "Open";
 let currentRecentGroups = [];
+let currentRecentRegions = [];
+let currentRecentStartDate = "";
+let currentRecentEndDate = "";
 let currentRegularReleaseData = null;
 let currentClosingCycle = "";
 let currentClosingDetailFilter = { cycle: "", phase: "", group: "", severity: "" };
@@ -636,7 +639,7 @@ async function refreshDefectSheetNow(opts) {
   }
 }
 
-function renderRecentStatusRows(data, status, groups) {
+function renderRecentStatusRows(data, status, groups, regions, startDate, endDate) {
   const hint = document.getElementById("recentStatusHint");
   const body = document.getElementById("recentStatusBody");
   if (!hint || !body) return;
@@ -647,10 +650,14 @@ function renderRecentStatusRows(data, status, groups) {
   };
 
   const rows = Array.isArray(data?.rows) ? data.rows : [];
-  hint.innerText = `상태: ${status} | 총 ${Number(data?.count || 0)}건`;
+  const groupLabel = Array.isArray(groups) && groups.length ? groups.join(",") : "전체";
+  const regionLabel = Array.isArray(regions) && regions.length ? regions.join(",") : "전체";
+  const startLabel = String(startDate || "").trim() || "전체";
+  const endLabel = String(endDate || "").trim() || "전체";
+  hint.innerText = `상태: ${status} | 그룹: ${groupLabel} | 지역: ${regionLabel} | 기간: ${startLabel} ~ ${endLabel} | 총 ${Number(data?.count || 0)}건`;
 
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="7" class="hint">조회 결과가 없습니다.</td></tr>';
+    body.innerHTML = '<tr><td colspan="12" class="hint">조회 결과가 없습니다.</td></tr>';
     return;
   }
 
@@ -658,13 +665,16 @@ function renderRecentStatusRows(data, status, groups) {
     <tr>
       <td>${esc(cellText(r.key))}</td>
       <td>${esc(cellText(r.status))}</td>
+      <td>${esc(cellText(r.resolution))}</td>
       <td>${esc(cellText(r.priority))}</td>
       <td>${esc(cellText(r.reporter))}</td>
-      <td>${esc(cellText(r.created))}</td>
-      <td>${esc(cellText(r.fix_versions))}</td>
+      <td>${esc(cellText(r.region))}</td>
+      <td>${esc(cellText(r.os))}</td>
       <td>${esc(cellText(r.components))}</td>
-      <td>${esc(cellText(r.labels))}</td>
+      <td>${esc(cellText(r.assignee))}</td>
       <td>${esc(cellText(r.summary))}</td>
+      <td>${esc(cellText(r.affects_versions))}</td>
+      <td>${esc(cellText(r.brand))}</td>
     </tr>
   `).join("");
 }
@@ -688,14 +698,50 @@ function setRecentGroupActive(groups) {
   }
 }
 
-async function refreshRecentStatusIssues(status, groups, force) {
+function extractRegionsFromData(rows) {
+  const regions = new Set();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const region = String(r?.region || "").trim().toUpperCase();
+    if (region) regions.add(region);
+  }
+  return Array.from(regions).sort();
+}
+
+function renderRecentRegionButtons(data) {
+  const container = document.getElementById("regionFilterContainer");
+  if (!container) return;
+  const rows = Array.isArray(data?.rows) ? data.rows : [];
+  const regions = extractRegionsFromData(rows);
+  const regionSet = new Set((currentRecentRegions || []).map((r) => String(r).toUpperCase()));
+  container.innerHTML = regions.map((region) => {
+    const isActive = regionSet.has(region);
+    return `<button type="button" class="btn-ghost recent-region-btn ${isActive ? "active" : ""}" data-region="${esc(region)}">${esc(region)}</button>`;
+  }).join("");
+}
+
+function setRecentRegionActive(regions) {
+  const set = new Set((Array.isArray(regions) ? regions : []).map((r) => String(r).toUpperCase()));
+  const buttons = Array.from(document.querySelectorAll(".recent-region-btn"));
+  for (const btn of buttons) {
+    if (!(btn instanceof HTMLButtonElement)) continue;
+    const region = String(btn.dataset.region || "").toUpperCase();
+    btn.classList.toggle("active", !!region && set.has(region));
+  }
+}
+async function refreshRecentStatusIssues(status, groups, force, regions, startDate, endDate) {
   const target = String(status || "").trim();
   if (!target) return;
   const groupList = Array.isArray(groups) ? groups.map(normalizeGroupText).filter(Boolean) : [];
+  const regionList = Array.isArray(regions) ? regions.map((r) => String(r).toUpperCase()).filter(Boolean) : [];
+  const startDateStr = String(startDate || "").trim();
+  const endDateStr = String(endDate || "").trim();
   let data;
   try {
     const qs = new URLSearchParams({ status: target });
     if (groupList.length) qs.set("groups", groupList.join(","));
+    if (regionList.length) qs.set("regions", regionList.join(","));
+    if (startDateStr) qs.set("start_date", startDateStr);
+    if (endDateStr) qs.set("end_date", endDateStr);
     if (force) qs.set("force", "true");
     const res = await fetch(`/api/stats/company-defects/by-status?${qs.toString()}`);
     if (!res.ok) {
@@ -715,15 +761,21 @@ async function refreshRecentStatusIssues(status, groups, force) {
     );
     const wanted = normalizeStatusText(target);
     const groupSet = new Set(groupList);
+    const regionSet = new Set(regionList);
     const rows = [];
     for (const part of details) {
       for (const row of Array.isArray(part?.rows) ? part.rows : []) {
         if (normalizeStatusText(row?.status) !== wanted) continue;
         const region = String(row?.region ?? "").toUpperCase();
-        if (!region.includes("EU")) continue;
+        if (regionSet.size && !regionSet.has(region)) continue;
         if (groupSet.size) {
           const brand = normalizeGroupText(row?.brand);
           if (!brand || !Array.from(groupSet).some((g) => brand.includes(g))) continue;
+        }
+        if (startDateStr || endDateStr) {
+          const created = String(row?.created || "").slice(0, 10);
+          if (startDateStr && created < startDateStr) continue;
+          if (endDateStr && created > endDateStr) continue;
         }
         rows.push(row);
       }
@@ -738,9 +790,14 @@ async function refreshRecentStatusIssues(status, groups, force) {
   }
   currentRecentStatus = target;
   currentRecentGroups = groupList;
+  currentRecentRegions = regionList;
+  currentRecentStartDate = startDateStr;
+  currentRecentEndDate = endDateStr;
   setRecentStatusActive(target);
   setRecentGroupActive(groupList);
-  renderRecentStatusRows(data, target, groupList);
+  setRecentRegionActive(regionList);
+  renderRecentRegionButtons(data);
+  renderRecentStatusRows(data, target, groupList, regionList, startDateStr, endDateStr);
 }
 
 async function refreshMemberStats(force) {
@@ -978,11 +1035,14 @@ function renderRegularReleaseDetails(data) {
       <td>${esc(cellText(r.status))}</td>
       <td>${esc(cellText(r.priority))}</td>
       <td>${esc(cellText(r.reporter))}</td>
+      <td>${esc(cellText(r.assignee))}</td>
+      <td>${esc(cellText(r.components))}</td>
       <td>${esc(cellText(r.created))}</td>
       <td>${esc(cellText(r.fix_versions))}</td>
-      <td>${esc(cellText(r.components))}</td>
-      <td>${esc(cellText(r.labels))}</td>
       <td>${esc(cellText(r.summary))}</td>
+      <td>${esc(cellText(r.affects_versions))}</td>
+      <td>${esc(cellText(r.labels))}</td>
+      <td>${esc(cellText(r.region))}</td>
     </tr>
   `).join("");
 }
@@ -1228,7 +1288,7 @@ document.getElementById("recentStatusToolbar")?.addEventListener("click", functi
   if (statusBtn instanceof HTMLButtonElement) {
     const status = String(statusBtn.dataset.status || "").trim();
     if (!status) return;
-    refreshRecentStatusIssues(status, currentRecentGroups, false).catch((e) => toast(`상태 조회 실패: ${String(e)}`, "error"));
+    refreshRecentStatusIssues(status, currentRecentGroups, false, currentRecentRegions, currentRecentStartDate, currentRecentEndDate).catch((e) => toast(`상태 조회 실패: ${String(e)}`, "error"));
     return;
   }
 
@@ -1240,7 +1300,19 @@ document.getElementById("recentStatusToolbar")?.addEventListener("click", functi
     if (set.has(group)) set.delete(group);
     else set.add(group);
     const nextGroups = Array.from(set);
-    refreshRecentStatusIssues(currentRecentStatus || "Open", nextGroups, false).catch((e) => toast(`상태 조회 실패: ${String(e)}`, "error"));
+    refreshRecentStatusIssues(currentRecentStatus || "Open", nextGroups, false, currentRecentRegions, currentRecentStartDate, currentRecentEndDate).catch((e) => toast(`상태 조회 실패: ${String(e)}`, "error"));
+    return;
+  }
+
+  const regionBtn = el.closest(".recent-region-btn");
+  if (regionBtn instanceof HTMLButtonElement) {
+    const region = String(regionBtn.dataset.region || "").toUpperCase();
+    if (!region) return;
+    const set = new Set((currentRecentRegions || []).map((r) => String(r).toUpperCase()));
+    if (set.has(region)) set.delete(region);
+    else set.add(region);
+    const nextRegions = Array.from(set);
+    refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups, false, nextRegions, currentRecentStartDate, currentRecentEndDate).catch((e) => toast(`지역 조회 실패: ${String(e)}`, "error"));
   }
 });
 
@@ -1254,7 +1326,7 @@ async function bootstrapQaDashboard() {
   if (qaIsAdmin) {
     refreshIssueStats(false).catch((e) => toast(`최근 이슈 통계 조회 실패: ${String(e)}`, "error"));
   }
-  refreshRecentStatusIssues("Open", [], false).catch((e) => toast(`상태 조회 실패: ${String(e)}`, "error"));
+  refreshRecentStatusIssues("Open", [], false, [], "", "").catch((e) => toast(`상태 조회 실패: ${String(e)}`, "error"));
   refreshRegularRelease(false).catch((e) => toast(`정기배포 조회 실패: ${String(e)}`, "error"));
   refreshClosingSummary(false, "").catch((e) => toast(`마감 통계 조회 실패: ${String(e)}`, "error"));
   refreshClosingSummaryDetails(false, { cycle: "", phase: "", group: "", severity: "" }).catch((e) => toast(`Summary 상세 조회 실패: ${String(e)}`, "error"));
@@ -1266,7 +1338,7 @@ async function bootstrapQaDashboard() {
     }, 15000);
   }
   setInterval(function () {
-    refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], false).catch(function () {});
+    refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], false, currentRecentRegions || [], currentRecentStartDate || "", currentRecentEndDate || "").catch(function () {});
   }, 20000);
   setInterval(function () {
     refreshRegularRelease(false).catch(function () {});
@@ -1280,3 +1352,243 @@ async function bootstrapQaDashboard() {
 }
 
 bootstrapQaDashboard().catch((e) => toast(`초기화 실패: ${String(e)}`, "error"));
+
+document.getElementById("recentStartDate")?.addEventListener("change", function () {
+  const startDate = this.value || "";
+  currentRecentStartDate = startDate;
+  refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], false, currentRecentRegions || [], currentRecentStartDate, currentRecentEndDate).catch((e) => toast(`날짜 조회 실패: ${String(e)}`, "error"));
+});
+
+document.getElementById("recentEndDate")?.addEventListener("change", function () {
+  const endDate = this.value || "";
+  currentRecentEndDate = endDate;
+  refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], false, currentRecentRegions || [], currentRecentStartDate, currentRecentEndDate).catch((e) => toast(`날짜 조회 실패: ${String(e)}`, "error"));
+});
+// ===== 공용 테이블 컬럼 필터 시스템 =====
+// recentStatusTable, regularReleaseDetailTable, closingSummaryDetailTable 에 적용
+
+const _qaFilterState = {}; // { tableId: { colIdx: { mode, values:[] } } }
+let _qaFilterPopup = null;
+let _qaFilterMeta = null; // { tableEl, colIdx, allTokens }
+
+function _qaCloseFilter() {
+  if (_qaFilterPopup && _qaFilterPopup.parentNode) {
+    _qaFilterPopup.parentNode.removeChild(_qaFilterPopup);
+  }
+  _qaFilterPopup = null;
+  _qaFilterMeta = null;
+}
+
+function _qaColUniques(tableEl, colIdx) {
+  const vals = new Set();
+  for (const tr of tableEl.querySelectorAll("tbody tr")) {
+    const text = (tr.cells[colIdx]?.textContent || "").trim() || "-";
+    vals.add(text);
+  }
+  return Array.from(vals).sort((a, b) => a.localeCompare(b, "ko"));
+}
+
+function _qaApplyFilter(tableEl) {
+  if (!tableEl) return;
+  const id = tableEl.id;
+  const state = _qaFilterState[id] || {};
+  for (const tr of tableEl.querySelectorAll("tbody tr")) {
+    let show = true;
+    for (const [colIdxStr, cfg] of Object.entries(state)) {
+      if (!cfg || !cfg.values || !cfg.values.length) continue;
+      const colIdx = Number(colIdxStr);
+      const cellText = (tr.cells[colIdx]?.textContent || "").trim() || "-";
+      const token = encodeURIComponent(cellText);
+      const inVals = cfg.values.includes(token);
+      if (cfg.mode === "include" && !inVals) { show = false; break; }
+      if (cfg.mode === "exclude" && inVals) { show = false; break; }
+    }
+    tr.style.display = show ? "" : "none";
+  }
+  // 필터 버튼 is-active 상태 갱신
+  for (const btn of tableEl.querySelectorAll("thead .qa-col-filter-btn")) {
+    const idx = String(btn.dataset.colidx || "");
+    const cfg = (_qaFilterState[id] || {})[idx];
+    const active = Boolean(cfg && cfg.values && cfg.values.length);
+    btn.classList.toggle("is-active", active);
+  }
+}
+
+function _qaOpenFilter(tableEl, colIdx, event) {
+  event.stopPropagation();
+  _qaCloseFilter();
+
+  const id = tableEl.id;
+  const cfg = (_qaFilterState[id] || {})[String(colIdx)] || { mode: "include", values: [] };
+  const uniques = _qaColUniques(tableEl, colIdx);
+  const allTokens = uniques.map((v) => encodeURIComponent(v));
+  const selectedSet = new Set(cfg.values || []);
+  const currentMode = cfg.mode || "include";
+
+  const popup = document.createElement("div");
+  popup.className = "filter-popup";
+  popup.style.cssText = "position:fixed;z-index:9999;display:block;min-width:230px;max-width:280px;";
+
+  popup.innerHTML = `
+    <div class="filter-popup-header">
+      <span>컬럼 필터</span>
+      <button class="filter-popup-close" type="button">✕</button>
+    </div>
+    <div class="filter-tools">
+      <button type="button" class="filter-tool-btn qa-mode-btn ${currentMode === "include" ? "is-active" : ""}" data-mode="include">포함</button>
+      <button type="button" class="filter-tool-btn qa-mode-btn ${currentMode === "exclude" ? "is-active" : ""}" data-mode="exclude">제외</button>
+    </div>
+    <div class="filter-search-wrap">
+      <input class="filter-search-input" type="text" placeholder="검색..." />
+    </div>
+    <div class="filter-tools">
+      <button type="button" class="filter-tool-btn qa-sel-all">전체선택</button>
+      <button type="button" class="filter-tool-btn qa-sel-none">전체해제</button>
+    </div>
+    <div class="filter-options">
+      ${uniques.map((v, i) => {
+        const token = allTokens[i];
+        const checked = cfg.values.length ? selectedSet.has(token) : true;
+        return `<label class="filter-option"><input type="checkbox" data-token="${esc(token)}" ${checked ? "checked" : ""}><span>${esc(v)}</span></label>`;
+      }).join("")}
+    </div>
+    <div class="filter-actions">
+      <button type="button" class="filter-apply">적용</button>
+      <button type="button" class="filter-reset">초기화</button>
+    </div>
+  `;
+
+  document.body.appendChild(popup);
+
+  // 팝업 위치 계산
+  const triggerEl = event.currentTarget instanceof Element ? event.currentTarget : event.target;
+  const rect = triggerEl.getBoundingClientRect();
+  const popW = 240;
+  let left = rect.left;
+  let top = rect.bottom + 4;
+  if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+  if (top + 420 > window.innerHeight - 8) top = Math.max(4, rect.top - 420 - 4);
+  popup.style.left = `${Math.max(4, left)}px`;
+  popup.style.top = `${Math.max(4, top)}px`;
+
+  _qaFilterPopup = popup;
+  _qaFilterMeta = { tableEl, colIdx, allTokens };
+
+  // 이벤트 바인딩
+  popup.querySelector(".filter-popup-close").addEventListener("click", _qaCloseFilter);
+
+  popup.querySelector(".filter-search-input").addEventListener("input", (e) => {
+    const q = e.target.value.toLowerCase();
+    for (const opt of popup.querySelectorAll(".filter-option")) {
+      const text = (opt.querySelector("span")?.textContent || "").toLowerCase();
+      opt.style.display = !q || text.includes(q) ? "" : "none";
+    }
+  });
+
+  popup.querySelector(".qa-sel-all").addEventListener("click", () => {
+    for (const cb of popup.querySelectorAll('.filter-option input[type="checkbox"]')) cb.checked = true;
+  });
+  popup.querySelector(".qa-sel-none").addEventListener("click", () => {
+    for (const cb of popup.querySelectorAll('.filter-option input[type="checkbox"]')) cb.checked = false;
+  });
+
+  for (const btn of popup.querySelectorAll(".qa-mode-btn")) {
+    btn.addEventListener("click", () => {
+      for (const b of popup.querySelectorAll(".qa-mode-btn")) b.classList.remove("is-active");
+      btn.classList.add("is-active");
+    });
+  }
+
+  popup.querySelector(".filter-apply").addEventListener("click", () => {
+    if (!_qaFilterMeta) return;
+    const { tableEl: te, colIdx: ci, allTokens: at } = _qaFilterMeta;
+    const mode = popup.querySelector(".qa-mode-btn.is-active")?.dataset.mode || "include";
+    const selected = [];
+    for (const cb of popup.querySelectorAll('.filter-option input[type="checkbox"]:checked')) {
+      const token = cb.getAttribute("data-token");
+      if (token) selected.push(token);
+    }
+    const tid = te.id;
+    if (!_qaFilterState[tid]) _qaFilterState[tid] = {};
+    if (!selected.length || selected.length === at.length) {
+      delete _qaFilterState[tid][String(ci)];
+    } else {
+      _qaFilterState[tid][String(ci)] = { mode, values: selected };
+    }
+    _qaCloseFilter();
+    _qaApplyFilter(te);
+  });
+
+  popup.querySelector(".filter-reset").addEventListener("click", () => {
+    if (!_qaFilterMeta) return;
+    const { tableEl: te, colIdx: ci } = _qaFilterMeta;
+    const tid = te.id;
+    if (_qaFilterState[tid]) delete _qaFilterState[tid][String(ci)];
+    _qaCloseFilter();
+    _qaApplyFilter(te);
+  });
+}
+
+function initQaTableFilter(tableEl) {
+  if (!tableEl) return;
+  let idx = 0;
+  for (const th of tableEl.querySelectorAll("thead tr:first-child th")) {
+    if (!th.querySelector(".qa-col-filter-btn")) {
+      const colIdx = idx;
+      const btn = document.createElement("span");
+      btn.className = "col-filter-btn qa-col-filter-btn";
+      btn.setAttribute("data-colidx", String(colIdx));
+      btn.title = "필터";
+      btn.innerHTML = '<i class="fas fa-filter"></i>';
+      btn.style.marginLeft = "4px";
+      btn.addEventListener("click", (e) => _qaOpenFilter(tableEl, colIdx, e));
+      th.style.whiteSpace = "nowrap";
+      th.style.position = "relative";
+      th.appendChild(btn);
+    }
+    idx++;
+  }
+}
+
+// 팝업 외부 클릭 시 닫기
+document.addEventListener("click", (e) => {
+  if (_qaFilterPopup && !_qaFilterPopup.contains(e.target) && !e.target.closest(".qa-col-filter-btn")) {
+    _qaCloseFilter();
+  }
+});
+
+// 각 테이블 필터 초기화 (페이지 로드 후)
+const _qaFilterTables = [
+  document.getElementById("recentStatusTable"),
+  document.getElementById("regularReleaseDetailTable"),
+  document.getElementById("closingSummaryDetailTable"),
+];
+for (const t of _qaFilterTables) {
+  initQaTableFilter(t);
+}
+
+// 렌더 후 필터 재적용을 위해 원본 함수 래핑
+const _origRenderRecentStatusRows = renderRecentStatusRows;
+window.renderRecentStatusRows = function (data, status, groups) {
+  _origRenderRecentStatusRows(data, status, groups);
+  _qaApplyFilter(document.getElementById("recentStatusTable"));
+};
+
+const _origRenderRegularReleaseDetails = renderRegularReleaseDetails;
+window.renderRegularReleaseDetails = function (data) {
+  _origRenderRegularReleaseDetails(data);
+  _qaApplyFilter(document.getElementById("regularReleaseDetailTable"));
+};
+
+const _origRenderClosingSummaryDetails = renderClosingSummaryDetails;
+window.renderClosingSummaryDetails = function (data) {
+  _origRenderClosingSummaryDetails(data);
+  _qaApplyFilter(document.getElementById("closingSummaryDetailTable"));
+};
+
+// applyClosingTicketFilters는 직접 tbody를 갱신하므로 래핑 필요
+const _origApplyClosingTicketFilters = applyClosingTicketFilters;
+window.applyClosingTicketFilters = function () {
+  _origApplyClosingTicketFilters();
+  _qaApplyFilter(document.getElementById("closingSummaryDetailTable"));
+};

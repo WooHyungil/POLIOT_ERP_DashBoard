@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CCI FULL_TC 현황</title>
-  <!-- FontAwesome CDN -->
+  <title>Full_TC 업로드</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260320f" />
+  <script src="/static/auto_logout.js"></script>
 </head>
 <body class="has-side-nav">
   {% include "components/side_nav.html" %}
@@ -19,18 +19,15 @@
           <span class="dot dot-c"></span>
         </div>
         <div>
-          <p class="eyebrow">Enterprise QA Orchestration</p>
-          <h1>FULL_TC 현황</h1>
-          <p class="meta-text">우리 회사 Full-TC 스프레드시트의 시트별 데이터를 대시보드에서 바로 확인합니다.</p>
+          <p class="eyebrow">Data Upload Center</p>
+          <h1>Full_TC 업로드</h1>
+          <p class="meta-text">업로드한 Full_TC 엑셀의 시트 목록/데이터를 Full_TC API에서 우선 사용합니다.</p>
         </div>
       </div>
       <nav class="topnav">
         <a class="navlink" href="/">개요</a>
-        <a class="navlink" href="/remote">원격 리모컨</a>
-        <a class="navlink active" href="/defects">FULL_TC 현황</a>
-        <a class="navlink" href="/excel">엑셀 센터</a>
-        <a class="navlink" href="/live">라이브 모니터</a>
-        <a class="navlink" href="/#shortcutManagerSection">바로가기</a>
+        <a class="navlink" href="/qa">QA</a>
+        <a class="navlink active" href="/upload/full-tc">Full_TC 업로드</a>
         <span class="topbar-nav-sep" aria-hidden="true"></span>
         <span id="topbarUserName" class="topbar-username" hidden></span>
         <span id="topbarCountdown" class="topbar-countdown" hidden></span>
@@ -42,23 +39,36 @@
     </header>
 
     <section class="grid grid-wide">
-        <h2>Full-TC 시트 뷰어</h2>
-        <div class="button-row fulltc-controls">
-          <button id="fullTcRefreshBtn" type="button" class="btn-secondary">현재 시트 새로고침</button>
-          <span id="fullTcRealtimeBadge" class="hint">실시간 모드: -</span>
-        </div>
-        <p id="fullTcSheetHint" class="hint"></p>
-        <div id="fullTcSheetButtons" class="fulltc-sheet-buttons" role="tablist" aria-label="Full-TC 시트 목록"></div>
-        <div class="table-wrap fulltc-table-wrap" style="margin-top:10px;">
-          <table id="fullTcTable" class="fulltc-table">
-            <thead id="fullTcHead"></thead>
-            <tbody id="fullTcBody"></tbody>
+      <article class="card">
+        <h2>파일 업로드</h2>
+        <p class="hint">.xlsx 파일만 지원합니다.</p>
+        <form id="fullTcUploadForm" enctype="multipart/form-data">
+          <input id="fullTcFile" type="file" name="file" accept=".xlsx" required />
+          <button id="fullTcUploadBtn" type="submit">업로드 및 반영</button>
+        </form>
+        <p id="fullTcUploadHint" class="hint" style="margin-top:10px;">업로드 대기 중</p>
+      </article>
+
+      <article class="card">
+        <h2>현재 데이터 소스</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>항목</th>
+                <th>값</th>
+              </tr>
+            </thead>
+            <tbody id="fullTcStatusRows">
+              <tr><td colspan="2">확인 중...</td></tr>
+            </tbody>
           </table>
         </div>
       </article>
     </section>
   </main>
+
   <script src="/static/side_nav.js?v=20260319c"></script>
-  <script src="/static/defects_detail.js?v=20260313a"></script>
+  <script src="/static/upload_full_tc.js?v=20260320a"></script>
 </body>
 </html>

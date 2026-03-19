@@ -37,6 +37,7 @@
   function applySubLinkActiveState() {
     const currentHash = window.location.hash || "";
     const detailVisible = nav.classList.contains("is-open") || nav.matches(":hover");
+
     for (const link of subLinks) {
       const targetPath = link.getAttribute("data-path") || "/";
       const targetHash = link.getAttribute("data-hash") || "";
@@ -55,6 +56,13 @@
 
       link.classList.toggle("active", detailVisible && isCurrent);
     }
+
+    // 접힘 상태에서도 활성 경로의 대메뉴만 active 표시
+    for (const btn of parentButtons) {
+      const targetPath = btn.getAttribute("data-path") || "";
+      const isActive = Boolean(targetPath && isMatch(targetPath));
+      btn.classList.toggle("active", isActive);
+    }
   }
 
   applySubLinkActiveState();
@@ -67,12 +75,7 @@
       const next = !sub.classList.contains("open");
       sub.classList.toggle("open", next);
       btn.classList.toggle("expanded", next);
-
-      // First click opens submenu, second click enters parent page.
-      if (!next) {
-        const targetPath = btn.getAttribute("data-path") || "";
-        if (targetPath) go(targetPath);
-      }
+      // 대메뉴 클릭은 서브메뉴 토글만. 페이지 이동은 중메뉴(sublink) 클릭 시에만 수행.
     });
   }
 
@@ -131,32 +134,30 @@
         nameEl.hidden = false;
       }
 
-      // 자동 로그아웃 카운트다운 (1시간)
+      // 자동 로그아웃 카운트다운 (유휴 시간 기준)
       const countdownEl = document.getElementById("topbarCountdown");
-      if (countdownEl && loginAt) {
-        const SESSION_MS = 60 * 60 * 1000;
-        // login_at은 UTC ISO 형식 (timezone suffix 없음) → 'Z' 추가
-        const loginTime = new Date(loginAt.endsWith("Z") ? loginAt : loginAt + "Z").getTime();
+      if (countdownEl) {
+        const IDLE_MS = (window._idleLogout && window._idleLogout.IDLE_MS) || 60 * 60 * 1000;
 
-        function updateCountdown() {
-          const remaining = SESSION_MS - (Date.now() - loginTime);
+        function updateIdleCountdown() {
+          const lastActivity = (window._idleLogout && window._idleLogout.lastActivityAt && window._idleLogout.lastActivityAt()) || Date.now();
+          const remaining = IDLE_MS - (Date.now() - lastActivity);
           if (remaining <= 0) {
-            // 세션 만료 → 자동 로그아웃
             const lf = document.querySelector('form[action="/auth/logout"]');
             if (lf) { lf.submit(); }
             return;
           }
-          const totalMins = Math.floor(remaining / 60000);
+          const totalMins = Math.ceil(remaining / 60000);
           const h = Math.floor(totalMins / 60);
           const m = totalMins % 60;
           countdownEl.textContent = h > 0
-            ? `${h}시간 ${m}분 뒤 자동 로그아웃됩니다.`
-            : `${m}분 뒤 자동 로그아웃됩니다.`;
+            ? `${h}시간 ${m}분 동안 미사용 시 자동 로그아웃됩니다.`
+            : `${m}분 동안 미사용 시 자동 로그아웃됩니다.`;
           countdownEl.hidden = false;
         }
 
-        updateCountdown();
-        setInterval(updateCountdown, 60000);
+        updateIdleCountdown();
+        setInterval(updateIdleCountdown, 30 * 1000);
       }
 
       if (role === "admin") return;

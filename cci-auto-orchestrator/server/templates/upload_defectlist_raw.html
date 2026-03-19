@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DefectList_Raw 업로드</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260320f" />
+  <script src="/static/auto_logout.js"></script>
+  <style>
+    /* ── 페이지 전용 스타일 ── */
+    .dr-hero {
+      background: linear-gradient(135deg, #5b6af0 0%, #9c4fd6 100%);
+      border-radius: 18px;
+      padding: 32px 36px;
+      color: #fff;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .dr-hero-icon { font-size: 3rem; line-height: 1; flex-shrink: 0; }
+    .dr-hero h1 { margin: 0 0 6px; font-size: 1.6rem; font-weight: 700; }
+    .dr-hero p  { margin: 0; opacity: .88; font-size: .9rem; line-height: 1.6; }
+
+    /* stat cards */
+    .dr-stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 26px; }
+    .dr-stat {
+      background: #fff;
+      border: 1px solid #e8eaf0;
+      border-radius: 14px;
+      padding: 18px 20px;
+      text-align: center;
+      box-shadow: 0 1px 4px rgba(0,0,0,.04);
+      transition: box-shadow .2s;
+    }
+    .dr-stat:hover { box-shadow: 0 4px 14px rgba(92,106,240,.13); }
+    .dr-stat .ds-icon { font-size: 1.7rem; margin-bottom: 6px; }
+    .dr-stat .ds-val  { font-size: 1.35rem; font-weight: 700; color: #1e293b; line-height: 1.2; }
+    .dr-stat .ds-lbl  { font-size: .72rem; color: #64748b; margin-top: 3px; }
+
+    /* badges */
+    .dr-badge {
+      display: inline-block; padding: 2px 10px;
+      border-radius: 20px; font-size: .72rem; font-weight: 600; letter-spacing: .02em;
+    }
+    .dr-badge-excel  { background: #dcfce7; color: #15803d; }
+    .dr-badge-none   { background: #fee2e2; color: #b91c1c; }
+
+    /* drop zone */
+    .dr-drop {
+      position: relative;
+      border: 2px dashed #cbd5e1;
+      border-radius: 16px;
+      padding: 46px 20px 36px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      background: #f8fafc;
+    }
+    .dr-drop.over, .dr-drop:hover { border-color: #5b6af0; background: #eef0ff; }
+    .dr-drop input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .dr-drop .dd-icon { font-size: 2.8rem; margin-bottom: 10px; pointer-events: none; }
+    .dr-drop .dd-main { font-size: 1rem; font-weight: 600; color: #334155; pointer-events: none; }
+    .dr-drop .dd-sub  { font-size: .82rem; color: #94a3b8; margin-top: 4px; pointer-events: none; }
+    .dr-drop .dd-file {
+      display: none; margin-top: 14px;
+      background: #e0e7ff; border-radius: 8px; padding: 8px 16px;
+      font-size: .84rem; font-weight: 600; color: #3730a3;
+      align-items: center; gap: 6px; pointer-events: none;
+      justify-content: center;
+    }
+    .dr-drop .dd-file.show { display: inline-flex; }
+
+    /* upload button */
+    .dr-upload-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: linear-gradient(135deg, #5b6af0 0%, #9c4fd6 100%);
+      color: #fff; border: none; border-radius: 12px;
+      padding: 12px 30px; font-size: .97rem; font-weight: 700;
+      cursor: pointer; transition: opacity .15s, transform .1s;
+      margin-top: 18px; width: 100%;
+      justify-content: center;
+    }
+    .dr-upload-btn:hover:not(:disabled) { opacity: .87; transform: translateY(-1px); }
+    .dr-upload-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    /* status bar */
+    .dr-status {
+      margin-top: 12px; padding: 11px 16px;
+      border-radius: 10px; font-size: .87rem; font-weight: 500;
+      display: flex; align-items: flex-start; gap: 8px; min-height: 42px;
+    }
+    .dr-status.idle    { background: #f1f5f9; color: #64748b; }
+    .dr-status.busy    { background: #eef0ff; color: #3730a3; }
+    .dr-status.ok      { background: #dcfce7; color: #166534; }
+    .dr-status.error   { background: #fee2e2; color: #991b1b; }
+
+    /* source info */
+    .dr-info-list { list-style: none; margin: 0; padding: 0; }
+    .dr-info-list li {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 0; border-bottom: 1px solid #f1f5f9; font-size: .87rem;
+    }
+    .dr-info-list li:last-child { border-bottom: none; }
+    .dr-info-list .il-key { color: #64748b; font-weight: 500; }
+    .dr-info-list .il-val { font-weight: 600; color: #1e293b; text-align: right; max-width: 60%; word-break: break-all; }
+
+    /* section header */
+    .dr-sec {
+      display: flex; align-items: center; gap: 8px;
+      font-size: .97rem; font-weight: 700; color: #334155;
+      margin: 0 0 16px;
+    }
+    .dr-sec-act { margin-left: auto; }
+    .dr-mini-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 13px; border: 1px solid #e2e8f0;
+      background: #fff; border-radius: 8px; font-size: .78rem;
+      cursor: pointer; color: #4b5563; transition: background .15s;
+    }
+    .dr-mini-btn:hover { background: #f1f5f9; }
+
+    /* history table */
+    .dr-history th { background: #f8fafc; font-size: .78rem; color: #64748b; font-weight: 600; padding: 10px 12px; white-space: nowrap; }
+    .dr-history td { font-size: .84rem; padding: 10px 12px; color: #374151; white-space: nowrap; vertical-align: middle; }
+    .dr-history tbody tr:hover td { background: #fafbff; }
+    .dr-history .h-no { color: #94a3b8; font-size: .75rem; }
+    .dr-history .h-at { color: #1e293b; font-weight: 600; }
+    .dr-history .h-who { color: #374151; }
+    .dr-history .h-file { color: #5b6af0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+    .dr-history .h-num { text-align: right; font-weight: 600; }
+    .dr-empty { text-align: center; color: #94a3b8; padding: 36px 0; font-size: .9rem; }
+
+    /* spinner */
+    .dr-spinner {
+      width: 15px; height: 15px; border: 2px solid currentColor;
+      border-top-color: transparent; border-radius: 50%;
+      display: inline-block; animation: dr-spin .7s linear infinite; flex-shrink: 0;
+    }
+    @keyframes dr-spin { to { transform: rotate(360deg); } }
+
+    /* card tweaks */
+    .dr-card { padding: 26px 28px; }
+
+    /* two-col grid */
+    .dr-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+    @media (max-width: 820px) { .dr-grid2 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body class="has-side-nav">
+  {% include "components/side_nav.html" %}
+  <main class="container">
+
+    <!-- 탑바 -->
+    <header class="topbar topbar-brand">
+      <div class="brand-left">
+        <div class="brand-mark" aria-hidden="true">
+          <span class="dot dot-a"></span>
+          <span class="dot dot-b"></span>
+          <span class="dot dot-c"></span>
+        </div>
+        <div>
+          <p class="eyebrow">Data Upload Center</p>
+          <h1 style="margin:0;">DefectList_Raw 업로드</h1>
+        </div>
+      </div>
+      <nav class="topnav">
+        <a class="navlink" href="/">개요</a>
+        <a class="navlink" href="/qa">QA</a>
+        <a class="navlink active" href="/upload/defectlist-raw">업로드</a>
+        <span class="topbar-nav-sep" aria-hidden="true"></span>
+        <span id="topbarUserName" class="topbar-username" hidden></span>
+        <span id="topbarCountdown" class="topbar-countdown" hidden></span>
+        <a class="navlink btn-ghost" href="/mypage" style="white-space:nowrap;">마이페이지</a>
+        <form method="post" action="/auth/logout" style="margin:0;display:contents;">
+          <button class="navlink" type="submit" style="white-space:nowrap;">로그아웃</button>
+        </form>
+      </nav>
+    </header>
+
+    <!-- Hero 배너 -->
+    <div class="dr-hero">
+      <div class="dr-hero-icon">📤</div>
+      <div>
+        <h1>DefectList_Raw 업로드</h1>
+        <p>엑셀(.xlsx) 파일을 업로드하세요. 업로드 즉시 QA 대시보드·결함 통계 등<br>모든 페이지에 자동으로 반영됩니다. 이전 데이터는 새 파일로 덮어씁니다.</p>
+      </div>
+    </div>
+
+    <!-- 통계 카드 행 -->
+    <div class="dr-stat-row" id="drStatRow">
+      <div class="dr-stat">
+        <div class="ds-icon">📂</div>
+        <div class="ds-val" id="dsSrc">-</div>
+        <div class="ds-lbl">현재 소스</div>
+      </div>
+      <div class="dr-stat">
+        <div class="ds-icon">🕒</div>
+        <div class="ds-val" id="dsTime" style="font-size:1rem;word-break:break-all;">-</div>
+        <div class="ds-lbl">마지막 업로드 일시</div>
+      </div>
+      <div class="dr-stat">
+        <div class="ds-icon">🗂️</div>
+        <div class="ds-val" id="dsRows">-</div>
+        <div class="ds-lbl">집계 결함 건수</div>
+      </div>
+      <div class="dr-stat">
+        <div class="ds-icon">📋</div>
+        <div class="ds-val" id="dsHistory">-</div>
+        <div class="ds-lbl">총 업로드 횟수</div>
+      </div>
+    </div>
+
+    <!-- 업로드 + 소스 현황 (2칸) -->
+    <div class="dr-grid2" style="margin-bottom:22px;">
+
+      <!-- 업로드 카드 -->
+      <article class="card dr-card">
+        <div class="dr-sec">
+          <span>📤</span> 파일 업로드
+        </div>
+
+        <!-- 드래그앤드롭 존 -->
+        <div class="dr-drop" id="drDrop">
+          <input type="file" id="defectRawFile" accept=".xlsx" />
+          <div class="dd-icon">📊</div>
+          <div class="dd-main">클릭하거나 파일을 드래그하여 놓으세요</div>
+          <div class="dd-sub">.xlsx 엑셀 파일만 지원합니다</div>
+          <div class="dd-file" id="ddFileName"><span>📎</span><span id="ddFileNameText"></span></div>
+        </div>
+
+        <button class="dr-upload-btn" id="defectRawUploadBtn" disabled>
+          <span>업로드 및 즉시 반영</span>
+        </button>
+
+        <div class="dr-status idle" id="drUploadStatus">
+          <span>파일을 선택하면 버튼이 활성화됩니다</span>
+        </div>
+      </article>
+
+      <!-- 소스 현황 카드 -->
+      <article class="card dr-card">
+        <div class="dr-sec">
+          <span>📊</span> 데이터 소스 현황
+          <span class="dr-sec-act">
+            <button class="dr-mini-btn" id="drRefreshStatusBtn">🔄 갱신</button>
+          </span>
+        </div>
+        <ul class="dr-info-list" id="drInfoList">
+          <li><span class="il-key">확인 중...</span></li>
+        </ul>
+      </article>
+    </div>
+
+    <!-- 업로드 이력 -->
+    <article class="card dr-card">
+      <div class="dr-sec">
+        <span>📋</span> 업로드 이력
+        <span class="dr-sec-act">
+          <button class="dr-mini-btn" id="drRefreshHistoryBtn">🔄 새로고침</button>
+        </span>
+      </div>
+      <div class="table-wrap">
+        <table class="dr-history" style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="width:42px;">#</th>
+              <th>업로드 일시</th>
+              <th>업로더</th>
+              <th>파일명</th>
+              <th style="text-align:right;">결함 건수</th>
+              <th style="text-align:right;">이슈 건수</th>
+            </tr>
+          </thead>
+          <tbody id="drHistoryBody">
+            <tr><td colspan="6" class="dr-empty">불러오는 중...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+  </main>
+
+  <script src="/static/side_nav.js?v=20260319c"></script>
+  <script src="/static/upload_defectlist_raw.js?v=20260320b"></script>
+</body>
+</html>

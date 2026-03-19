@@ -22,5 +22,476 @@
       "반영 시각: 2026-03-19T19:06:08",
       "이슈 건수: 4794"
     ]
+  },
+  {
+    "title": "단말 자산 수정",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T21:47:54",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-022",
+      "delete_request_status: - -> pending",
+      "delete_requested_at: - -> 2026-03-19T12:47:54.181Z",
+      "delete_requested_by: - -> hiss0723@poliot.co.kr",
+      "status: - -> pending"
+    ]
+  },
+  {
+    "title": "단말 자산 수정",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T21:49:39",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-036",
+      "delete_request_status: - -> pending",
+      "delete_requested_at: - -> 2026-03-19T12:49:39.435Z",
+      "delete_requested_by: - -> hiss0723@poliot.co.kr",
+      "status: - -> pending"
+    ]
+  },
+  {
+    "title": "단말 자산 수정",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T21:58:41",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-051",
+      "delete_request_status: - -> pending",
+      "delete_requested_at: - -> 2026-03-19T12:58:41.622Z",
+      "delete_requested_by: - -> hiss0723@poliot.co.kr",
+      "status: - -> pending"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청 철회",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T22:55:31",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-022",
+      "철회자: hiss0723@poliot.co.kr",
+      "원 요청자: hiss0723@poliot.co.kr",
+      "상태: pending -> active",
+      "삭제요청상태: pending -> none",
+      "구 관리번호: SW-GOA-23"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청 철회",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:00:58",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-036",
+      "철회자: hiss0723@poliot.co.kr",
+      "원 요청자: hiss0723@poliot.co.kr",
+      "상태: pending -> active",
+      "삭제요청상태: pending -> none",
+      "구 관리번호: SW-GOA-39"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청 철회",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:02:09",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-051",
+      "철회자: hiss0723@poliot.co.kr",
+      "원 요청자: hiss0723@poliot.co.kr",
+      "상태: pending -> active",
+      "삭제요청상태: pending -> none",
+      "구 관리번호: SW-KOA-019"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:02:35",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-022",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: SW-GOA-23"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 반려",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:02:57",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-022",
+      "반려자: hiss0723@poliot.co.kr",
+      "상태: pending -> rejected",
+      "삭제요청상태: pending -> rejected",
+      "사유: Test"
+    ]
+  },
+  {
+    "title": "단말 자산 복구(반려됨)",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:03:08",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-022",
+      "처리자: hiss0723@poliot.co.kr",
+      "상태: rejected -> active",
+      "삭제요청상태: rejected -> none"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:15:43",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-022",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: SW-GOA-23"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:15:43",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-036",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: SW-GOA-39"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:15:43",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-051",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: SW-KOA-019"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 승인",
+    "kind": "removed",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:17:24",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-022",
+      "승인자: hiss0723@poliot.co.kr",
+      "상태: pending -> deleted",
+      "삭제요청상태: pending -> approved",
+      "구 관리번호: SW-GOA-23"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 승인",
+    "kind": "removed",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:17:24",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-036",
+      "승인자: hiss0723@poliot.co.kr",
+      "상태: pending -> deleted",
+      "삭제요청상태: pending -> approved",
+      "구 관리번호: SW-GOA-39"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 승인",
+    "kind": "removed",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:17:24",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-051",
+      "승인자: hiss0723@poliot.co.kr",
+      "상태: pending -> deleted",
+      "삭제요청상태: pending -> approved",
+      "구 관리번호: SW-KOA-019"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 승인 취소",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:17:35",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-036",
+      "처리자: hiss0723@poliot.co.kr",
+      "상태: deleted -> cancelled",
+      "삭제요청상태: approved -> cancelled",
+      "구 관리번호: SW-GOA-39"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 승인 취소",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:17:42",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-051",
+      "처리자: hiss0723@poliot.co.kr",
+      "상태: deleted -> cancelled",
+      "삭제요청상태: approved -> cancelled",
+      "구 관리번호: SW-KOA-019"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 승인 취소",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:17:45",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-022",
+      "처리자: hiss0723@poliot.co.kr",
+      "상태: deleted -> cancelled",
+      "삭제요청상태: approved -> cancelled",
+      "구 관리번호: SW-GOA-23"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:18:16",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-067",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: SW-KOA-057"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:18:16",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-008",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: Poliot_EU_S/W_008"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:18:16",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-021",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: SW-GOA-20"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:18:16",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-026",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: SW-GOA-21"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청 철회",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:18:28",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-067",
+      "철회자: hiss0723@poliot.co.kr",
+      "원 요청자: hiss0723@poliot.co.kr",
+      "상태: pending -> active",
+      "삭제요청상태: pending -> none",
+      "구 관리번호: SW-KOA-057"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 반려",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:18:39",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-021",
+      "반려자: hiss0723@poliot.co.kr",
+      "상태: pending -> rejected",
+      "삭제요청상태: pending -> rejected",
+      "사유: ㅏㅣ"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 반려",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:18:39",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-026",
+      "반려자: hiss0723@poliot.co.kr",
+      "상태: pending -> rejected",
+      "삭제요청상태: pending -> rejected",
+      "사유: ㅏㅣ"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 승인",
+    "kind": "removed",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:18:44",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-008",
+      "승인자: hiss0723@poliot.co.kr",
+      "상태: pending -> deleted",
+      "삭제요청상태: pending -> approved",
+      "구 관리번호: Poliot_EU_S/W_008"
+    ]
+  },
+  {
+    "title": "단말 자산 복구(삭제됨)",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:18:56",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-008",
+      "처리자: hiss0723@poliot.co.kr",
+      "상태: deleted -> active",
+      "삭제요청상태: approved -> none"
+    ]
+  },
+  {
+    "title": "단말 자산 복구(반려됨)",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:19:04",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-021",
+      "처리자: hiss0723@poliot.co.kr",
+      "상태: rejected -> active",
+      "삭제요청상태: rejected -> none"
+    ]
+  },
+  {
+    "title": "단말 자산 복구(반려됨)",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-19T23:19:07",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-026",
+      "처리자: hiss0723@poliot.co.kr",
+      "상태: rejected -> active",
+      "삭제요청상태: rejected -> none"
+    ]
+  },
+  {
+    "title": "DefectList_Raw 최신화",
+    "kind": "updated",
+    "scope": "Data",
+    "updated_at": "2026-03-19T23:53:45",
+    "details": [
+      "시트: DefectList_Raw",
+      "범위: B5:R",
+      "반영 시각: 2026-03-19T23:53:45",
+      "이슈 건수: 0"
+    ]
+  },
+  {
+    "title": "DefectList_Raw 최신화",
+    "kind": "updated",
+    "scope": "Data",
+    "updated_at": "2026-03-19T23:55:33",
+    "details": [
+      "시트: DefectList_Raw",
+      "범위: B5:R",
+      "반영 시각: 2026-03-19T23:55:33",
+      "이슈 건수: 864"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T00:29:54",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-067",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: SW-KOA-057"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 승인",
+    "kind": "removed",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T00:30:16",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-067",
+      "승인자: hiss0723@poliot.co.kr",
+      "상태: pending -> deleted",
+      "삭제요청상태: pending -> approved",
+      "구 관리번호: SW-KOA-057"
+    ]
+  },
+  {
+    "title": "단말 자산 복구(삭제됨)",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T00:30:37",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-067",
+      "처리자: hiss0723@poliot.co.kr",
+      "상태: deleted -> active",
+      "삭제요청상태: approved -> none"
+    ]
   }
 ]

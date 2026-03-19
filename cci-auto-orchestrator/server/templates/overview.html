@@ -6,7 +6,7 @@
   <title>CCI Overview</title>
   <!-- FontAwesome CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260319b" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260320e" />
   <script src="/static/auto_logout.js"></script>
 </head>
 <body class="has-side-nav">
@@ -58,6 +58,11 @@
     <section class="grid grid-overview overview-layout" id="overviewMainContent" aria-label="개요 빠른 접근">
       <article class="card card-guidance overview-recent overview-nav-card" data-link="/qa#recentIssueChartSection" role="button" tabindex="0" aria-label="최근 이슈 통계 차트로 이동">
         <h2>최근 이슈 통계</h2>
+        <div class="overview-range-tabs" id="overviewRecentRangeTabs" aria-label="최근 이슈 기간 선택">
+          <button type="button" class="overview-range-tab" data-days="7">7일</button>
+          <button type="button" class="overview-range-tab" data-days="30">30일</button>
+          <button type="button" class="overview-range-tab active" data-days="0">전체</button>
+        </div>
         <p id="overviewRecentRangeHint" class="hint">최근 30일 Status Top 기준 이슈 분포를 원형 차트로 표시합니다.</p>
         <div class="overview-pie-wrap">
           <div id="overviewRecentDonut" class="overview-donut" aria-hidden="true"></div>
@@ -80,16 +85,8 @@
 
       <article class="card card-guidance overview-summary overview-nav-card" data-link="/qa#closingSummarySection" role="button" tabindex="0" aria-label="Summary 섹션으로 이동">
         <h2>Summary 통계</h2>
-        <p id="overviewSummaryCycleHint" class="hint">현재 월 기준 Summary 사이클(현재/이전) 분포를 원형 차트로 표시합니다.</p>
-        <div class="summary-slider" id="overviewSummarySlider" aria-label="Summary 사이클 슬라이더">
-          <button id="overviewSummaryPrevBtn" class="summary-slider-btn" type="button" aria-label="이전 사이클">&#8249;</button>
-          <div class="summary-slider-viewport">
-            <div id="overviewSummaryTrack" class="summary-slider-track">
-              <div class="summary-slide">로딩 중...</div>
-            </div>
-          </div>
-          <button id="overviewSummaryNextBtn" class="summary-slider-btn" type="button" aria-label="다음 사이클">&#8250;</button>
-        </div>
+        <p id="overviewSummaryCycleHint" class="hint">DefectList_Raw 기준 마감 사이클(예: 2604, 2603...)을 전체 표시합니다.</p>
+        <div id="overviewSummaryCycleChips" class="overview-cycle-chips" aria-label="Summary 사이클 목록"></div>
         <div class="overview-pie-wrap">
           <div id="overviewSummaryDonut" class="overview-donut" aria-hidden="true"></div>
           <ul id="overviewSummaryLegend" class="overview-legend">
@@ -159,7 +156,7 @@
   </div>
 
   <div id="toastStack" class="toast-stack"></div>
-  <script src="/static/side_nav.js?v=20260318b"></script>
-  <script src="/static/overview.js?v=20260317n"></script>
+  <script src="/static/side_nav.js?v=20260319c"></script>
+  <script src="/static/overview.js?v=20260320g"></script>
 </body>
 </html>

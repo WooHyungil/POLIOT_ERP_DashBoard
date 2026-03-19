@@ -41,7 +41,15 @@
     "os_version": "13",
     "serial": "34211FDH300051",
     "region": "EU",
-    "owner": ""
+    "owner": "",
+    "status": "cancelled",
+    "delete_request_status": "cancelled",
+    "delete_requested_by": "hiss0723@poliot.co.kr",
+    "delete_requested_at": "2026-03-19T14:15:43",
+    "delete_reviewed_by": "hiss0723@poliot.co.kr",
+    "delete_reviewed_at": "2026-03-19T14:17:23",
+    "delete_cancelled_by": "hiss0723@poliot.co.kr",
+    "delete_cancelled_at": "2026-03-19T14:17:45"
   },
   {
     "id": "asset-poliot-eu-s-w-036",
@@ -85,7 +93,15 @@
     "os_version": "14",
     "serial": "46171FDJG000HX",
     "region": "EU",
-    "owner": "나덕윤"
+    "owner": "나덕윤",
+    "status": "cancelled",
+    "delete_request_status": "cancelled",
+    "delete_requested_by": "hiss0723@poliot.co.kr",
+    "delete_requested_at": "2026-03-19T14:15:43",
+    "delete_reviewed_by": "hiss0723@poliot.co.kr",
+    "delete_reviewed_at": "2026-03-19T14:17:24",
+    "delete_cancelled_by": "hiss0723@poliot.co.kr",
+    "delete_cancelled_at": "2026-03-19T14:17:35"
   },
   {
     "id": "asset-poliot-eu-s-w-051",
@@ -129,7 +145,15 @@
     "os_version": "15",
     "serial": "2A101FDH300EVF",
     "region": "EU",
-    "owner": "윤지은"
+    "owner": "윤지은",
+    "status": "cancelled",
+    "delete_request_status": "cancelled",
+    "delete_requested_by": "hiss0723@poliot.co.kr",
+    "delete_requested_at": "2026-03-19T14:15:43",
+    "delete_reviewed_by": "hiss0723@poliot.co.kr",
+    "delete_reviewed_at": "2026-03-19T14:17:24",
+    "delete_cancelled_by": "hiss0723@poliot.co.kr",
+    "delete_cancelled_at": "2026-03-19T14:17:42"
   },
   {
     "id": "asset-poliot-eu-s-w-067",
@@ -173,7 +197,11 @@
     "os_version": "16",
     "serial": "41121FDJG004BD",
     "region": "EU",
-    "owner": "유승훈"
+    "owner": "유승훈",
+    "status": "active",
+    "delete_request_status": "none",
+    "delete_requested_by": "hiss0723@poliot.co.kr",
+    "delete_requested_at": "2026-03-19T15:29:54"
   },
   {
     "id": "asset-poliot-eu-s-w-008",
@@ -217,7 +245,11 @@
     "os_version": "16",
     "serial": "58181FDCQ005YZ",
     "region": "EU",
-    "owner": "이도권"
+    "owner": "이도권",
+    "status": "active",
+    "delete_request_status": "none",
+    "delete_requested_by": "hiss0723@poliot.co.kr",
+    "delete_requested_at": "2026-03-19T14:18:16"
   },
   {
     "id": "asset-poliot-eu-s-w-021",
@@ -261,7 +293,11 @@
     "os_version": "12",
     "serial": "863725045208632",
     "region": "EU",
-    "owner": ""
+    "owner": "",
+    "status": "active",
+    "delete_request_status": "none",
+    "delete_requested_by": "hiss0723@poliot.co.kr",
+    "delete_requested_at": "2026-03-19T14:18:16"
   },
   {
     "id": "asset-poliot-eu-s-w-026",
@@ -305,7 +341,11 @@
     "os_version": "12",
     "serial": "EPHUT20616001305",
     "region": "EU",
-    "owner": ""
+    "owner": "",
+    "status": "active",
+    "delete_request_status": "none",
+    "delete_requested_by": "hiss0723@poliot.co.kr",
+    "delete_requested_at": "2026-03-19T14:18:16"
   },
   {
     "id": "asset-poliot-eu-s-w-037",

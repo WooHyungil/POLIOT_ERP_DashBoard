@@ -6,7 +6,7 @@
   <title>CCI QA Dashboard</title>
   <!-- FontAwesome CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260319b" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260320e" />
 </head>
 <body class="has-side-nav">
   {% include "components/side_nav.html" %}
@@ -71,9 +71,27 @@
 
     <section class="grid grid-wide" id="recentIssueChartSection">
       <article class="card card-table" style="grid-column: 1 / -1;">
-        <h2>최근 이슈 통계 차트</h2>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;">
+          <h2 style="margin: 0;">최근 이슈 통계 차트</h2>
+          <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <label style="font-size: 0.9rem; font-weight: 600; color: #64748b;">시작</label>
+              <input type="date" id="recentStartDate" style="padding: 6px 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.9rem;" />
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <label style="font-size: 0.9rem; font-weight: 600; color: #64748b;">종료</label>
+              <input type="date" id="recentEndDate" style="padding: 6px 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.9rem;" />
+            </div>
+          </div>
+        </div>
         <div id="issueChart" class="chart-bars"></div>
         <hr />
+
+        <div style="margin: 16px 0;">
+          <h3 style="margin: 0 0 12px; font-size: 0.95rem; font-weight: 700; color: #334155;">Region 필터</h3>
+          <div id="regionFilterContainer" class="button-row" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+        </div>
+
         <h3>티켓 상태 현황</h3>
         <div class="button-row status-filter-row" id="recentStatusToolbar">
           <button type="button" class="btn-ghost recent-status-btn" data-status="Open">Open</button>
@@ -87,19 +105,22 @@
           <button type="button" class="btn-ghost recent-group-btn" data-group="GOA">GOA</button>
         </div>
         <p id="recentStatusHint" class="hint"></p>
-        <div class="table-wrap recent-status-wrap" style="margin-top:10px;">
-          <table id="recentStatusTable" class="recent-status-table">
+        <div class="table-wrap recent-status-wrap" style="margin-top:10px; overflow-x: auto; -webkit-overflow-scrolling: touch;">
+          <table id="recentStatusTable" class="recent-status-table" style="min-width: 1200px;">
             <thead>
               <tr>
                 <th>Key</th>
                 <th>Status</th>
+                <th>Resolution</th>
                 <th>Priority</th>
                 <th>Reporter</th>
-                <th>Created</th>
-                <th>Fix Version/s</th>
+                <th>Region</th>
+                <th>OS</th>
                 <th>Components</th>
-                <th>Labels</th>
+                <th>Assignee</th>
                 <th>Summary</th>
+                <th>Affects V/s</th>
+                <th>Brand</th>
               </tr>
             </thead>
             <tbody id="recentStatusBody"></tbody>
@@ -111,13 +132,13 @@
     <section class="grid" id="regularReleaseSection">
       <article class="card card-table" style="grid-column: 1 / -1;">
         <h2>정기배포 현황</h2>
-        <div class="button-row">
+        <div class="button-row" style="justify-content: flex-end; margin-bottom: 8px;">
           <button id="regularReleaseRefreshBtn" type="button" class="btn-secondary">DefectList_Raw 최신화</button>
         </div>
-        <p id="regularReleaseSyncHint" class="hint">정기배포 현황에서 즉시 최신 데이터를 반영하려면 최신화 버튼을 눌러 주세요.</p>
-        <div id="regularReleaseSummary" class="stats-grid"></div>
-        <div class="table-wrap" style="margin-top:10px; max-height:64vh;">
-          <table class="regular-release-table" id="regularReleaseTable">
+        <p id="regularReleaseSyncHint" class="hint">정기배포 데이터를 DefectList_Raw 기준으로 즉시 갱신할 수 있습니다.</p>
+        <div id="regularReleaseSummary" class="stats-grid" style="margin-top:10px;"></div>
+        <div class="table-wrap" style="margin-top:10px;">
+          <table id="regularReleaseTable" class="recent-status-table">
             <thead id="regularReleaseHead"></thead>
             <tbody id="regularReleaseBody"></tbody>
           </table>
@@ -131,11 +152,14 @@
                 <th>Status</th>
                 <th>Priority</th>
                 <th>Reporter</th>
+                <th>Assignee</th>
+                <th>Components</th>
                 <th>Created</th>
                 <th>Fix Version/s</th>
-                <th>Components</th>
-                <th>Labels</th>
                 <th>Summary</th>
+                <th>Affects V/s</th>
+                <th>Labels</th>
+                <th>Region</th>
               </tr>
             </thead>
             <tbody id="regularReleaseDetailBody"></tbody>
@@ -190,7 +214,7 @@
     </section>
   </main>
   <div id="toastStack" class="toast-stack"></div>
-  <script src="/static/side_nav.js?v=20260318b"></script>
-  <script src="/static/qa_dashboard.js?v=20260313h"></script>
+  <script src="/static/side_nav.js?v=20260319c"></script>
+  <script src="/static/qa_dashboard.js?v=20260319a"></script>
 </body>
 </html>

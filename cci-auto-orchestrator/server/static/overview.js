@@ -31,6 +31,9 @@ const summarySliderState = {
   slides: [],
   index: 0,
 };
+const overviewRecentRangeState = {
+  days: 0,
+};
 
 function restartCssAnimation(el, className) {
   if (!el) return;
@@ -260,6 +263,33 @@ function extractRecentPieItems(payload) {
   return buildPieItems(base, 8);
 }
 
+function extractSummaryCyclePieItems(payload) {
+  const base = Array.isArray(payload?.cycle_counts) ? payload.cycle_counts : [];
+  return base
+    .map(function (x) {
+      return {
+        name: String(x?.name || "").trim(),
+        count: Number(x?.count || 0),
+      };
+    })
+    .filter(function (x) {
+      return x.name && Number.isFinite(x.count) && x.count > 0;
+    });
+}
+
+function renderSummaryCycleChips(items) {
+  const root = document.getElementById("overviewSummaryCycleChips");
+  if (!root) return;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    root.innerHTML = '<span class="overview-cycle-chip is-empty">사이클 데이터 없음</span>';
+    return;
+  }
+  root.innerHTML = list.map(function (row) {
+    return `<span class="overview-cycle-chip">${esc(String(row.name))} <b>${esc(String(row.count))}</b></span>`;
+  }).join("");
+}
+
 function buildSummaryCyclesFromCurrentMonth() {
   const now = new Date();
   let yy = Number(String(now.getFullYear()).slice(-2));
@@ -374,53 +404,41 @@ function bindSummarySliderControls() {
 
 async function refreshOverviewQaPies() {
   try {
-    const recentDays = 30;
-    const summaryCycles = buildSummaryCyclesFromCurrentMonth();
-    const [recentRes, regularRes, ...summaryResList] = await Promise.all([
-      fetch(`/api/stats/company-defects/status-summary?days=${recentDays}`),
+    const recentDays = Number(overviewRecentRangeState.days || 0);
+    const [recentRes, regularRes, summaryCycleRes] = await Promise.all([
+      fetch(`/api/stats/company-defects/status-summary?days=${encodeURIComponent(String(recentDays))}`),
       fetch("/api/stats/regular-release"),
-      ...summaryCycles.map(function (c) {
-        return fetch(`/api/stats/closing-summary?cycle=${encodeURIComponent(c)}`);
-      }),
+      fetch("/api/stats/closing-summary/cycle-counts"),
     ]);
 
     const recentData = await recentRes.json();
     const regularData = await regularRes.json();
-    const summaryDataList = await Promise.all(summaryResList.map(function (r) { return r.json(); }));
-
-    const cycleCountMap = {};
-    summaryDataList.forEach(function (payload, idx) {
-      const cycle = summaryCycles[idx];
-      const totalRows = Number(payload?.total_rows || 0);
-      cycleCountMap[cycle] = Number.isFinite(totalRows) ? totalRows : 0;
-    });
+    const summaryCycleData = await summaryCycleRes.json();
+    const summaryCycleItems = extractSummaryCyclePieItems(summaryCycleData);
 
     renderOverviewDonut("overviewRecentDonut", "overviewRecentLegend", extractRecentPieItems(recentData));
     renderOverviewDonut("overviewRegularDonut", "overviewRegularLegend", extractRegularPieItems(regularData));
-    summarySliderState.slides = summaryCycles.map(function (cycle, idx) {
-      const payload = summaryDataList[idx] || {};
-      return {
-        cycle,
-        label: idx === 0 ? "현재" : `이전${idx}`,
-        total: Number(cycleCountMap[cycle] || 0),
-        phaseTotals: payload?.phase_totals || {},
-      };
-    });
-    summarySliderState.index = 0;
-    renderSummarySlider();
+    renderOverviewDonut("overviewSummaryDonut", "overviewSummaryLegend", summaryCycleItems);
+    renderSummaryCycleChips(summaryCycleItems);
 
     const recentHint = document.getElementById("overviewRecentRangeHint");
     if (recentHint) {
       const sd = String(recentData?.start_date || "");
       const ed = String(recentData?.end_date || "");
-      recentHint.textContent = sd && ed
-        ? `최근 30일(${sd} ~ ${ed}) Status Top 분포입니다. 선택 시 최근 이슈 차트로 이동합니다.`
-        : "최근 30일 Status Top 분포를 원형 차트로 표시합니다.";
+      if (recentDays <= 0) {
+        recentHint.textContent = "DefectList_Raw 전체 기간 Status Top 분포입니다. 선택 시 최근 이슈 차트로 이동합니다.";
+      } else {
+        recentHint.textContent = sd && ed
+          ? `최근 ${recentDays}일(${sd} ~ ${ed}) Status Top 분포입니다. 선택 시 최근 이슈 차트로 이동합니다.`
+          : `최근 ${recentDays}일 Status Top 분포입니다.`;
+      }
     }
 
     const summaryHint = document.getElementById("overviewSummaryCycleHint");
-    if (summaryHint && !summarySliderState.slides.length) {
-      summaryHint.textContent = `Summary 사이클 ${summaryCycles.join(", ")} 기준 분포입니다. 선택 시 Summary로 이동합니다.`;
+    if (summaryHint) {
+      summaryHint.textContent = summaryCycleItems.length
+        ? `DefectList_Raw 마감 사이클 전체(${summaryCycleItems.map(function (x) { return x.name; }).join(", ")}) 분포입니다.`
+        : "DefectList_Raw 마감 사이클 데이터가 없습니다.";
     }
   } catch (e) {
     const err = String(e || "");
@@ -431,6 +449,24 @@ async function refreshOverviewQaPies() {
     if (regularLegend) regularLegend.innerHTML = `<li class="hint">정기배포 차트 조회 실패: ${esc(err)}</li>`;
     if (summaryLegend) summaryLegend.innerHTML = `<li class="hint">Summary 차트 조회 실패: ${esc(err)}</li>`;
   }
+}
+
+function bindOverviewRecentRangeControls() {
+  const root = document.getElementById("overviewRecentRangeTabs");
+  if (!root) return;
+  root.addEventListener("click", function (ev) {
+    const tab = ev.target instanceof Element ? ev.target.closest(".overview-range-tab") : null;
+    if (!(tab instanceof HTMLButtonElement)) return;
+    ev.stopPropagation();
+    const days = Number(tab.getAttribute("data-days") || "0");
+    overviewRecentRangeState.days = Number.isFinite(days) ? days : 0;
+
+    root.querySelectorAll(".overview-range-tab").forEach(function (btn) {
+      btn.classList.toggle("active", btn === tab);
+    });
+
+    refreshOverviewQaPies();
+  });
 }
 
 function bindOverviewCardNavigation() {
@@ -1117,6 +1153,7 @@ refreshFloatingLogout();
 initShortcuts();
 bindOverviewCardNavigation();
 bindSummarySliderControls();
+bindOverviewRecentRangeControls();
 setInterval(refreshOverviewQaPies, 60000);
 setInterval(refreshOverviewUpdates, 45000);
 window.addEventListener("beforeunload", function () { saveShortcutItems(true); });

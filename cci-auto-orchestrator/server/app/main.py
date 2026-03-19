@@ -27,7 +27,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import get_column_letter, column_index_from_string
 import pandas as pd
 import requests
 
@@ -140,11 +140,16 @@ GOOGLE_DEFECT_SHEET_URL = os.getenv(
 )
 DEFAULT_PUBLIC_SHARE_URL = os.getenv("DEFAULT_PUBLIC_SHARE_URL", "https://cci-dashboard.serveousercontent.com").strip()
 GOOGLE_DEFECT_SHEET_NAME = os.getenv("GOOGLE_DEFECT_SHEET_NAME", "DefectList_Raw")
-GOOGLE_DEFECT_SHEET_RANGE = os.getenv("GOOGLE_DEFECT_SHEET_RANGE", "B:R")
+GOOGLE_DEFECT_SHEET_RANGE = os.getenv("GOOGLE_DEFECT_SHEET_RANGE", "B2:R")
 GOOGLE_DEFECTLIST_SHEET_NAME = os.getenv("GOOGLE_DEFECTLIST_SHEET_NAME", "DefectList")
 GOOGLE_DEFECTLIST_HEADER_RANGE = os.getenv("GOOGLE_DEFECTLIST_HEADER_RANGE", "B17:Z17")
 GOOGLE_DEFECTLIST_DATA_RANGE = os.getenv("GOOGLE_DEFECTLIST_DATA_RANGE", "B18:Z")
-GOOGLE_RAW_STATUS_RANGE = os.getenv("GOOGLE_RAW_STATUS_RANGE", "B5:R")
+UPLOADED_DEFECT_RAW_FILE = UPLOAD_DIR / "defectlist_raw_uploaded.xlsx"
+UPLOADED_FULL_TC_FILE = UPLOAD_DIR / "full_tc_uploaded.xlsx"
+DEFECT_RAW_UPLOAD_HISTORY_FILE = UPLOAD_DIR / "defectlist_raw_upload_history.json"
+DEFECT_RAW_UPLOAD_HISTORY_LOCK = threading.Lock()
+MAX_DEFECT_RAW_UPLOAD_HISTORY = 50
+GOOGLE_RAW_STATUS_RANGE = os.getenv("GOOGLE_RAW_STATUS_RANGE", "B2:R")
 GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()
 GOOGLE_DEFECT_CACHE_TTL_SEC = max(20.0, float(os.getenv("GOOGLE_DEFECT_CACHE_TTL_SEC", "90")))
 GOOGLE_DEFECT_API_KEY = os.getenv("GOOGLE_SHEETS_API_KEY", "").strip()
@@ -224,7 +229,8 @@ SEVERITY_SCORE = {
 
 app = FastAPI(title="CCI Automation Orchestrator")
 APP_SESSION_SECRET = os.getenv("CCI_SESSION_SECRET", "cci-dashboard-session-secret-2026").strip()
-SESSION_MAX_AGE_SECONDS = 60 * 60 * 1
+SESSION_IDLE_TIMEOUT_SECONDS = 60 * 60 * 1        # 유휴 1시간 → 자동 로그아웃
+SESSION_MAX_AGE_SECONDS = 60 * 60 * 2             # 쿠키 최대 수명 2시간 (heartbeat가 주기적으로 갱신)
 app.add_middleware(SessionMiddleware, secret_key=APP_SESSION_SECRET, max_age=SESSION_MAX_AGE_SECONDS)
 
 # Middleware to skip ngrok browser warning
@@ -352,14 +358,18 @@ def _is_session_timed_out(request: Request) -> bool:
     email = str(session_data.get("user_email", "")).strip().lower()
     if not email:
         return False
-    login_at_raw = str(session_data.get("login_at", "")).strip()
-    if not login_at_raw:
+    # last_active_at 우선, 없으면 login_at 폴백 (기존 세션 호환)
+    active_at_raw = (
+        str(session_data.get("last_active_at", "") or "").strip()
+        or str(session_data.get("login_at", "") or "").strip()
+    )
+    if not active_at_raw:
         return True
     try:
-        login_at = datetime.fromisoformat(login_at_raw)
+        active_at = datetime.fromisoformat(active_at_raw)
     except ValueError:
         return True
-    return (datetime.utcnow() - login_at).total_seconds() > SESSION_MAX_AGE_SECONDS
+    return (datetime.utcnow() - active_at).total_seconds() > SESSION_IDLE_TIMEOUT_SECONDS
 
 
 def _current_user_from_request(request: Request) -> dict | None:
@@ -506,7 +516,7 @@ async def auth_guard_middleware(request: Request, call_next):
         if path.startswith("/api"):
             return JSONResponse(status_code=401, content={"ok": False, "detail": "session expired"})
         next_path = quote(str(request.url.path or "/"), safe="/:#?=&")
-        msg = quote("로그인 세션(1시간)이 만료되어 자동 로그아웃되었습니다. 다시 로그인해 주세요.", safe="")
+        msg = quote("1시간 동안 사용하지 않아 자동 로그아웃되었습니다. 다시 로그인해 주세요.", safe="")
         return RedirectResponse(url=f"/auth/login?next={next_path}&message={msg}", status_code=303)
 
     user = _current_user_from_request(request)
@@ -527,7 +537,14 @@ async def auth_guard_middleware(request: Request, call_next):
         "/api/stats/company-defects",
         "/api/stats/company-defects/detail",
     }
+    admin_allowed_api_patterns = (
+        re.compile(r"^/api/admin/assets/[^/]+/request-delete$"),
+        re.compile(r"^/api/admin/assets/request-delete-bulk$"),
+        re.compile(r"^/api/admin/assets/[^/]+/withdraw-request$"),
+    )
     if any(path.startswith(p) for p in admin_only_prefixes) or path in admin_only_exact:
+        if any(pattern.match(path) for pattern in admin_allowed_api_patterns):
+            return await call_next(request)
         if not _is_admin_user(user):
             if path.startswith("/api"):
                 return JSONResponse(status_code=403, content={"ok": False, "detail": "admin required"})
@@ -673,8 +690,10 @@ def auth_login_submit(request: Request, email: str = Form(...), password: str = 
         msg = quote("로그인 권한이 비활성화된 계정입니다. 관리자에게 문의해 주세요.", safe="")
         return RedirectResponse(url=f"/auth/login?next={quote(redirect_to, safe='/:#?=&')}&message={msg}", status_code=303)
 
+    now_iso = datetime.utcnow().isoformat(timespec="seconds")
     request.session["user_email"] = str(user.get("email", "")).strip().lower()
-    request.session["login_at"] = datetime.utcnow().isoformat(timespec="seconds")
+    request.session["login_at"] = now_iso
+    request.session["last_active_at"] = now_iso
     return RedirectResponse(url=redirect_to, status_code=303)
 
 
@@ -823,9 +842,19 @@ def auth_me(request: Request):
             "can_login": _can_user_login(user),
             "address": str(user.get("address", "") or ""),
             "login_at": str(request.session.get("login_at", "") or ""),
+            "last_active_at": str(request.session.get("last_active_at", "") or request.session.get("login_at", "") or ""),
         },
     }
 
+
+@app.post("/api/auth/heartbeat")
+def auth_heartbeat(request: Request):
+    """프론트엔드 활동 시 세션 유휴 타이머를 서버에서도 갱신합니다."""
+    user = _current_user_from_request(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"ok": False, "detail": "login required"})
+    request.session["last_active_at"] = datetime.utcnow().isoformat(timespec="seconds")
+    return {"ok": True}
 
 @app.put("/api/user/me")
 async def user_self_update(request: Request):
@@ -839,9 +868,11 @@ async def user_self_update(request: Request):
     target_email = str(user.get("email", "")).strip().lower()
     users = _load_users()
     updated_user = None
+    audit_lines: list[str] = []
     for row in users:
         if str(row.get("email", "")).strip().lower() != target_email:
             continue
+        before = dict(row)
         if "name" in payload:
             new_name = str(payload.get("name", "") or "").strip()
             if new_name:
@@ -852,8 +883,10 @@ async def user_self_update(request: Request):
                 if len(password) < 8:
                     raise HTTPException(status_code=400, detail="password too short")
                 row["password_hash"] = _hash_password(target_email, password)
+                audit_lines.append("password: updated")
         if "address" in payload:
             row["address"] = str(payload.get("address", "") or "").strip()
+        audit_lines = _build_change_lines(before, row, ["name", "address"]) + audit_lines
         updated_user = {
             "email": target_email,
             "name": str(row.get("name", "")),
@@ -865,6 +898,14 @@ async def user_self_update(request: Request):
         raise HTTPException(status_code=404, detail="user not found")
 
     _save_users(users)
+    if audit_lines:
+        _append_audit_update(
+            "내 정보 수정",
+            [f"계정: {target_email}", *audit_lines],
+            kind="updated",
+            scope="마이페이지",
+            actor=user,
+        )
     return {"ok": True, "user": updated_user}
 
 
@@ -1210,6 +1251,19 @@ async def manage_schedule_create(request: Request):
         items.append(item)
         _save_json_array(MANAGE_SCHEDULES_FILE, items)
 
+    _append_audit_update(
+        "일정 생성",
+        [
+            f"제목: {str(item.get('title', '')).strip() or '-'}",
+            f"일정 유형: {str(item.get('type', '')).strip() or '-'}",
+            f"시작일: {str(item.get('start_date', '')).strip() or '-'}",
+            f"종료일: {str(item.get('end_date', '')).strip() or '-'}",
+        ],
+        kind="added",
+        scope="일정 관리",
+        actor=user,
+    )
+
     return {"ok": True, "item": item}
 
 
@@ -1237,8 +1291,18 @@ async def manage_schedule_update(schedule_id: str, request: Request):
         if actor_email != owner_email and not _is_admin_user(user):
             raise HTTPException(status_code=403, detail="edit not allowed")
 
+        before = dict(target)
         target.update(parsed)
         _save_json_array(MANAGE_SCHEDULES_FILE, items)
+
+    change_lines = _build_change_lines(before, target, ["type", "start_date", "end_date", "title", "note"])
+    _append_audit_update(
+        "일정 수정",
+        [f"ID: {target_id}", *(change_lines or ["변경 항목 없음"])],
+        kind="updated",
+        scope="일정 관리",
+        actor=user,
+    )
 
     return {"ok": True, "item": target}
 
@@ -1267,6 +1331,18 @@ def manage_schedule_delete(schedule_id: str, request: Request):
         next_items = [row for row in items if str(row.get("id", "")).strip() != target_id]
         _save_json_array(MANAGE_SCHEDULES_FILE, next_items)
 
+    _append_audit_update(
+        "일정 삭제",
+        [
+            f"제목: {str((target or {}).get('title', '')).strip() or '-'}",
+            f"일정 유형: {str((target or {}).get('type', '')).strip() or '-'}",
+            f"시작일: {str((target or {}).get('start_date', '')).strip() or '-'}",
+            f"종료일: {str((target or {}).get('end_date', '')).strip() or '-'}",
+        ],
+        kind="removed",
+        scope="일정 관리",
+        actor=user,
+    )
     return {"ok": True, "deleted": True}
 
 
@@ -1291,6 +1367,29 @@ def admin_employees(request: Request):
             }
         )
     return {"ok": True, "items": out}
+
+
+def _asset_match_tokens(row: dict) -> set[str]:
+    tokens: set[str] = set()
+    for key in ("id", "NEW 관리 번호", "구 관리번호", "asset_no", "management_no"):
+        value = str((row or {}).get(key, "") or "").strip()
+        if not value:
+            continue
+        tokens.add(value)
+        tokens.add(value.lower())
+    return tokens
+
+
+def _find_asset_index_by_key(items: list[dict], asset_key: str) -> int:
+    key = str(asset_key or "").strip()
+    if not key:
+        return -1
+    key_lower = key.lower()
+    for idx, row in enumerate(items):
+        row_tokens = _asset_match_tokens(row if isinstance(row, dict) else {})
+        if key in row_tokens or key_lower in row_tokens:
+            return idx
+    return -1
 
 
 @app.post("/api/admin/employees")
@@ -1403,9 +1502,29 @@ def admin_employee_delete(item_id: str, request: Request):
 
 
 @app.get("/api/admin/assets")
-def admin_assets(request: Request):
+def admin_assets(request: Request, include_deleted: bool = False):
     _require_admin(request)
-    return {"ok": True, "items": _load_json_array(ASSETS_FILE)}
+    items = _load_json_array(ASSETS_FILE)
+    out = []
+    changed = False
+    normalized_items = []
+    for row in items:
+        item = dict(row)
+        if not str(item.get("id", "") or "").strip():
+            item["id"] = f"asset-{uuid.uuid4().hex[:10]}"
+            changed = True
+        normalized_items.append(item)
+        status = str(item.get("status", "active") or "active").strip().lower()
+        dr_status = str(item.get("delete_request_status", "none") or "none").strip().lower()
+        if not include_deleted:
+            if status in ("deleted", "cancelled"):
+                continue
+            if dr_status in ("approved", "cancelled"):
+                continue
+        out.append(item)
+    if changed:
+        _save_json_array(ASSETS_FILE, normalized_items)
+    return {"ok": True, "items": out}
 
 
 @app.post("/api/admin/assets")
@@ -1418,6 +1537,8 @@ async def admin_asset_create(request: Request):
     item = {k: v for k, v in payload.items()}
     item_id = str(item.get("id", "")).strip() or f"asset-{uuid.uuid4().hex[:10]}"
     item["id"] = item_id
+    item["status"] = str(item.get("status", "active") or "active").strip().lower() or "active"
+    item["delete_request_status"] = str(item.get("delete_request_status", "none") or "none").strip().lower() or "none"
     items = [x for x in items if str(x.get("id", "")) != item_id]
     items.append(item)
     _save_json_array(ASSETS_FILE, items)
@@ -1448,6 +1569,10 @@ async def admin_asset_update(item_id: str, request: Request):
             before = dict(row)
             merged = {**row, **(payload if isinstance(payload, dict) else {})}
             merged["id"] = str(item_id)
+            if not str(merged.get("status", "")).strip():
+                merged["status"] = "active"
+            if not str(merged.get("delete_request_status", "")).strip():
+                merged["delete_request_status"] = "none"
             items[idx] = merged
             updated = merged
             change_lines = _build_change_lines(before, merged, sorted({*before.keys(), *merged.keys()}))
@@ -1487,6 +1612,548 @@ def admin_asset_delete(item_id: str, request: Request):
     return {"ok": True, "deleted": len(next_items) < len(items), "items": next_items}
 
 
+@app.post("/api/admin/assets/{item_id}/request-delete")
+def admin_asset_request_delete(item_id: str, request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+    actor_email = str(user.get("email", "")).strip().lower() or "unknown"
+
+    items = _load_json_array(ASSETS_FILE)
+    target = None
+    before_status = ""
+    before_delete_status = ""
+    item_key = str(item_id or "").strip()
+    idx = _find_asset_index_by_key(items, item_key)
+    if idx >= 0:
+        target = dict(items[idx])
+        if not str(target.get("id", "") or "").strip():
+            target["id"] = f"asset-{uuid.uuid4().hex[:10]}"
+        before_status = str(target.get("status", "active") or "active").strip().lower()
+        before_delete_status = str(target.get("delete_request_status", "none") or "none").strip().lower()
+        target["status"] = "pending"
+        target["delete_request_status"] = "pending"
+        target["delete_requested_by"] = actor_email
+        target["delete_requested_at"] = datetime.utcnow().isoformat(timespec="seconds")
+        target.pop("delete_reviewed_by", None)
+        target.pop("delete_reviewed_at", None)
+        target.pop("delete_reject_reason", None)
+        items[idx] = target
+
+    if target is None:
+        raise HTTPException(status_code=404, detail="asset not found")
+
+    _save_json_array(ASSETS_FILE, items)
+    _append_audit_update(
+        "단말 자산 삭제 요청",
+        [
+            f"ID: {item_id}",
+            f"요청자: {actor_email}",
+            f"상태: {before_status or '-'} -> pending",
+            f"삭제요청상태: {before_delete_status or '-'} -> pending",
+            f"구 관리번호: {str(target.get('구 관리번호', '')).strip() or '-'}",
+        ],
+        kind="updated",
+        scope="단말 관리",
+        actor=user,
+    )
+    return {"ok": True, "item": target}
+
+
+@app.post("/api/admin/assets/request-delete-bulk")
+async def admin_asset_request_delete_bulk(request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+    actor_email = str(user.get("email", "")).strip().lower() or "unknown"
+
+    payload = await request.json()
+    ids = payload.get("ids") if isinstance(payload, dict) else []
+    if not isinstance(ids, list):
+        raise HTTPException(status_code=400, detail="ids must be a list")
+    request_ids = [str(x or "").strip() for x in ids if str(x or "").strip()]
+    if not request_ids:
+        raise HTTPException(status_code=400, detail="no ids provided")
+
+    items = _load_json_array(ASSETS_FILE)
+    not_found: list[str] = []
+    updated_items: list[dict] = []
+
+    for req_id in request_ids:
+        idx = _find_asset_index_by_key(items, req_id)
+        if idx < 0:
+            not_found.append(req_id)
+            continue
+
+        target = dict(items[idx])
+        if not str(target.get("id", "") or "").strip():
+            target["id"] = f"asset-{uuid.uuid4().hex[:10]}"
+        before_status = str(target.get("status", "active") or "active").strip().lower()
+        before_delete_status = str(target.get("delete_request_status", "none") or "none").strip().lower()
+        target["status"] = "pending"
+        target["delete_request_status"] = "pending"
+        target["delete_requested_by"] = actor_email
+        target["delete_requested_at"] = datetime.utcnow().isoformat(timespec="seconds")
+        target.pop("delete_reviewed_by", None)
+        target.pop("delete_reviewed_at", None)
+        target.pop("delete_reject_reason", None)
+        items[idx] = target
+        updated_items.append(target)
+
+        _append_audit_update(
+            "단말 자산 삭제 요청",
+            [
+                f"ID: {str(target.get('id', '')).strip() or req_id}",
+                f"요청자: {actor_email}",
+                f"상태: {before_status or '-'} -> pending",
+                f"삭제요청상태: {before_delete_status or '-'} -> pending",
+                f"구 관리번호: {str(target.get('구 관리번호', '')).strip() or '-'}",
+            ],
+            kind="updated",
+            scope="단말 관리",
+            actor=user,
+        )
+
+    if not updated_items:
+        raise HTTPException(status_code=404, detail=f"asset not found: {', '.join(not_found[:5])}")
+
+    _save_json_array(ASSETS_FILE, items)
+
+    return {
+        "ok": True,
+        "requested": len(request_ids),
+        "updated": len(updated_items),
+        "not_found": not_found,
+        "items": updated_items,
+    }
+
+
+@app.post("/api/admin/assets/{item_id}/withdraw-request")
+def admin_asset_withdraw_request(item_id: str, request: Request):
+    """일반 사용자 또는 관리자가 pending 상태의 삭제 요청을 철회합니다."""
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+    actor_email = str(user.get("email", "")).strip().lower() or "unknown"
+
+    items = _load_json_array(ASSETS_FILE)
+    item_key = str(item_id or "").strip()
+    idx = _find_asset_index_by_key(items, item_key)
+    if idx < 0:
+        raise HTTPException(status_code=404, detail="asset not found")
+
+    target = dict(items[idx])
+    current_req_status = str(target.get("delete_request_status", "none") or "none").strip().lower()
+    if current_req_status != "pending":
+        raise HTTPException(status_code=400, detail="pending request not found")
+
+    before_status = str(target.get("status", "pending") or "pending").strip().lower()
+    requester = str(target.get("delete_requested_by", "")).strip() or "-"
+
+    target["status"] = "active"
+    target["delete_request_status"] = "none"
+    target.pop("delete_requested_by", None)
+    target.pop("delete_requested_at", None)
+    target.pop("delete_reviewed_by", None)
+    target.pop("delete_reviewed_at", None)
+    target.pop("delete_reject_reason", None)
+    items[idx] = target
+    _save_json_array(ASSETS_FILE, items)
+
+    _append_audit_update(
+        "단말 자산 삭제 요청 철회",
+        [
+            f"ID: {str(target.get('id', '')).strip() or item_id}",
+            f"철회자: {actor_email}",
+            f"원 요청자: {requester}",
+            f"상태: {before_status or '-'} -> active",
+            f"삭제요청상태: pending -> none",
+            f"구 관리번호: {str(target.get('구 관리번호', '')).strip() or '-'}",
+        ],
+        kind="updated",
+        scope="단말 관리",
+        actor=user,
+    )
+    return {"ok": True, "item": target}
+
+
+@app.get("/api/admin/assets/delete-requests")
+def admin_asset_delete_requests(request: Request):
+    _require_admin(request)
+    items = _load_json_array(ASSETS_FILE)
+    pending: list[dict] = []
+
+    for row in items:
+        if str(row.get("delete_request_status", "none") or "none").strip().lower() != "pending":
+            continue
+
+        row_id = str(row.get("id", "") or "").strip() or f"asset-{uuid.uuid4().hex[:10]}"
+        requester_id = str(row.get("delete_requested_by", "") or "").strip().lower()
+        requester_user = _find_user(requester_id) if requester_id else None
+        requester_name = str((requester_user or {}).get("name", "") or "").strip() or requester_id or "-"
+        requested_at = str(row.get("delete_requested_at", "") or "").strip()
+
+        pending.append(
+            {
+                "request_id": f"asset-delete::{row_id}",
+                "target_id": row_id,
+                "source_type": "asset-delete",
+                "page_name": "단말관리",
+                "request_label": "단말 삭제 요청",
+                "requester_name": requester_name,
+                "requester_id": requester_id or "-",
+                "requested_at": requested_at,
+                "detail_lines": [
+                    "요청 구분: 단말 삭제 요청",
+                    "페이지: 단말관리",
+                    f"ID: {row_id}",
+                    f"구 관리번호: {str(row.get('구 관리번호', '')).strip() or '-'}",
+                    f"NEW 관리 번호: {str(row.get('NEW 관리 번호', '')).strip() or '-'}",
+                    f"기기 소지자: {str(row.get('기기 소지자', '')).strip() or '-'}",
+                    f"요청자 이름: {requester_name}",
+                    f"요청자 아이디: {requester_id or '-'}",
+                    f"요청일시: {requested_at or '-'}",
+                ],
+            }
+        )
+
+    # 일정관리 승인 요청 데이터가 같은 파일 포맷으로 저장되면 동일 목록에 합류시킨다.
+    for row in _load_json_array(MANAGE_SCHEDULES_FILE):
+        approval_status = str(row.get("approval_status", row.get("request_status", "none")) or "none").strip().lower()
+        if approval_status != "pending":
+            continue
+
+        schedule_id = str(row.get("id", "") or "").strip() or f"schedule-{uuid.uuid4().hex[:10]}"
+        requester_id = str(row.get("author_email", row.get("requested_by", "")) or "").strip().lower()
+        requester_name = str(row.get("author_name", row.get("requested_by_name", "")) or "").strip() or requester_id or "-"
+        requested_at = str(row.get("requested_at", row.get("created_at", "")) or "").strip()
+        request_label = str(row.get("request_label", row.get("request_action", "일정 요청")) or "일정 요청").strip()
+
+        pending.append(
+            {
+                "request_id": f"schedule::{schedule_id}",
+                "target_id": schedule_id,
+                "source_type": "schedule",
+                "page_name": "일정관리",
+                "request_label": request_label,
+                "requester_name": requester_name,
+                "requester_id": requester_id or "-",
+                "requested_at": requested_at,
+                "detail_lines": [
+                    f"요청 구분: {request_label}",
+                    "페이지: 일정관리",
+                    f"ID: {schedule_id}",
+                    f"제목: {str(row.get('title', '')).strip() or '-'}",
+                    f"일정 유형: {str(row.get('type', '')).strip() or '-'}",
+                    f"시작일: {str(row.get('start_date', '')).strip() or '-'}",
+                    f"종료일: {str(row.get('end_date', '')).strip() or '-'}",
+                    f"요청자 이름: {requester_name}",
+                    f"요청자 아이디: {requester_id or '-'}",
+                    f"요청일시: {requested_at or '-'}",
+                    f"비고: {str(row.get('note', '')).strip() or '-'}",
+                ],
+            }
+        )
+
+    pending.sort(key=lambda r: str(r.get("requested_at", "")), reverse=True)
+    return {"ok": True, "items": pending}
+
+
+@app.get("/api/admin/assets/deleted-items")
+def admin_asset_deleted_items(request: Request):
+    _require_admin(request)
+    items = _load_json_array(ASSETS_FILE)
+    deleted = [
+        dict(x)
+        for x in items
+        if str(x.get("delete_request_status", "none") or "none").strip().lower() in ("approved", "cancelled")
+    ]
+
+    def _deleted_sort_key(row: dict) -> str:
+        return str(
+            row.get("delete_cancelled_at", "")
+            or row.get("delete_reviewed_at", "")
+            or row.get("delete_requested_at", "")
+        )
+
+    deleted.sort(key=_deleted_sort_key, reverse=True)
+    return {"ok": True, "items": deleted}
+
+
+@app.get("/api/admin/assets/rejected-items")
+def admin_asset_rejected_items(request: Request):
+    _require_admin(request)
+    items = _load_json_array(ASSETS_FILE)
+    rejected = [
+        dict(x)
+        for x in items
+        if str(x.get("delete_request_status", "none") or "none").strip().lower() == "rejected"
+    ]
+    rejected.sort(key=lambda r: str(r.get("delete_reviewed_at", "")), reverse=True)
+    return {"ok": True, "items": rejected}
+
+
+@app.get("/api/admin/activity-log")
+def admin_activity_log(request: Request, limit: int = 300, include_all: bool = True):
+    _require_admin(request)
+    updates: list[dict] = []
+    if OVERVIEW_UPDATES_FILE.exists():
+        try:
+            payload = json.loads(OVERVIEW_UPDATES_FILE.read_text(encoding="utf-8"))
+            if isinstance(payload, list):
+                updates = [x for x in payload if isinstance(x, dict)]
+        except Exception:
+            updates = []
+
+    # 기본: 상태 변경성 이력(승인/차단/삭제/수정/요청 등)을 전체 사용자 기준으로 반환
+    filtered = list(updates)
+    if not include_all:
+        keywords = ("상태", "승인", "반려", "삭제", "차단", "허용", "요청", "수정", "생성", "변경")
+
+        def _is_status_like(row: dict) -> bool:
+            title = str(row.get("title", "") or "")
+            scope = str(row.get("scope", "") or "")
+            detail_text = " ".join(str(x or "") for x in list(row.get("details") or []))
+            merged = f"{title} {scope} {detail_text}"
+            if any(kw in merged for kw in keywords):
+                return True
+            return "->" in detail_text
+
+        filtered = [row for row in updates if _is_status_like(row)]
+
+    filtered.sort(key=lambda r: str(r.get("updated_at", "")), reverse=True)
+    result = []
+    for row in filtered[:max(1, int(limit))]:
+        details = list(row.get("details") or [])
+        # 작업자는 details[0]에서 추출 ("작업자: ...")
+        actor = ""
+        other_details = []
+        for d in details:
+            d_text = str(d)
+            if d_text.startswith("작업자:"):
+                actor = d_text.split(":", 1)[1].strip() if ":" in d_text else ""
+            else:
+                other_details.append(d_text)
+        result.append({
+            "updated_at": str(row.get("updated_at", "")),
+            "title": str(row.get("title", "")),
+            "kind": str(row.get("kind", "")),
+            "scope": str(row.get("scope", "")),
+            "actor": actor,
+            "details": other_details,
+        })
+    return {"ok": True, "items": result}
+
+
+
+@app.post("/api/admin/assets/{item_id}/approve-delete")
+def admin_asset_approve_delete(item_id: str, request: Request):
+    admin_user = _require_admin(request)
+    reviewer = str(admin_user.get("email", "")).strip().lower() or "admin"
+    items = _load_json_array(ASSETS_FILE)
+    target = None
+    before_status = ""
+    before_delete_status = ""
+    item_key = str(item_id or "").strip()
+    for idx, row in enumerate(items):
+        if item_key in _asset_match_tokens(row):
+            target = dict(row)
+            if not str(target.get("id", "") or "").strip():
+                target["id"] = f"asset-{uuid.uuid4().hex[:10]}"
+            before_status = str(target.get("status", "active") or "active").strip().lower()
+            before_delete_status = str(target.get("delete_request_status", "none") or "none").strip().lower()
+            target["status"] = "deleted"
+            target["delete_request_status"] = "approved"
+            target["delete_reviewed_by"] = reviewer
+            target["delete_reviewed_at"] = datetime.utcnow().isoformat(timespec="seconds")
+            items[idx] = target
+            break
+    if target is None:
+        raise HTTPException(status_code=404, detail="asset not found")
+
+    _save_json_array(ASSETS_FILE, items)
+    _append_audit_update(
+        "단말 자산 삭제 승인",
+        [
+            f"ID: {item_id}",
+            f"승인자: {reviewer}",
+            f"상태: {before_status or '-'} -> deleted",
+            f"삭제요청상태: {before_delete_status or '-'} -> approved",
+            f"구 관리번호: {str(target.get('구 관리번호', '')).strip() or '-'}",
+        ],
+        kind="removed",
+        scope="단말 관리",
+        actor=admin_user,
+    )
+    return {"ok": True, "item": target}
+
+
+@app.post("/api/admin/assets/{item_id}/reject-delete")
+async def admin_asset_reject_delete(item_id: str, request: Request):
+    admin_user = _require_admin(request)
+    reviewer = str(admin_user.get("email", "")).strip().lower() or "admin"
+    payload = await request.json()
+    reason = str((payload or {}).get("reason", "") or "").strip()
+
+    items = _load_json_array(ASSETS_FILE)
+    target = None
+    before_status = ""
+    before_delete_status = ""
+    item_key = str(item_id or "").strip()
+    for idx, row in enumerate(items):
+        if item_key in _asset_match_tokens(row):
+            target = dict(row)
+            if not str(target.get("id", "") or "").strip():
+                target["id"] = f"asset-{uuid.uuid4().hex[:10]}"
+            before_status = str(target.get("status", "active") or "active").strip().lower()
+            before_delete_status = str(target.get("delete_request_status", "none") or "none").strip().lower()
+            target["status"] = "rejected"
+            target["delete_request_status"] = "rejected"
+            target["delete_reviewed_by"] = reviewer
+            target["delete_reviewed_at"] = datetime.utcnow().isoformat(timespec="seconds")
+            if reason:
+                target["delete_reject_reason"] = reason
+            items[idx] = target
+            break
+    if target is None:
+        raise HTTPException(status_code=404, detail="asset not found")
+
+    _save_json_array(ASSETS_FILE, items)
+    _append_audit_update(
+        "단말 자산 삭제 반려",
+        [
+            f"ID: {item_id}",
+            f"반려자: {reviewer}",
+            f"상태: {before_status or '-'} -> rejected",
+            f"삭제요청상태: {before_delete_status or '-'} -> rejected",
+            f"사유: {reason or '-'}",
+        ],
+        kind="updated",
+        scope="단말 관리",
+        actor=admin_user,
+    )
+    return {"ok": True, "item": target}
+
+
+@app.post("/api/admin/assets/{item_id}/cancel-approval")
+def admin_asset_cancel_approval(item_id: str, request: Request):
+    admin_user = _require_admin(request)
+    reviewer = str(admin_user.get("email", "")).strip().lower() or "admin"
+    items = _load_json_array(ASSETS_FILE)
+    idx = _find_asset_index_by_key(items, str(item_id or "").strip())
+    if idx < 0:
+        raise HTTPException(status_code=404, detail="asset not found")
+
+    target = dict(items[idx])
+    current_req_status = str(target.get("delete_request_status", "none") or "none").strip().lower()
+    if current_req_status != "approved":
+        raise HTTPException(status_code=400, detail="approved request not found")
+
+    before_status = str(target.get("status", "active") or "active").strip().lower()
+    before_delete_status = current_req_status
+
+    target["status"] = "cancelled"
+    target["delete_request_status"] = "cancelled"
+    target["delete_cancelled_by"] = reviewer
+    target["delete_cancelled_at"] = datetime.utcnow().isoformat(timespec="seconds")
+    target.pop("delete_reject_reason", None)
+    items[idx] = target
+    _save_json_array(ASSETS_FILE, items)
+
+    _append_audit_update(
+        "단말 자산 삭제 승인 취소",
+        [
+            f"ID: {str(target.get('id', '')).strip() or str(item_id)}",
+            f"처리자: {reviewer}",
+            f"상태: {before_status or '-'} -> cancelled",
+            f"삭제요청상태: {before_delete_status or '-'} -> cancelled",
+            f"구 관리번호: {str(target.get('구 관리번호', '')).strip() or '-'}",
+        ],
+        kind="updated",
+        scope="단말 관리",
+        actor=admin_user,
+    )
+    return {"ok": True, "item": target}
+
+
+@app.post("/api/admin/assets/{item_id}/restore-deleted")
+def admin_asset_restore_deleted(item_id: str, request: Request):
+    admin_user = _require_admin(request)
+    reviewer = str(admin_user.get("email", "")).strip().lower() or "admin"
+    items = _load_json_array(ASSETS_FILE)
+    idx = _find_asset_index_by_key(items, str(item_id or "").strip())
+    if idx < 0:
+        raise HTTPException(status_code=404, detail="asset not found")
+
+    target = dict(items[idx])
+    current_req_status = str(target.get("delete_request_status", "none") or "none").strip().lower()
+    if current_req_status != "approved":
+        raise HTTPException(status_code=400, detail="deleted item not found")
+
+    before_status = str(target.get("status", "active") or "active").strip().lower()
+    before_delete_status = current_req_status
+    target["status"] = "active"
+    target["delete_request_status"] = "none"
+    target.pop("delete_reviewed_by", None)
+    target.pop("delete_reviewed_at", None)
+    target.pop("delete_reject_reason", None)
+    items[idx] = target
+    _save_json_array(ASSETS_FILE, items)
+
+    _append_audit_update(
+        "단말 자산 복구(삭제됨)",
+        [
+            f"ID: {str(target.get('id', '')).strip() or str(item_id)}",
+            f"처리자: {reviewer}",
+            f"상태: {before_status or '-'} -> active",
+            f"삭제요청상태: {before_delete_status or '-'} -> none",
+        ],
+        kind="updated",
+        scope="단말 관리",
+        actor=admin_user,
+    )
+    return {"ok": True, "item": target}
+
+
+@app.post("/api/admin/assets/{item_id}/restore-rejected")
+def admin_asset_restore_rejected(item_id: str, request: Request):
+    admin_user = _require_admin(request)
+    reviewer = str(admin_user.get("email", "")).strip().lower() or "admin"
+    items = _load_json_array(ASSETS_FILE)
+    idx = _find_asset_index_by_key(items, str(item_id or "").strip())
+    if idx < 0:
+        raise HTTPException(status_code=404, detail="asset not found")
+
+    target = dict(items[idx])
+    current_req_status = str(target.get("delete_request_status", "none") or "none").strip().lower()
+    if current_req_status != "rejected":
+        raise HTTPException(status_code=400, detail="rejected item not found")
+
+    before_status = str(target.get("status", "active") or "active").strip().lower()
+    before_delete_status = current_req_status
+    target["status"] = "active"
+    target["delete_request_status"] = "none"
+    target.pop("delete_reviewed_by", None)
+    target.pop("delete_reviewed_at", None)
+    target.pop("delete_reject_reason", None)
+    items[idx] = target
+    _save_json_array(ASSETS_FILE, items)
+
+    _append_audit_update(
+        "단말 자산 복구(반려됨)",
+        [
+            f"ID: {str(target.get('id', '')).strip() or str(item_id)}",
+            f"처리자: {reviewer}",
+            f"상태: {before_status or '-'} -> active",
+            f"삭제요청상태: {before_delete_status or '-'} -> none",
+        ],
+        kind="updated",
+        scope="단말 관리",
+        actor=admin_user,
+    )
+    return {"ok": True, "item": target}
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     _sync_android_devices_from_adb()
@@ -1497,6 +2164,18 @@ def dashboard(request: Request):
 @app.get("/excel", response_class=HTMLResponse)
 def excel_center(request: Request):
     return templates.TemplateResponse("excel_center.html", {"request": request})
+
+
+@app.get("/upload/defectlist-raw", response_class=HTMLResponse)
+def upload_defectlist_raw_page(request: Request):
+    _require_admin(request)
+    return templates.TemplateResponse("upload_defectlist_raw.html", {"request": request})
+
+
+@app.get("/upload/full-tc", response_class=HTMLResponse)
+def upload_full_tc_page(request: Request):
+    _require_admin(request)
+    return templates.TemplateResponse("upload_full_tc.html", {"request": request})
 
 
 @app.get("/live", response_class=HTMLResponse)
@@ -1945,6 +2624,168 @@ def _parse_gviz_json_rows(raw_text: str) -> list[list[str]]:
     return out
 
 
+def _uploaded_file_datetime_text(path: Path) -> str:
+    if not path.exists():
+        return ""
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
+    except Exception:
+        return ""
+
+
+def _current_defect_source_info() -> tuple[str, str]:
+    if UPLOADED_DEFECT_RAW_FILE.exists():
+        return "uploaded-excel", UPLOADED_DEFECT_RAW_FILE.name
+    return "google-sheet", GOOGLE_DEFECT_SHEET_URL
+
+
+def _parse_a1_range(cell_range: str) -> tuple[int, int, int | None, int | None]:
+    text = str(cell_range or "").strip()
+    m = re.match(r"^([A-Za-z]+)(\d*)\s*:\s*([A-Za-z]+)(\d*)$", text)
+    if not m:
+        raise ValueError("unsupported range")
+    start_col = column_index_from_string(m.group(1).upper())
+    start_row = int(m.group(2)) if m.group(2) else 1
+    end_col = column_index_from_string(m.group(3).upper())
+    end_row = int(m.group(4)) if m.group(4) else None
+    return start_col, start_row, end_col, end_row
+
+
+def _read_uploaded_excel_range_rows(file_path: Path, sheet_name: str, cell_range: str) -> list[list[str]]:
+    if not file_path.exists():
+        return []
+    start_col, start_row, end_col, end_row = _parse_a1_range(cell_range)
+    wb = load_workbook(str(file_path), data_only=True, read_only=True)
+    try:
+        ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb[wb.sheetnames[0]]
+        max_row = int(end_row or ws.max_row or start_row)
+        rows: list[list[str]] = []
+        for raw in ws.iter_rows(
+            min_row=start_row,
+            max_row=max_row,
+            min_col=start_col,
+            max_col=end_col,
+            values_only=True,
+        ):
+            cells = ["" if val is None else str(val).strip() for val in list(raw)]
+            while cells and not cells[-1]:
+                cells.pop()
+            if any(cells):
+                rows.append(cells)
+        return rows
+    finally:
+        wb.close()
+
+
+def _fetch_uploaded_defect_rows_if_available(sheet_name: str, cell_range: str) -> list[list[str]] | None:
+    wanted = str(sheet_name or "").strip().lower()
+    raw_name = str(GOOGLE_DEFECT_SHEET_NAME or "").strip().lower()
+    if wanted != raw_name:
+        return None
+    # DefectList_Raw is now upload-only. If no file exists, do not fall back to Google.
+    if not UPLOADED_DEFECT_RAW_FILE.exists():
+        return []
+    try:
+        return _read_uploaded_excel_range_rows(UPLOADED_DEFECT_RAW_FILE, GOOGLE_DEFECT_SHEET_NAME, cell_range)
+    except Exception:
+        return []
+
+
+def _read_uploaded_full_tc_sheet_names() -> list[str]:
+    if not UPLOADED_FULL_TC_FILE.exists():
+        return []
+    wb = load_workbook(str(UPLOADED_FULL_TC_FILE), data_only=True, read_only=True)
+    try:
+        return [str(x or "").strip() for x in wb.sheetnames if str(x or "").strip()]
+    finally:
+        wb.close()
+
+
+def _read_uploaded_full_tc_sheet_rows(sheet_name: str, max_rows: int) -> list[list[str]]:
+    if not UPLOADED_FULL_TC_FILE.exists():
+        return []
+    wb = load_workbook(str(UPLOADED_FULL_TC_FILE), data_only=True, read_only=True)
+    try:
+        if sheet_name not in wb.sheetnames:
+            return []
+        ws = wb[sheet_name]
+        out: list[list[str]] = []
+        row_limit = max(1, int(max_rows))
+        for idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+            if idx > row_limit:
+                break
+            cells = ["" if val is None else str(val).strip() for val in list(row)]
+            while cells and not cells[-1]:
+                cells.pop()
+            if any(cells):
+                out.append(cells)
+        return out
+    finally:
+        wb.close()
+
+
+def _reset_defect_source_caches() -> None:
+    global GOOGLE_DEFECT_CACHE_TS, GOOGLE_DEFECT_CACHE_DATA
+    global COMPANY_DEFECT_CACHE_TS, COMPANY_DEFECT_CACHE_DATA
+    global RAW_DEFECT_ISSUES_CACHE_TS, RAW_DEFECT_ISSUES_CACHE_DATA
+
+    with GOOGLE_DEFECT_CACHE_LOCK:
+        GOOGLE_DEFECT_CACHE_TS = 0.0
+        GOOGLE_DEFECT_CACHE_DATA = {}
+    with COMPANY_DEFECT_CACHE_LOCK:
+        COMPANY_DEFECT_CACHE_TS = 0.0
+        COMPANY_DEFECT_CACHE_DATA = {}
+    with RAW_DEFECT_ISSUES_CACHE_LOCK:
+        RAW_DEFECT_ISSUES_CACHE_TS = 0.0
+        RAW_DEFECT_ISSUES_CACHE_DATA = {}
+
+
+def _reset_full_tc_caches() -> None:
+    with FULL_TC_CACHE_LOCK:
+        FULL_TC_SHEET_LIST_CACHE["ts"] = 0.0
+        FULL_TC_SHEET_LIST_CACHE["data"] = None
+        FULL_TC_SHEET_DATA_CACHE.clear()
+
+
+def _load_defect_raw_upload_history() -> list[dict]:
+    if not DEFECT_RAW_UPLOAD_HISTORY_FILE.exists():
+        return []
+    try:
+        with DEFECT_RAW_UPLOAD_HISTORY_FILE.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+    except Exception:
+        pass
+    return []
+
+
+def _append_defect_raw_upload_history(
+    uploader_name: str,
+    uploader_email: str,
+    original_filename: str,
+    defect_total_rows: int,
+    raw_issue_total_rows: int,
+) -> None:
+    entry = {
+        "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+        "uploader_name": str(uploader_name or ""),
+        "uploader_email": str(uploader_email or ""),
+        "original_filename": str(original_filename or ""),
+        "defect_total_rows": int(defect_total_rows or 0),
+        "raw_issue_total_rows": int(raw_issue_total_rows or 0),
+    }
+    with DEFECT_RAW_UPLOAD_HISTORY_LOCK:
+        history = _load_defect_raw_upload_history()
+        history.insert(0, entry)
+        history = history[:MAX_DEFECT_RAW_UPLOAD_HISTORY]
+        try:
+            with DEFECT_RAW_UPLOAD_HISTORY_FILE.open("w", encoding="utf-8") as f:
+                json.dump(history, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+
 def _fetch_google_sheet_rows(range_ref: str) -> list[list[str]]:
     sheet_id = _extract_google_sheet_id(GOOGLE_DEFECT_SHEET_URL)
     if not sheet_id:
@@ -1963,6 +2804,10 @@ def _fetch_google_sheet_rows(range_ref: str) -> list[list[str]]:
             cell_range = parsed_range
     elif text_ref:
         cell_range = text_ref
+
+    uploaded_rows = _fetch_uploaded_defect_rows_if_available(sheet_name, cell_range)
+    if uploaded_rows is not None:
+        return uploaded_rows
 
     a1_range = f"{sheet_name}!{cell_range}"
 
@@ -2303,25 +3148,34 @@ def _get_full_tc_sheet_list(force: bool = False) -> dict:
         if not force and cached and (now - ts) < FULL_TC_SHEET_LIST_TTL_SEC:
             return cached
 
-    names, script_error = _list_full_tc_sheet_names_from_script()
+    script_error = ""
     source = "apps_script"
     using_fallback = False
-    if not names:
-        names = FULL_TC_FALLBACK_SHEETS[:]
-        using_fallback = True
-        source = "fallback"
+    if UPLOADED_FULL_TC_FILE.exists():
+        names = _read_uploaded_full_tc_sheet_names()
+        source = "uploaded_excel"
+    else:
+        names, script_error = _list_full_tc_sheet_names_from_script()
+        if not names:
+            names = FULL_TC_FALLBACK_SHEETS[:]
+            using_fallback = True
+            source = "fallback"
     names = _dedupe_names(names)
 
     data = {
         "ok": True,
-        "source": FULL_TC_APPS_SCRIPT_URL,
+        "source": UPLOADED_FULL_TC_FILE.name if source == "uploaded_excel" else FULL_TC_APPS_SCRIPT_URL,
         "sheet_count": len(names),
         "sheets": names,
         "realtime_sheets": sorted([x for x in names if x in FULL_TC_REALTIME_SHEETS]),
         "using_fallback": using_fallback,
         "source_type": source,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
-        "detail": script_error if (using_fallback and script_error) else ("apps_script_or_sheet_access_unavailable" if using_fallback else "ok"),
+        "detail": (
+            "uploaded_excel"
+            if source == "uploaded_excel"
+            else (script_error if (using_fallback and script_error) else ("apps_script_or_sheet_access_unavailable" if using_fallback else "ok"))
+        ),
     }
 
     with FULL_TC_CACHE_LOCK:
@@ -2373,8 +3227,13 @@ def _get_full_tc_sheet_data(sheet: str, max_rows: int = 350, force: bool = False
         if c and not force and (now - float(c.get("ts") or 0.0)) < ttl:
             return c.get("data") or {}
 
-    raw_rows, script_error = _fetch_full_tc_sheet_rows_from_script(target, max_rows + 1)
-    source_type = "apps_script"
+    if UPLOADED_FULL_TC_FILE.exists():
+        raw_rows = _read_uploaded_full_tc_sheet_rows(target, max_rows + 1)
+        script_error = ""
+        source_type = "uploaded_excel"
+    else:
+        raw_rows, script_error = _fetch_full_tc_sheet_rows_from_script(target, max_rows + 1)
+        source_type = "apps_script"
     headers, data_rows = _normalize_sheet_grid(raw_rows)
     ok = bool(headers)
     detail_text = "ok"
@@ -2437,10 +3296,14 @@ def _find_col_index(headers: list[str], candidates: list[str]) -> int:
 
 def _build_google_defect_stats(rows: list[list[str]]) -> dict:
     now = datetime.now().isoformat(timespec="seconds")
+    source_type, source_value = _current_defect_source_info()
+    uploaded_at = _uploaded_file_datetime_text(UPLOADED_DEFECT_RAW_FILE)
     if not rows:
         return {
             "ok": False,
-            "source": GOOGLE_DEFECT_SHEET_URL,
+            "source": source_value,
+            "source_type": source_type,
+            "uploaded_at": uploaded_at,
             "sheet": GOOGLE_DEFECT_SHEET_NAME,
             "range": GOOGLE_DEFECT_SHEET_RANGE,
             "updated_at": now,
@@ -2588,7 +3451,9 @@ def _build_google_defect_stats(rows: list[list[str]]) -> dict:
 
     return {
         "ok": True,
-        "source": GOOGLE_DEFECT_SHEET_URL,
+        "source": source_value,
+        "source_type": source_type,
+        "uploaded_at": uploaded_at,
         "sheet": GOOGLE_DEFECT_SHEET_NAME,
         "range": GOOGLE_DEFECT_SHEET_RANGE,
         "updated_at": now,
@@ -2794,22 +3659,22 @@ def _build_defect_issue_rows(rows: list[list[str]], members: list[str] | None = 
 
     issue_rows = []
     for row in rows:
-        # D(index 2) and P(index 14) are the critical columns for recent status summary.
-        if len(row) < 15:
+        # B2:R range (17 columns: Key, Status, Resolution, Priority, Region, OS, Components, ...)
+        if len(row) < 12:
             continue
 
         def _cell(idx: int) -> str:
             return str(row[idx] or "").strip() if idx < len(row) else ""
 
-        # DefectList_Raw requested mapping with range B5:R:
-        # Key=C, Status=D, Priority=F, Summary=K, Fix Version/s=M, Reporter=N, Created=P
-        # (B is index 0 in this sliced range)
-        issue_type = _cell(0)      # B
-        key = _cell(1)             # C
-        status = _cell(2)          # D
-        resolution = _cell(3)      # E
-        priority = _cell(4)        # F
-        reporter = _cell(12)       # N
+        # B2:R range mapping (data starts from B2):
+        # B=Key, C=Status, D=Resolution, E=Priority, F=Region, G=OS,
+        # H=Components (정기배포), I=Brand, J=Summary, K=Affects Version/s,
+        # L=Fix Version/s, M=Reporter, N=Assignee, O=Created, P=Labels, Q=비고, R=Links
+        key = _cell(0)             # B: Key
+        status = _cell(1)          # C: Status
+        resolution = _cell(2)      # D: Resolution
+        priority = _cell(3)        # E: Priority
+        reporter = _cell(11)       # M: Reporter
         if not key:
             continue
         if member_filter_enabled and reporter not in member_set:
@@ -2817,23 +3682,23 @@ def _build_defect_issue_rows(rows: list[list[str]], members: list[str] | None = 
 
         issue_rows.append(
             {
-                "type": issue_type,
-                "key": key,
-                "status": status,
-                "resolution": resolution,
-                "priority": priority,
-                "region": _cell(5),
-                "os": _cell(6),
-                "components": _cell(7),
-                "brand": _cell(8),
-                "summary": _cell(9),
-                "affects_versions": _cell(9),
-                "fix_versions": _cell(11),
-                "reporter": reporter,
-                "assignee": _cell(13),
-                "created": _cell(14),
-                "labels": _cell(15),
-                "links": _cell(16),
+                "type": "",                           # A열 (Type) - 별도 처리 필요시
+                "key": key,                          # B: Key
+                "status": status,                    # C: Status
+                "resolution": resolution,            # D: Resolution
+                "priority": priority,                # E: Priority
+                "region": _cell(4),                 # F: Region
+                "os": _cell(5),                     # G: OS
+                "components": _cell(6),            # H: Components (정기배포)
+                "brand": _cell(7),                  # I: Brand
+                "summary": _cell(8),               # J: Summary
+                "affects_versions": _cell(9),      # K: Affects Version/s
+                "fix_versions": _cell(10),         # L: Fix Version/s
+                "reporter": reporter,               # M: Reporter
+                "assignee": _cell(12),             # N: Assignee
+                "created": _cell(13),              # O: Created
+                "labels": _cell(14),               # P: Labels
+                "links": _cell(16),                # R: Links
             }
         )
     return issue_rows
@@ -2891,6 +3756,8 @@ def _build_member_summary_from_issue_rows(issue_rows: list[dict], members: list[
 
 
 def _calc_company_defect_stats(rows: list[list[str]], members: list[str]) -> dict:
+    source_type, source_value = _current_defect_source_info()
+    uploaded_at = _uploaded_file_datetime_text(UPLOADED_DEFECT_RAW_FILE)
     all_issue_rows = _build_defect_issue_rows(rows)
     issue_rows = _build_defect_issue_rows(rows, members)
     ranked = _build_member_summary_from_issue_rows(issue_rows, members)
@@ -2899,6 +3766,9 @@ def _calc_company_defect_stats(rows: list[list[str]], members: list[str]) -> dic
 
     return {
         "ok": True,
+        "source": source_value,
+        "source_type": source_type,
+        "uploaded_at": uploaded_at,
         "sheet": GOOGLE_DEFECT_SHEET_NAME,
         "range": GOOGLE_TEAM_DEFECT_RANGE,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
@@ -2922,12 +3792,17 @@ def _get_cached_raw_defect_issue_stats(force: bool = False) -> dict:
         RAW_DEFECT_ISSUES_CACHE_FETCHING = True
 
     stats = None
+    source_type, source_value = _current_defect_source_info()
+    uploaded_at = _uploaded_file_datetime_text(UPLOADED_DEFECT_RAW_FILE)
     try:
         rows = _fetch_google_sheet_rows(f"{GOOGLE_DEFECT_SHEET_NAME}!{GOOGLE_RAW_STATUS_RANGE}")
         issues = _build_defect_issue_rows(rows)
         raw_fingerprint_src = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
         stats = {
             "ok": True,
+            "source": source_value,
+            "source_type": source_type,
+            "uploaded_at": uploaded_at,
             "sheet": GOOGLE_DEFECT_SHEET_NAME,
             "range": GOOGLE_RAW_STATUS_RANGE,
             "updated_at": datetime.now().isoformat(timespec="seconds"),
@@ -2948,6 +3823,9 @@ def _get_cached_raw_defect_issue_stats(force: bool = False) -> dict:
 
     return RAW_DEFECT_ISSUES_CACHE_DATA or {
         "ok": False,
+        "source": source_value,
+        "source_type": source_type,
+        "uploaded_at": uploaded_at,
         "sheet": GOOGLE_DEFECT_SHEET_NAME,
         "range": GOOGLE_TEAM_DEFECT_RANGE,
         "updated_at": "",
@@ -3303,6 +4181,7 @@ def refresh_defect_stats_now():
     defect = _get_cached_google_defect_stats(force=True)
     company = _get_cached_company_defect_stats(force=True)
     raw_issues = _get_cached_raw_defect_issue_stats(force=True)
+    header_rows, defectlist_rows = _get_cached_defectlist_rows(force=True)
     regular = _build_regular_release_stats(company.get("issues", []))
     return {
         "ok": True,
@@ -3310,10 +4189,13 @@ def refresh_defect_stats_now():
         "defect_updated_at": defect.get("updated_at", ""),
         "company_updated_at": company.get("updated_at", ""),
         "raw_issue_updated_at": raw_issues.get("updated_at", ""),
+        "defectlist_rows_updated_at": datetime.now().isoformat(timespec="seconds"),
         "regular_updated_at": regular.get("updated_at", ""),
         "defect_total_rows": int(defect.get("total_rows", 0) or 0),
         "company_total_rows": int(company.get("total_rows", 0) or 0),
         "raw_issue_total_rows": int(raw_issues.get("total_rows", 0) or 0),
+        "defectlist_header_rows": int(len(header_rows or [])),
+        "defectlist_data_rows": int(len(defectlist_rows or [])),
         "regular_total_rows": int(regular.get("total_rows", 0) or 0),
     }
 
@@ -3398,7 +4280,7 @@ def company_defect_detail(name: str, force: bool = False, start_date: str = "", 
 
 
 @app.get("/api/stats/company-defects/by-status")
-def company_defect_by_status(status: str, groups: str = "", force: bool = False, start_date: str = "", end_date: str = ""):
+def company_defect_by_status(status: str, groups: str = "", regions: str = "", force: bool = False, start_date: str = "", end_date: str = ""):
     target = str(status or "").strip()
     if not target:
         raise HTTPException(status_code=400, detail="status is required")
@@ -3411,12 +4293,14 @@ def company_defect_by_status(status: str, groups: str = "", force: bool = False,
     wanted = _norm(target)
     group_list = [str(x or "").strip().upper() for x in str(groups or "").split(",") if str(x or "").strip()]
     group_set = set(group_list)
+    region_list = [str(x or "").strip().upper() for x in str(regions or "").split(",") if str(x or "").strip()]
+    region_set = set(region_list)
     rows = []
     for x in filtered:
         if _norm(str(x.get("status", ""))) != wanted:
             continue
         region_text = str(x.get("region", "")).upper()
-        if "EU" not in region_text:
+        if region_set and not any(r in region_text for r in region_set):
             continue
         if group_set:
             brand_text = str(x.get("brand", "")).upper()
@@ -3439,16 +4323,26 @@ def company_defect_by_status(status: str, groups: str = "", force: bool = False,
 
 @app.get("/api/stats/company-defects/status-summary")
 def company_defect_status_summary(days: int = 30, force: bool = False):
-    window_days = max(1, min(365, int(days or 30)))
-    end_d = date.today()
-    start_d = end_d - timedelta(days=window_days - 1)
-
     data = _get_cached_raw_defect_issue_stats(force=bool(force))
-    filtered = _filter_issue_rows_by_date(
-        data.get("issues", []),
-        start_date=start_d.isoformat(),
-        end_date=end_d.isoformat(),
-    )
+    raw_rows = data.get("issues", [])
+
+    req_days = int(days or 0)
+    if req_days <= 0:
+        window_days = 0
+        filtered = list(raw_rows)
+        start_text = ""
+        end_text = ""
+    else:
+        window_days = max(1, min(365, req_days))
+        end_d = date.today()
+        start_d = end_d - timedelta(days=window_days - 1)
+        filtered = _filter_issue_rows_by_date(
+            raw_rows,
+            start_date=start_d.isoformat(),
+            end_date=end_d.isoformat(),
+        )
+        start_text = start_d.isoformat()
+        end_text = end_d.isoformat()
 
     counter = Counter()
     for row in filtered:
@@ -3465,13 +4359,42 @@ def company_defect_status_summary(days: int = 30, force: bool = False):
     return {
         "ok": True,
         "days": window_days,
-        "start_date": start_d.isoformat(),
-        "end_date": end_d.isoformat(),
+        "start_date": start_text,
+        "end_date": end_text,
         "updated_at": data.get("updated_at", ""),
         "total_rows": int(sum(counter.values())),
         "sheet": data.get("sheet", GOOGLE_DEFECT_SHEET_NAME),
         "range": data.get("range", GOOGLE_TEAM_DEFECT_RANGE),
         "status_top": status_top,
+    }
+
+
+@app.get("/api/stats/closing-summary/cycle-counts")
+def closing_summary_cycle_counts(force: bool = False):
+    data = _get_cached_company_defect_stats(force=bool(force))
+    rows = data.get("issues", [])
+
+    cycle_counter = Counter()
+    for row in rows:
+        cycles = _extract_closing_cycles(
+            str(row.get("fix_versions", "")),
+            str(row.get("affects_versions", "")),
+            str(row.get("components", "")),
+        )
+        for c in cycles:
+            cycle_counter[c] += 1
+
+    cycles_sorted = sorted(cycle_counter.keys(), key=lambda x: int(x), reverse=True)
+    cycle_counts = [
+        {"name": c, "count": int(cycle_counter.get(c, 0))}
+        for c in cycles_sorted
+    ]
+
+    return {
+        "ok": True,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "total_rows": int(sum(cycle_counter.values())),
+        "cycle_counts": cycle_counts,
     }
 
 
@@ -4756,6 +5679,113 @@ async def upload_testcases(file: UploadFile = File(...)):
 
     threading.Thread(target=_run_upload_job, args=(job_id, saved_path), daemon=True).start()
     return {"ok": True, "job_id": job_id, "status": "queued", "file": file.filename}
+
+
+@app.get("/api/upload/source-status")
+def upload_source_status(request: Request):
+    _require_admin(request)
+    defect_type, defect_source = _current_defect_source_info()
+    return {
+        "ok": True,
+        "defect_raw": {
+            "source_type": defect_type,
+            "source": defect_source,
+            "uploaded_at": _uploaded_file_datetime_text(UPLOADED_DEFECT_RAW_FILE),
+            "exists": UPLOADED_DEFECT_RAW_FILE.exists(),
+        },
+        "full_tc": {
+            "source_type": "uploaded_excel" if UPLOADED_FULL_TC_FILE.exists() else "apps_script",
+            "source": UPLOADED_FULL_TC_FILE.name if UPLOADED_FULL_TC_FILE.exists() else FULL_TC_APPS_SCRIPT_URL,
+            "uploaded_at": _uploaded_file_datetime_text(UPLOADED_FULL_TC_FILE),
+            "exists": UPLOADED_FULL_TC_FILE.exists(),
+        },
+    }
+
+
+@app.post("/api/upload/defectlist-raw")
+async def upload_defectlist_raw_file(request: Request, file: UploadFile = File(...)):
+    admin_user = _require_admin(request)
+    filename = str(file.filename or "").strip()
+    if not filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail=".xlsx 파일만 업로드할 수 있습니다.")
+
+    temp_name = f"defectlist_raw_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    temp_path = UPLOAD_DIR / temp_name
+    with temp_path.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+    # 이전 파일 백업 후 새 파일로 교체 (이전 데이터 완전 삭제)
+    shutil.copyfile(str(temp_path), str(UPLOADED_DEFECT_RAW_FILE))
+
+    # 모든 관련 캐시 초기화 (이전 데이터 완전 제거)
+    _reset_defect_source_caches()
+    # DefectList 편집기용 캐시도 초기화
+    with DEFECTLIST_ROWS_CACHE_LOCK:
+        global DEFECTLIST_ROWS_CACHE_TS, DEFECTLIST_ROWS_CACHE_DATA
+        DEFECTLIST_ROWS_CACHE_TS = 0.0
+        DEFECTLIST_ROWS_CACHE_DATA = {}
+    
+    # 새 데이터 강제 로드
+    defect = _get_cached_google_defect_stats(force=True)
+    company = _get_cached_company_defect_stats(force=True)
+    raw = _get_cached_raw_defect_issue_stats(force=True)
+
+    defect_rows = int(defect.get("total_rows", 0) or 0)
+    raw_rows = int(raw.get("total_rows", 0) or 0)
+
+    _append_defect_raw_upload_history(
+        uploader_name=str(admin_user.get("name", "") or admin_user.get("username", "") or ""),
+        uploader_email=str(admin_user.get("email", "") or ""),
+        original_filename=filename,
+        defect_total_rows=defect_rows,
+        raw_issue_total_rows=raw_rows,
+    )
+
+    return {
+        "ok": True,
+        "uploaded": filename,
+        "stored_as": UPLOADED_DEFECT_RAW_FILE.name,
+        "uploaded_at": _uploaded_file_datetime_text(UPLOADED_DEFECT_RAW_FILE),
+        "defect_total_rows": defect_rows,
+        "company_total_rows": int(company.get("total_rows", 0) or 0),
+        "raw_issue_total_rows": raw_rows,
+        "message": "이전 데이터 삭제 후 새로운 데이터로 완전 갱신되었습니다.",
+    }
+
+
+@app.get("/api/upload/defectlist-raw/history")
+def upload_defectlist_raw_history(request: Request):
+    _require_admin(request)
+    return {
+        "ok": True,
+        "history": _load_defect_raw_upload_history(),
+    }
+
+
+@app.post("/api/upload/full-tc")
+async def upload_full_tc_file(request: Request, file: UploadFile = File(...)):
+    _require_admin(request)
+    filename = str(file.filename or "").strip()
+    if not filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail=".xlsx 파일만 업로드할 수 있습니다.")
+
+    temp_name = f"full_tc_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    temp_path = UPLOAD_DIR / temp_name
+    with temp_path.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+    shutil.copyfile(str(temp_path), str(UPLOADED_FULL_TC_FILE))
+
+    _reset_full_tc_caches()
+    sheets_data = _get_full_tc_sheet_list(force=True)
+    sheets = list(sheets_data.get("sheets") or [])
+
+    return {
+        "ok": True,
+        "uploaded": filename,
+        "stored_as": UPLOADED_FULL_TC_FILE.name,
+        "uploaded_at": _uploaded_file_datetime_text(UPLOADED_FULL_TC_FILE),
+        "sheet_count": len(sheets),
+        "sheets": sheets[:60],
+    }
 
 
 @app.get("/api/upload-jobs/{job_id}")

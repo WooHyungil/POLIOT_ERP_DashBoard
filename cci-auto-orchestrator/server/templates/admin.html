@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CCI Admin Panel</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260319b" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260320f" />
   <script src="/static/auto_logout.js"></script>
 </head>
 <body class="has-side-nav">
@@ -39,7 +39,7 @@
       </nav>
     </header>
 
-    <section class="grid grid-wide">
+    <section class="grid grid-wide admin-grid" id="adminMainGrid">
       <article class="card" id="adminPeopleTab">
         <h2>인원 관리</h2>
         <p class="hint">현재 관리자 데이터 스크립트를 점검 중입니다. 기본 사용자 목록은 아래 표에서 확인 가능합니다.</p>
@@ -75,10 +75,159 @@
           </table>
         </div>
       </article>
+
+      <article class="card" id="adminAssetApprovalTab">
+        <h2>요청 승인</h2>
+        <p class="hint">페이지별 승인 요청을 공통 목록으로 확인하고, 내용 버튼에서 요청 상세를 팝업으로 확인할 수 있습니다.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>페이지</th>
+                <th>요청자</th>
+                <th>요청일시</th>
+                <th>내용</th>
+                <th>판단</th>
+                <th>철회</th>
+              </tr>
+            </thead>
+            <tbody id="assetDeleteRequestRows"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="card" id="adminAssetDecisionTab">
+        <h2>요청 판단</h2>
+        <div class="decision-headnote">
+          <p class="decision-lead">승인 가능한 요청만 빠르게 골라 처리하고, 상세 내용은 내용 버튼으로 확인합니다.</p>
+          <div class="decision-meta-strip">
+            <div class="decision-meta-pill">
+              <span>전체 요청</span>
+              <strong id="decisionTotalCount">0</strong>
+            </div>
+            <div class="decision-meta-pill">
+              <span>선택됨</span>
+              <strong id="decisionSelectedOnlyCount">0</strong>
+            </div>
+            <div class="decision-meta-pill is-accent">
+              <span>즉시 처리 가능</span>
+              <strong id="decisionActionableCount">0</strong>
+            </div>
+          </div>
+        </div>
+        <div class="decision-toolbar">
+          <label class="decision-checkall"><input id="decisionQueueCheckAll" type="checkbox" /> 처리 가능 항목 전체 선택</label>
+          <span id="decisionSelectedCount" class="decision-selection-text">0개 선택됨</span>
+          <div class="decision-toolbar-actions">
+            <button id="decisionWithdrawSelectedBtn" type="button" class="btn-warning">선택건 요청취소</button>
+          </div>
+        </div>
+        <div class="table-wrap decision-table-wrap">
+          <table class="decision-table">
+            <thead>
+              <tr>
+                <th style="width:54px;">선택</th>
+                <th>페이지</th>
+                <th>요청자</th>
+                <th>요청일시</th>
+                <th>내용</th>
+                <th>상태</th>
+                <th>요청취소</th>
+              </tr>
+            </thead>
+            <tbody id="decisionQueueRows"></tbody>
+          </table>
+        </div>
+        <div class="decision-action-panel">
+          <div class="decision-mode-group">
+            <label><input type="radio" name="decisionType" value="approve" checked /> 선택건 승인</label>
+            <label><input type="radio" name="decisionType" value="reject" /> 선택건 반려</label>
+          </div>
+          <input id="decisionBulkRejectReason" type="text" placeholder="반려 사유 (반려 선택 시 필수)" class="decision-reject-input" />
+          <button id="decisionApplyBtn" type="button">선택건 처리</button>
+        </div>
+      </article>
+
+      <article class="card" id="adminAssetDeletedTab">
+        <h2>삭제됨</h2>
+        <p class="hint">삭제 승인이 완료된 단말 자산 목록입니다.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>구 관리번호</th>
+                <th>NEW 관리 번호</th>
+                <th>요청자</th>
+                <th>요청일시</th>
+                <th>승인자</th>
+                <th>승인일시</th>
+                <th>작업</th>
+              </tr>
+            </thead>
+            <tbody id="assetDeletedRows"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="card" id="adminAssetRejectedTab">
+        <h2>반려됨</h2>
+        <p class="hint">삭제 요청이 반려된 단말 자산 목록입니다.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>구 관리번호</th>
+                <th>NEW 관리 번호</th>
+                <th>요청자</th>
+                <th>요청일시</th>
+                <th>반려자</th>
+                <th>반려일시</th>
+                <th>반려사유</th>
+                <th>작업</th>
+              </tr>
+            </thead>
+            <tbody id="assetRejectedRows"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="card" id="adminActivityLogTab">
+        <h2>삭제/반려 활동 이력</h2>
+        <p class="hint">관리자와 모든 이용자의 상태 변경 이력(생성/수정/요청/승인/반려/삭제)을 시간 순으로 보여줍니다.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>일시</th>
+                <th>작업자</th>
+                <th>페이지/모듈</th>
+                <th>작업 내용</th>
+                <th>항목 상세</th>
+              </tr>
+            </thead>
+            <tbody id="activityLogRows"></tbody>
+          </table>
+        </div>
+      </article>
     </section>
   </main>
 
-  <script src="/static/side_nav.js?v=20260318b"></script>
-  <script src="/static/admin.js?v=20260317n"></script>
+  <section class="modal" id="requestDetailModal" hidden>
+    <div class="modal-backdrop" data-close-request-detail="1"></div>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="requestDetailTitle">
+      <div class="modal-head">
+        <h3 id="requestDetailTitle">요청 상세</h3>
+        <button type="button" class="btn-ghost" data-close-request-detail="1">닫기</button>
+      </div>
+      <div class="modal-body">
+        <ul class="modal-detail-list" id="requestDetailList"></ul>
+      </div>
+    </div>
+  </section>
+
+  <script src="/static/side_nav.js?v=20260319c"></script>
+  <script src="/static/admin.js?v=20260320p"></script>
 </body>
 </html>
