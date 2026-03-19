@@ -2385,15 +2385,16 @@ table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.88rem;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .table-wrap {
   overflow-x: auto;
   overflow-y: visible;
   max-height: none;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 8px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .manage-table-wrap {
@@ -2401,6 +2402,9 @@ table {
   max-width: 100%;
   max-height: calc(100vh - 360px);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
 }
 
 .member-search-scroll-wrap {

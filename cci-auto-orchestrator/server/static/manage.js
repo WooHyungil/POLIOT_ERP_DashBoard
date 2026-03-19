@@ -278,6 +278,7 @@ async function saveAsset(ev) {
 
 document.getElementById("assetForm")?.addEventListener("submit", saveAsset);
 document.getElementById("assetResetBtn")?.addEventListener("click", resetAssetForm);
+document.getElementById("newAssetBtn")?.addEventListener("click", resetAssetForm);
 
 document.getElementById("assetRows")?.addEventListener("click", async (ev) => {
   const t = ev.target;

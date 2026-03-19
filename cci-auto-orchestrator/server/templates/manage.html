@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CCI Manage Panel</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260319b" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260319c" />
   <script src="/static/auto_logout.js"></script>
 </head>
 <body class="has-side-nav">
@@ -62,7 +62,12 @@
 
     <section class="grid grid-wide" id="manageDeviceTab">
       <article class="card card-control">
-        <h2>자산 등록/수정</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h2 style="margin: 0;">자산 등록/수정</h2>
+          <button id="newAssetBtn" type="button" style="min-width: 120px;">
+            <i class="fas fa-plus"></i> 새 단말 등록
+          </button>
+        </div>
         <form id="assetForm">
           <input id="assetId" type="hidden" />
           <div class="manage-form-grid">
