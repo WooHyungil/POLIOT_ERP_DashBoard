@@ -81,13 +81,20 @@
 	<!-- CSS 스타일 추가 -->
 	<style>
 		.side-nav-section-label {
-			padding: 12px 16px 8px;
+			padding: 12px 6px 8px;
 			font-size: 12px;
 			font-weight: 600;
-			color: #666;
+			color: #667eea;
 			text-transform: uppercase;
-			border-top: 1px solid #e0e0e0;
-			margin-top: 8px;
+			border-top: 1px solid #e5e7eb;
+			margin-top: 4px;
+			margin-bottom: 2px;
+			letter-spacing: 0.05em;
+		}
+
+		/* 축소 상태에서 섹션 라벨 숨김 */
+		.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-section-label {
+			display: none;
 		}
 
 		.side-nav-caret::before {

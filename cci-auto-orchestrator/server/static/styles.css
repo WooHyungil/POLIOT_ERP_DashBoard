@@ -167,34 +167,44 @@ body {
   padding: 0;
 }
 
-/* 미니모드: 줄어든 사이드바에서 메뉴 첫글자만 보이게 */
+/* 미니모드: 줄어든 사이드바에서 아이콘만 보이게 */
 
-.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-link {
+.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-link,
+.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-parent {
   justify-content: center;
-  width: 42px;
-  min-width: 42px;
-  padding: 6px;
+  width: calc(100% - 12px);
+  min-width: auto;
+  height: 50px;
+  padding: 8px 6px;
   text-align: center;
+  margin: 2px 6px;
 }
+
 .side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-link .side-nav-icon,
 .side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-parent .side-nav-icon {
   display: inline-flex !important;
-  font-size: 1.18rem;
+  font-size: 1.2rem;
   font-weight: 800;
-  color: #1457a6;
-  background: none;
+  color: #667eea;
+  background: #f0f3ff;
   width: 36px;
   min-width: 36px;
   height: 36px;
   margin: 0 auto;
   padding: 0;
+  border-radius: 6px;
 }
-@media (max-width: 700px) {
-  .side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-link .side-nav-text,
-  .side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-link .side-nav-caret,
-  .side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-parent .side-nav-text {
-    display: none !important;
-  }
+
+.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-link.active .side-nav-icon,
+.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-parent.active .side-nav-icon {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-link .side-nav-text,
+.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-link .side-nav-caret,
+.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-parent .side-nav-text,
+.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-parent .side-nav-caret {
+  display: none !important;
 }
 /* PC 환경에서는 항상 메뉴명이 보이도록 */
 
@@ -221,23 +231,47 @@ body {
 }
 
 /* 툴팁 스타일 */
+.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-link[title],
+.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-parent[title] {
+  position: relative;
+}
+
+.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-link[title]:hover::after,
+.side-nav:not(:hover):not(:focus-within):not(.is-open) .side-nav-parent[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  left: 110%;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #667eea;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  pointer-events: none;
+}
+
 .side-nav-link[title], .side-nav-parent[title] {
   position: relative;
 }
+
 .side-nav-link[title]:hover::after, .side-nav-parent[title]:hover::after {
   content: attr(title);
   position: absolute;
   left: 110%;
   top: 50%;
   transform: translateY(-50%);
-  background: #1457a6;
+  background: #667eea;
   color: #fff;
-  padding: 4px 10px;
+  padding: 6px 12px;
   border-radius: 7px;
-  font-size: 0.92rem;
+  font-size: 0.85rem;
   white-space: nowrap;
   z-index: 9999;
-  box-shadow: 0 2px 8px rgba(20,87,166,0.13);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
   pointer-events: none;
 }
 
