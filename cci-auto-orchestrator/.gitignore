@@ -28,6 +28,8 @@ admin_cookies.txt
 user_cookies.txt
 
 # Database & Data Files (auto-generated)
+config/dashboard_*.json
+config/employees.json
 server/db/
 server/artifacts/
 server/exports/
