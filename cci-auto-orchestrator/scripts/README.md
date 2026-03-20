@@ -34,9 +34,7 @@
 ### 📦 archive/
 사용 중단된 또는 레거시 스크립트
 
-- start_all.ps1
-- start_agent.ps1
-- run_all.bat
+- (현재 비어 있음)
 
 ## 주요 진입점
 

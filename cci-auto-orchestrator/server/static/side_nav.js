@@ -112,12 +112,25 @@
   nav.addEventListener("mouseenter", applySubLinkActiveState);
   window.addEventListener("hashchange", applySubLinkActiveState);
 
+  function setGameVisibility(enabled) {
+    const on = Boolean(enabled);
+    document.documentElement.setAttribute("data-game-access", on ? "1" : "0");
+    for (const el of document.querySelectorAll('[data-requires-game="true"]')) {
+      if (on) {
+        el.removeAttribute("hidden");
+      } else {
+        el.setAttribute("hidden", "hidden");
+      }
+    }
+  }
+
   async function applyRoleGuard() {
     try {
       const res = await fetch("/api/auth/me", { credentials: "same-origin" });
       if (!res.ok) return;
       const data = await res.json();
       const role = String(data?.user?.role || "user").toLowerCase();
+      const gameAccess = Boolean(data?.user?.game_access);
       const email = String(data?.user?.email || "").trim().toLowerCase();
       const name = String(data?.user?.name || "").trim();
       const loginAt = String(data?.user?.login_at || "").trim();
@@ -160,18 +173,30 @@
         setInterval(updateIdleCountdown, 30 * 1000);
       }
 
+      setGameVisibility(gameAccess);
+
       if (role === "admin") return;
 
       for (const el of document.querySelectorAll('[data-requires-admin="true"]')) {
         el.remove();
       }
 
+      return;
+
     } catch {
       // Ignore auth-role fetch errors to keep navigation usable.
     }
+
+    // Safe fallback when auth fetch fails.
+    setGameVisibility(false);
   }
 
   applyRoleGuard();
+  window.addEventListener("cci:auth-updated", applyRoleGuard);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) applyRoleGuard();
+  });
+  setInterval(applyRoleGuard, 5000);
 
   nav.addEventListener("mouseleave", function () {
     if (window.innerWidth <= 700) return;

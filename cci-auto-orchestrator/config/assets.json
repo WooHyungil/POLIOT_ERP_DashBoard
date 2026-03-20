@@ -198,10 +198,14 @@
     "serial": "41121FDJG004BD",
     "region": "EU",
     "owner": "유승훈",
-    "status": "active",
-    "delete_request_status": "none",
+    "status": "cancelled",
+    "delete_request_status": "cancelled",
     "delete_requested_by": "hiss0723@poliot.co.kr",
-    "delete_requested_at": "2026-03-19T15:29:54"
+    "delete_requested_at": "2026-03-19T23:51:43",
+    "delete_reviewed_by": "hiss0723@poliot.co.kr",
+    "delete_reviewed_at": "2026-03-19T23:51:58",
+    "delete_cancelled_by": "hiss0723@poliot.co.kr",
+    "delete_cancelled_at": "2026-03-19T23:52:21"
   },
   {
     "id": "asset-poliot-eu-s-w-008",
@@ -246,10 +250,14 @@
     "serial": "58181FDCQ005YZ",
     "region": "EU",
     "owner": "이도권",
-    "status": "active",
-    "delete_request_status": "none",
+    "status": "cancelled",
+    "delete_request_status": "cancelled",
     "delete_requested_by": "hiss0723@poliot.co.kr",
-    "delete_requested_at": "2026-03-19T14:18:16"
+    "delete_requested_at": "2026-03-20T07:23:41",
+    "delete_reviewed_by": "hiss0723@poliot.co.kr",
+    "delete_reviewed_at": "2026-03-20T07:23:54",
+    "delete_cancelled_by": "hiss0723@poliot.co.kr",
+    "delete_cancelled_at": "2026-03-20T07:24:15"
   },
   {
     "id": "asset-poliot-eu-s-w-021",
@@ -295,9 +303,7 @@
     "region": "EU",
     "owner": "",
     "status": "active",
-    "delete_request_status": "none",
-    "delete_requested_by": "hiss0723@poliot.co.kr",
-    "delete_requested_at": "2026-03-19T14:18:16"
+    "delete_request_status": "none"
   },
   {
     "id": "asset-poliot-eu-s-w-026",

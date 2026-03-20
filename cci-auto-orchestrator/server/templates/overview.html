@@ -6,7 +6,7 @@
   <title>CCI Overview</title>
   <!-- FontAwesome CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260320e" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260320s" />
   <script src="/static/auto_logout.js"></script>
 </head>
 <body class="has-side-nav">
@@ -16,7 +16,7 @@
       <div class="topbar-main-row">
         <div class="brand-left">
           <div class="brand-logo-wrap" aria-hidden="true">
-            <img class="brand-logo-img" src="/static/company_logo.png" alt="company logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+            <img class="brand-logo-img" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==" alt="company logo" style="display:none;" />
             <div class="brand-mark" style="display:none;">
               <span class="dot dot-a"></span>
               <span class="dot dot-b"></span>
@@ -26,7 +26,7 @@
           <div>
             <p class="eyebrow">Enterprise QA Orchestration</p>
             <h1>POLIOT Device Control Center</h1>
-            <p class="meta-text">개요 페이지는 운영 통계 중심으로 구성하고, 단말 제어는 원격 리모컨 페이지에서 수행합니다.</p>
+            <p class="meta-text">개요 페이지는 운영 통계 중심으로 구성하고, 테스트 실행과 진행 확인은 QA 대시보드에서 수행합니다.</p>
           </div>
         </div>
         <nav class="topnav">
@@ -40,8 +40,6 @@
             <div class="navlink-submenu">
               <a class="navlink" href="/defects">1. 결함 상세</a>
               <a class="navlink" href="/excel">2. 엑셀 센터</a>
-              <a class="navlink" href="/remote">3. 원격 리모컨</a>
-              <a class="navlink" href="/live">4. 라이브 모니터</a>
             </div>
           </div>
         </nav>
@@ -56,15 +54,23 @@
     </header>
 
     <section class="grid grid-overview overview-layout" id="overviewMainContent" aria-label="개요 빠른 접근">
-      <article class="card card-guidance overview-recent overview-nav-card" data-link="/qa#recentIssueChartSection" role="button" tabindex="0" aria-label="최근 이슈 통계 차트로 이동">
-        <h2>최근 이슈 통계</h2>
+      <article class="card card-guidance overview-recent overview-nav-card overview-chart-card" data-link="/qa#recentIssueChartSection" role="button" tabindex="0" aria-label="최근 이슈 통계 차트로 이동">
+        <div class="overview-card-head">
+          <div class="overview-card-head-main">
+            <span class="overview-card-icon recent"><i class="fas fa-chart-pie"></i></span>
+            <div>
+              <h2>최근 이슈 통계</h2>
+              <p class="overview-card-sub">Status Top 기준으로 최근 이슈 흐름을 빠르게 확인합니다.</p>
+            </div>
+          </div>
+        </div>
         <div class="overview-range-tabs" id="overviewRecentRangeTabs" aria-label="최근 이슈 기간 선택">
           <button type="button" class="overview-range-tab" data-days="7">7일</button>
           <button type="button" class="overview-range-tab" data-days="30">30일</button>
           <button type="button" class="overview-range-tab active" data-days="0">전체</button>
         </div>
         <p id="overviewRecentRangeHint" class="hint">최근 30일 Status Top 기준 이슈 분포를 원형 차트로 표시합니다.</p>
-        <div class="overview-pie-wrap">
+        <div class="overview-pie-wrap overview-chart-shell">
           <div id="overviewRecentDonut" class="overview-donut" aria-hidden="true"></div>
           <ul id="overviewRecentLegend" class="overview-legend">
             <li class="hint">차트 로딩 중...</li>
@@ -72,34 +78,50 @@
         </div>
       </article>
 
-      <article class="card card-guidance overview-regular overview-nav-card" data-link="/qa#regularReleaseSection" role="button" tabindex="0" aria-label="정기배포 현황으로 이동">
-        <h2>정기배포 통계</h2>
-        <p class="hint">정기배포 버전별 이슈 분포를 원형 차트로 확인하고, 선택 시 정기배포 상세 페이지로 이동합니다.</p>
-        <div class="overview-pie-wrap">
-          <div id="overviewRegularDonut" class="overview-donut" aria-hidden="true"></div>
-          <ul id="overviewRegularLegend" class="overview-legend">
-            <li class="hint">차트 로딩 중...</li>
-          </ul>
+      <article class="card overview-notice" id="overviewNoticeCard">
+        <div class="notice-header">
+          <div class="notice-header-left">
+            <div class="notice-icon-ring">
+              <i class="fas fa-bell"></i>
+              <span class="notice-new-dot" id="noticeNewDot" hidden></span>
+            </div>
+            <div>
+              <h2>공지사항</h2>
+              <span class="notice-header-sub" id="noticeLastSyncText">불러오는 중...</span>
+            </div>
+          </div>
+          <button type="button" id="noticeRefreshBtn" class="notice-refresh-btn" title="새로고침">
+            <i class="fas fa-sync-alt"></i>
+          </button>
+        </div>
+        <div class="notice-tabs" id="noticeTabs">
+          <button type="button" class="notice-tab active" data-filter="all"><i class="fas fa-list-ul"></i> 전체</button>
+          <button type="button" class="notice-tab" data-filter="board"><i class="fas fa-clipboard-list"></i> 게시판</button>
+          <button type="button" class="notice-tab" data-filter="defect"><i class="fas fa-table"></i> DefectList</button>
+          <button type="button" class="notice-tab" data-filter="program"><i class="fas fa-code-branch"></i> 프로그램</button>
+        </div>
+        <div id="noticeList" class="notice-list">
+          <div class="notice-loading"><i class="fas fa-circle-notch fa-spin"></i><span>공지사항을 불러오는 중...</span></div>
         </div>
       </article>
 
-      <article class="card card-guidance overview-summary overview-nav-card" data-link="/qa#closingSummarySection" role="button" tabindex="0" aria-label="Summary 섹션으로 이동">
-        <h2>Summary 통계</h2>
+      <article class="card card-guidance overview-summary overview-nav-card overview-chart-card" data-link="/qa#closingSummarySection" role="button" tabindex="0" aria-label="Summary 섹션으로 이동">
+        <div class="overview-card-head">
+          <div class="overview-card-head-main">
+            <span class="overview-card-icon summary"><i class="fas fa-layer-group"></i></span>
+            <div>
+              <h2>Summary 통계</h2>
+              <p class="overview-card-sub">마감 사이클 분포를 요약해서 빠르게 판단할 수 있게 구성했습니다.</p>
+            </div>
+          </div>
+        </div>
         <p id="overviewSummaryCycleHint" class="hint">DefectList_Raw 기준 마감 사이클(예: 2604, 2603...)을 전체 표시합니다.</p>
         <div id="overviewSummaryCycleChips" class="overview-cycle-chips" aria-label="Summary 사이클 목록"></div>
-        <div class="overview-pie-wrap">
+        <div class="overview-pie-wrap overview-chart-shell">
           <div id="overviewSummaryDonut" class="overview-donut" aria-hidden="true"></div>
           <ul id="overviewSummaryLegend" class="overview-legend">
             <li class="hint">차트 로딩 중...</li>
           </ul>
-        </div>
-      </article>
-
-      <article class="card card-guidance card-update-log overview-updates">
-        <h2>업데이트 공지사항</h2>
-        <p class="hint">개요는 최신 변경 이력을 자동 반영합니다. 빠진 기능, 신규 기능, 최신화 내용을 한눈에 확인할 수 있습니다.</p>
-        <div id="overviewUpdateLog" class="update-log-list">
-          <p class="hint">업데이트 로그를 불러오는 중...</p>
         </div>
       </article>
     </section>
@@ -140,23 +162,47 @@
 
   <div id="updateDetailModal" class="modal" hidden>
     <div class="modal-backdrop" data-modal-close="true"></div>
-    <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="updateDetailTitle">
-      <header class="modal-head">
-        <h3 id="updateDetailTitle">업데이트 상세</h3>
-        <button id="updateDetailCloseBtn" type="button" class="btn-ghost">닫기</button>
+    <section class="modal-panel update-detail-panel" role="dialog" aria-modal="true" aria-labelledby="updateDetailTitle">
+      <header class="modal-head update-detail-head">
+        <div class="update-detail-head-main">
+          <span class="update-detail-icon" id="updateDetailIcon"><i class="fas fa-bell"></i></span>
+          <div class="update-detail-title-wrap">
+            <div class="update-detail-badges">
+              <span id="updateDetailKind" class="update-detail-kind">업데이트</span>
+              <span id="updateDetailScope" class="update-detail-scope">-</span>
+            </div>
+            <h3 id="updateDetailTitle">업데이트 상세</h3>
+            <p id="updateDetailMeta" class="update-detail-meta">-</p>
+          </div>
+        </div>
+        <button id="updateDetailCloseBtn" type="button" class="btn-ghost update-detail-close">닫기</button>
       </header>
-      <div class="modal-body">
-        <p id="updateDetailMeta" class="update-meta">-</p>
-        <p id="updateDetailSource" class="hint">-</p>
-        <ul id="updateDetailList" class="modal-detail-list">
+      <div class="modal-body update-detail-body">
+        <div class="update-detail-info-row">
+          <div class="update-detail-info-card">
+            <span class="update-detail-info-label">변경 시각</span>
+            <strong id="updateDetailTimestamp">-</strong>
+          </div>
+          <div class="update-detail-info-card">
+            <span class="update-detail-info-label">출처</span>
+            <strong id="updateDetailSource">-</strong>
+          </div>
+        </div>
+        <div class="update-detail-list-wrap">
+          <div class="update-detail-list-head">
+            <h4>상세 변경 항목</h4>
+            <span id="updateDetailCount" class="update-detail-count">0건</span>
+          </div>
+          <ul id="updateDetailList" class="modal-detail-list update-detail-list">
           <li>상세 내용이 없습니다.</li>
-        </ul>
+          </ul>
+        </div>
       </div>
     </section>
   </div>
 
   <div id="toastStack" class="toast-stack"></div>
-  <script src="/static/side_nav.js?v=20260319c"></script>
-  <script src="/static/overview.js?v=20260320g"></script>
+  <script src="/static/side_nav.js?v=20260320s"></script>
+  <script src="/static/overview.js?v=20260320s"></script>
 </body>
 </html>

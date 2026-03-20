@@ -34,6 +34,11 @@ const summarySliderState = {
 const overviewRecentRangeState = {
   days: 0,
 };
+const noticeState = {
+  items: [],
+  boardItems: [],
+  activeFilter: "all",
+};
 
 function restartCssAnimation(el, className) {
   if (!el) return;
@@ -130,18 +135,47 @@ function openUpdateDetailModal(idx) {
   const meta = document.getElementById("updateDetailMeta");
   const source = document.getElementById("updateDetailSource");
   const list = document.getElementById("updateDetailList");
-  if (!modal || !title || !meta || !source || !list) return;
+  const kindBadge = document.getElementById("updateDetailKind");
+  const scopeBadge = document.getElementById("updateDetailScope");
+  const timestamp = document.getElementById("updateDetailTimestamp");
+  const count = document.getElementById("updateDetailCount");
+  const icon = document.getElementById("updateDetailIcon");
+  if (!modal || !title || !meta || !source || !list || !kindBadge || !scopeBadge || !timestamp || !count || !icon) return;
 
   const details = Array.isArray(row?.details) ? row.details : [];
+  const kindInfo = getNoticeKindInfo(row);
   title.textContent = row?.title || "업데이트 상세";
-  meta.textContent = `${kindText(row?.kind)} | ${row?.scope || "-"} | ${fmtTime(row?.updated_at)}`;
-  source.textContent = `출처: ${row?.source || "-"}`;
+  meta.textContent = `${kindText(row?.kind)} 변경 항목을 상세하게 확인할 수 있습니다.`;
+  source.textContent = String(row?.source || "-");
+  scopeBadge.textContent = String(row?.scope || "-");
+  kindBadge.textContent = kindInfo.text;
+  kindBadge.className = `update-detail-kind ${kindInfo.badgeClass}`;
+  timestamp.textContent = fmtDateTimeForDetail(row?.updated_at);
+  count.textContent = `${details.length || 0}건`;
+  icon.className = `update-detail-icon ${kindInfo.badgeClass}`;
+  icon.innerHTML = `<i class="${kindInfo.icon}"></i>`;
   list.innerHTML = details.length
-    ? details.map(function (d) { return `<li>${esc(d)}</li>`; }).join("")
+    ? details.map(function (d, detailIdx) { return `<li><span class="update-detail-index">${detailIdx + 1}</span><span>${esc(d)}</span></li>`; }).join("")
     : "<li>상세 내용이 없습니다.</li>";
 
   modal.hidden = false;
   document.body.classList.add("modal-open");
+}
+
+function fmtDateTimeForDetail(value) {
+  const text = String(value || "").trim();
+  if (!text) return "-";
+  const parsed = Date.parse(text);
+  if (!Number.isFinite(parsed)) return text.replace("T", " ").replace("Z", "");
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date(parsed));
 }
 
 async function copyText(text, successMsg) {
@@ -157,42 +191,151 @@ async function copyText(text, successMsg) {
   }
 }
 
-async function refreshOverviewUpdates() {
-  const root = document.getElementById("overviewUpdateLog");
+function isDefectListItem(item) {
+  const title = String(item?.title || "").toLowerCase();
+  const scope = String(item?.scope || "").toLowerCase();
+  return title.includes("defect") || scope.includes("defect")
+    || title.includes("결함") || scope.includes("결함")
+    || title.includes("raw") || scope.includes("raw");
+}
+
+function getNoticeKindInfo(item) {
+  if (isDefectListItem(item)) {
+    return { badgeClass: "nk-defect", icon: "fas fa-table", text: "DefectList" };
+  }
+  const kind = String(item?.kind || "").trim().toLowerCase();
+  if (kind === "added") return { badgeClass: "nk-added", icon: "fas fa-plus-circle", text: "신규 기능" };
+  if (kind === "removed") return { badgeClass: "nk-removed", icon: "fas fa-minus-circle", text: "삭제" };
+  return { badgeClass: "nk-updated", icon: "fas fa-sync-alt", text: "업데이트" };
+}
+
+function renderNoticeList() {
+  const root = document.getElementById("noticeList");
   if (!root) return;
-  try {
-    const res = await fetch("/api/overview/updates");
-    const data = await res.json();
-    const items = sortOverviewItems(Array.isArray(data?.items) ? data.items : []);
-    if (!items.length) {
-      overviewUpdateState.items = [];
-      root.innerHTML = '<p class="hint">표시할 업데이트 로그가 없습니다.</p>';
+
+  // 게시판 탭: boardItems 배열을 전용 렌더링
+  if (noticeState.activeFilter === "board") {
+    const boards = noticeState.boardItems;
+    if (!boards.length) {
+      root.innerHTML = '<p class="notice-empty">등록된 게시글이 없습니다.</p>';
       return;
     }
-
-    overviewUpdateState.items = items.slice(0, 12);
-    root.innerHTML = overviewUpdateState.items.map(function (item, idx) {
-      const details = Array.isArray(item?.details) ? item.details : [];
-      const preview = details.slice(0, 2);
-      const detailHint = details.length > 2 ? `외 ${details.length - 2}건` : "";
-      const isWorking = String(item?.source || "") === "git-working";
+    root.innerHTML = boards.map(function (p) {
+      const priorityBadge = p.priority === 'High'
+        ? '<span class="notice-board-badge nk-removed"><i class="fas fa-exclamation-circle"></i> High</span>'
+        : p.priority === 'Medium'
+        ? '<span class="notice-board-badge nk-updated"><i class="fas fa-minus-circle"></i> Medium</span>'
+        : '<span class="notice-board-badge nk-defect"><i class="fas fa-arrow-circle-down"></i> Low</span>';
+      const statusBadge = p.status && p.status !== 'approved'
+        ? `<span class="notice-working-tag">${p.status === 'pending' ? '승인 대기' : '반려'}</span>`
+        : '';
+      const commentBadge = p.comment_count > 0
+        ? `<span class="hint" style="font-size:0.75rem;"><i class="fas fa-comment"></i> ${esc(String(p.comment_count))}</span>`
+        : '';
+      const date = (function (iso) {
+        if (!iso) return '';
+        try { return new Intl.DateTimeFormat('ko-KR', { month: '2-digit', day: '2-digit' }).format(new Date(iso + 'Z')); } catch { return iso; }
+      })(p.created_at);
       return `
-        <article class="update-item ${isWorking ? "is-working" : ""}" data-update-idx="${idx}" role="button" tabindex="0" aria-label="업데이트 상세 보기">
-          <div class="update-head">
-            <span class="update-kind ${kindClass(item?.kind)}">${esc(kindText(item?.kind))}</span>
-            <strong>${esc(item?.title || "-")}</strong>
+        <a class="notice-board-item" href="/board#${esc(p.id)}">
+          <div class="notice-item-badge-col">
+            <span class="notice-kind-badge nk-added"><i class="fas fa-clipboard-list"></i></span>
+            <div class="notice-item-line"></div>
           </div>
-          <p class="update-meta">${esc(item?.scope || "-")} | ${esc(fmtTime(item?.updated_at))}</p>
-          ${isWorking ? '<p class="update-working-badge">현재 작업중 변경사항</p>' : ""}
-          ${preview.length ? `<ul>${preview.map(function (d) { return `<li>${esc(d)}</li>`; }).join("")}</ul>` : ""}
-          <p class="update-more">항목 선택 시 상세 팝업 표시 ${detailHint ? `(${esc(detailHint)})` : ""}</p>
-        </article>
+          <div class="notice-item-body">
+            <div class="notice-item-top">${priorityBadge} ${statusBadge}</div>
+            <strong class="notice-item-title">${esc(p.title || '-')}</strong>
+            <p class="notice-item-meta">${esc(p.author_name || '-')} · ${esc(date)} ${commentBadge}</p>
+          </div>
+        </a>
       `;
     }).join("");
+    return;
+  }
+
+  const allItems = noticeState.items;
+  const filtered = noticeState.activeFilter === "defect"
+    ? allItems.filter(isDefectListItem)
+    : noticeState.activeFilter === "program"
+    ? allItems.filter(function (item) { return !isDefectListItem(item); })
+    : allItems;
+
+  if (!filtered.length) {
+    root.innerHTML = '<p class="notice-empty">표시할 공지사항이 없습니다.</p>';
+    return;
+  }
+
+  root.innerHTML = filtered.slice(0, 20).map(function (item) {
+    const details = Array.isArray(item?.details) ? item.details : [];
+    const preview = details.slice(0, 2);
+    const isWorking = String(item?.source || "") === "git-working";
+    const kindInfo = getNoticeKindInfo(item);
+    const realIdx = overviewUpdateState.items.indexOf(item);
+    return `
+      <div class="notice-item ${isWorking ? "is-working" : ""}" data-notice-idx="${realIdx}" role="button" tabindex="0" aria-label="공지 상세 보기">
+        <div class="notice-item-badge-col">
+          <span class="notice-kind-badge ${kindInfo.badgeClass}"><i class="${kindInfo.icon}"></i></span>
+          <div class="notice-item-line"></div>
+        </div>
+        <div class="notice-item-body">
+          <div class="notice-item-top">
+            <span class="notice-kind-label ${kindInfo.badgeClass}">${esc(kindInfo.text)}</span>
+            ${isWorking ? '<span class="notice-working-tag">작업중</span>' : ""}
+          </div>
+          <strong class="notice-item-title">${esc(item?.title || "-")}</strong>
+          <p class="notice-item-meta">${esc(item?.scope || "-")} · ${esc(fmtTime(item?.updated_at))}</p>
+          ${preview.length ? `<ul class="notice-item-details">${preview.map(function (detail) { return `<li>${esc(detail)}</li>`; }).join("")}</ul>` : ""}
+          ${details.length > 2 ? `<span class="notice-item-more">+${details.length - 2}건 더보기</span>` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+async function refreshNoticeCard() {
+  const root = document.getElementById("noticeList");
+  const syncText = document.getElementById("noticeLastSyncText");
+  const newDot = document.getElementById("noticeNewDot");
+  if (!root) return;
+  root.innerHTML = '<div class="notice-loading"><i class="fas fa-circle-notch fa-spin"></i><span>공지사항을 불러오는 중...</span></div>';
+  try {
+    const [updatesRes, boardRes] = await Promise.all([
+      fetch("/api/overview/updates"),
+      fetch("/api/board/overview", { credentials: "include" }).catch(function () { return null; }),
+    ]);
+    const data = await updatesRes.json();
+    const items = sortOverviewItems(Array.isArray(data?.items) ? data.items : []).slice(0, 40);
+    overviewUpdateState.items = items;
+    noticeState.items = items;
+
+    // 게시판 글 로드
+    if (boardRes && boardRes.ok) {
+      const boardData = await boardRes.json();
+      noticeState.boardItems = Array.isArray(boardData?.items) ? boardData.items : [];
+    } else {
+      noticeState.boardItems = [];
+    }
+
+    const latest = items[0];
+    if (syncText) {
+      syncText.textContent = latest
+        ? `최근 변경: ${fmtTime(latest?.updated_at)}`
+        : "변경 이력이 없습니다.";
+    }
+    if (newDot) {
+      newDot.hidden = !items.some(function (item) { return String(item?.source || "") === "git-working"; });
+    }
+    renderNoticeList();
   } catch (e) {
     overviewUpdateState.items = [];
-    root.innerHTML = `<p class="hint">업데이트 로그 조회 실패: ${esc(String(e))}</p>`;
+    noticeState.items = [];
+    noticeState.boardItems = [];
+    root.innerHTML = `<p class="notice-empty">공지사항 조회 실패: ${esc(String(e))}</p>`;
   }
+}
+
+function refreshOverviewUpdates() {
+  return refreshNoticeCard();
 }
 
 function buildPieItems(rawItems, maxItems) {
@@ -221,11 +364,14 @@ function renderOverviewDonut(donutId, legendId, items) {
   const legend = document.getElementById(legendId);
   if (!donut || !legend) return;
 
+  const centerLabel = donutId === "overviewRecentDonut" ? "최근 이슈" : donutId === "overviewSummaryDonut" ? "Summary" : "통계";
+
   const safeItems = Array.isArray(items) ? items : [];
   const total = safeItems.reduce(function (acc, cur) { return acc + Number(cur.count || 0); }, 0);
   if (!total) {
     donut.classList.add("overview-donut-empty");
     donut.style.background = "conic-gradient(#eaf1fb 0 360deg)";
+    donut.innerHTML = `<div class="overview-donut-center"><strong>0</strong><span>${centerLabel}</span></div>`;
     legend.innerHTML = '<li class="hint">표시할 데이터가 없습니다.</li>';
     animateDonutAndLegend(donut, legend);
     return;
@@ -243,11 +389,12 @@ function renderOverviewDonut(donutId, legendId, items) {
     return part;
   });
   donut.style.background = `conic-gradient(${segments.join(",")})`;
+  donut.innerHTML = `<div class="overview-donut-center"><strong>${esc(String(total))}</strong><span>${centerLabel}</span></div>`;
 
   legend.innerHTML = safeItems.map(function (item, idx) {
     const color = OVERVIEW_PIE_COLORS[idx % OVERVIEW_PIE_COLORS.length];
     const pct = Math.round((Number(item.count || 0) / total) * 100);
-    return `<li><span class="overview-legend-dot" style="background:${color}"></span><span>${esc(item.name)} ${esc(String(item.count))}건 (${esc(String(pct))}%)</span></li>`;
+    return `<li><span class="overview-legend-dot" style="background:${color}"></span><span class="overview-legend-label">${esc(item.name)}</span><strong class="overview-legend-value">${esc(String(item.count))}건</strong><span class="overview-legend-pct">${esc(String(pct))}%</span></li>`;
   }).join("");
 
   animateDonutAndLegend(donut, legend);
@@ -405,19 +552,16 @@ function bindSummarySliderControls() {
 async function refreshOverviewQaPies() {
   try {
     const recentDays = Number(overviewRecentRangeState.days || 0);
-    const [recentRes, regularRes, summaryCycleRes] = await Promise.all([
+    const [recentRes, summaryCycleRes] = await Promise.all([
       fetch(`/api/stats/company-defects/status-summary?days=${encodeURIComponent(String(recentDays))}`),
-      fetch("/api/stats/regular-release"),
       fetch("/api/stats/closing-summary/cycle-counts"),
     ]);
 
     const recentData = await recentRes.json();
-    const regularData = await regularRes.json();
     const summaryCycleData = await summaryCycleRes.json();
     const summaryCycleItems = extractSummaryCyclePieItems(summaryCycleData);
 
     renderOverviewDonut("overviewRecentDonut", "overviewRecentLegend", extractRecentPieItems(recentData));
-    renderOverviewDonut("overviewRegularDonut", "overviewRegularLegend", extractRegularPieItems(regularData));
     renderOverviewDonut("overviewSummaryDonut", "overviewSummaryLegend", summaryCycleItems);
     renderSummaryCycleChips(summaryCycleItems);
 
@@ -443,12 +587,40 @@ async function refreshOverviewQaPies() {
   } catch (e) {
     const err = String(e || "");
     const recentLegend = document.getElementById("overviewRecentLegend");
-    const regularLegend = document.getElementById("overviewRegularLegend");
     const summaryLegend = document.getElementById("overviewSummaryLegend");
     if (recentLegend) recentLegend.innerHTML = `<li class="hint">최근 이슈 차트 조회 실패: ${esc(err)}</li>`;
-    if (regularLegend) regularLegend.innerHTML = `<li class="hint">정기배포 차트 조회 실패: ${esc(err)}</li>`;
     if (summaryLegend) summaryLegend.innerHTML = `<li class="hint">Summary 차트 조회 실패: ${esc(err)}</li>`;
   }
+}
+
+function bindNoticeTabControls() {
+  const tabs = document.getElementById("noticeTabs");
+  if (tabs) {
+    tabs.addEventListener("click", function (ev) {
+      const tab = ev.target instanceof Element ? ev.target.closest(".notice-tab") : null;
+      if (!tab) return;
+      noticeState.activeFilter = String(tab.getAttribute("data-filter") || "all");
+      tabs.querySelectorAll(".notice-tab").forEach(function (button) {
+        button.classList.toggle("active", button === tab);
+      });
+      renderNoticeList();
+    });
+  }
+  document.getElementById("noticeRefreshBtn")?.addEventListener("click", refreshNoticeCard);
+  document.getElementById("noticeList")?.addEventListener("click", function (ev) {
+    const item = ev.target instanceof Element ? ev.target.closest(".notice-item") : null;
+    if (!item) return;
+    const idx = Number(item.getAttribute("data-notice-idx"));
+    if (!Number.isNaN(idx)) openUpdateDetailModal(idx);
+  });
+  document.getElementById("noticeList")?.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    const item = ev.target instanceof Element ? ev.target.closest(".notice-item") : null;
+    if (!item) return;
+    ev.preventDefault();
+    const idx = Number(item.getAttribute("data-notice-idx"));
+    if (!Number.isNaN(idx)) openUpdateDetailModal(idx);
+  });
 }
 
 function bindOverviewRecentRangeControls() {
@@ -483,24 +655,6 @@ function bindOverviewCardNavigation() {
     });
   });
 }
-
-document.getElementById("overviewUpdateLog")?.addEventListener("click", function (ev) {
-  const card = ev.target instanceof Element ? ev.target.closest(".update-item") : null;
-  if (!card) return;
-  const idx = Number(card.getAttribute("data-update-idx"));
-  if (Number.isNaN(idx)) return;
-  openUpdateDetailModal(idx);
-});
-
-document.getElementById("overviewUpdateLog")?.addEventListener("keydown", function (ev) {
-  if (ev.key !== "Enter" && ev.key !== " ") return;
-  const card = ev.target instanceof Element ? ev.target.closest(".update-item") : null;
-  if (!card) return;
-  ev.preventDefault();
-  const idx = Number(card.getAttribute("data-update-idx"));
-  if (Number.isNaN(idx)) return;
-  openUpdateDetailModal(idx);
-});
 
 document.getElementById("updateDetailCloseBtn")?.addEventListener("click", closeUpdateDetailModal);
 
@@ -1148,14 +1302,15 @@ async function initShortcuts() {
 }
 
 refreshOverviewQaPies();
-refreshOverviewUpdates();
+refreshNoticeCard();
 refreshFloatingLogout();
 initShortcuts();
 bindOverviewCardNavigation();
 bindSummarySliderControls();
 bindOverviewRecentRangeControls();
+bindNoticeTabControls();
 setInterval(refreshOverviewQaPies, 60000);
-setInterval(refreshOverviewUpdates, 45000);
+setInterval(refreshNoticeCard, 60000);
 window.addEventListener("beforeunload", function () { saveShortcutItems(true); });
 
 // ── 뷰 전환: 개요 ↔ 바로가기 ──────────────────────────────

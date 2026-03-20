@@ -18,11 +18,6 @@
 │   ├── 결함 상세 (Detail) - defects_detail.html
 │   └── 엑셀 센터 (Excel) - excel_center.html
 │
-├── 📱 원격 제어 (Remote)
-│   ├── 제어판 (Remote Control) - remote_control.html
-│   ├── 모니터링 (Live Monitor) - live_monitor.html
-│   └── 대시보드 (Dashboard) - dashboard.html
-│
 ├── ⚙️ 관리 (Admin)
 │   ├── 시스템 관리 (Manage) - manage.html
 │   └── 관리자 (Admin Panel) - admin.html
@@ -43,9 +38,6 @@
 | **qa_defectlist_editor.html** | `/defects` | 🐞 결함 목록 및 편집 |
 | **defects_detail.html** | `/defects/:id` | 📌 결함 상세 정보 |
 | **excel_center.html** | `/excel` | 📊 엑셀 업로드 센터 |
-| **remote_control.html** | `/remote` | 📱 원격 제어 패널 |
-| **live_monitor.html** | `/monitor` | 👁️ 실시간 모니터링 |
-| **dashboard.html** | `/dashboard` | 📊 시각화 대시보드 |
 | **manage.html** | `/manage` | ⚙️ 시스템 관리 |
 | **admin.html** | `/admin` | 🛡️ 관리자 패널 |
 
@@ -93,8 +85,7 @@ components/
 - 기본 페이지 레이아웃
 - 로그인/회원가입
 - QA 테스트 관리
-- 원격 제어 인터페이스
-- 실시간 모니터링
+- 결함/엑셀/관리 화면
 
 ⏳ 개선 예정:
 - 다크 모드 지원
@@ -115,10 +106,6 @@ components/
 │   ├ 관리             │
 │   ├ 결함             │
 │   └ 엑셀             │
-├─────────────────────┤
-│ 📱 원격 제어         │
-│   ├ 제어판           │
-│   └ 모니터링         │
 ├─────────────────────┤
 │ ⚙️ 관리             │
 │   ├ 시스템           │

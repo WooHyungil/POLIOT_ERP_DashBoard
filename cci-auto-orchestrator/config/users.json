@@ -1,10 +1,10 @@
 [
   {
     "email": "hiss0723@poliot.co.kr",
-    "password_hash": "c5300f388b20bc1edb9d20108553775d71f3b314a578f969885bd50d48e7a396",
+    "password_hash": "cf5fda6e10b55457aa69d8f1f32a463d5840d0f5f7412460738f691a72a58839",
     "role": "admin",
     "name": "hiss0723",
-    "created_at": "2026-03-18T14:33:05",
+    "created_at": "2026-03-20T10:57:46",
     "shortcut_items": [
       {
         "id": "fixed-defectlist",
@@ -49,15 +49,20 @@
         "fixed": true
       }
     ],
-    "shortcut_windows": []
+    "shortcut_windows": [],
+    "game_access": true,
+    "approved": true,
+    "can_login": true,
+    "approved_at": "2026-03-20T11:54:35"
   },
   {
     "email": "sue@poliot.co.kr",
     "password_hash": "85904d5b46f68756643d6a5babac45e698638b6758cddac5b2b17c72a9c2444c",
     "role": "admin",
     "name": "sue",
-    "created_at": "2026-03-18T14:33:05",
+    "created_at": "2026-03-20T10:57:46",
     "shortcut_items": [],
-    "shortcut_windows": []
+    "shortcut_windows": [],
+    "game_access": false
   }
 ]

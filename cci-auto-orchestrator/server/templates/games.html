@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>게임 센터</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260320f" />
+  <script src="/static/auto_logout.js"></script>
+  <style>
+    html, body {
+      height: auto;
+      overflow-x: hidden;
+      overscroll-behavior: contain;
+    }
+
+    .game-hub {
+      border: 1px solid #d8e1ef;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #ffffff 0%, #eef6ff 100%);
+      box-shadow: 0 10px 26px rgba(23, 61, 109, 0.09);
+      padding: 20px;
+      margin: 12px auto 0;
+      max-width: 1120px;
+    }
+    .game-hub-title {
+      margin: 0 0 6px;
+    }
+    .game-hub-desc {
+      margin: 0;
+      color: #334155;
+    }
+    .game-tabs {
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+    }
+    .game-tab {
+      border: 1px solid #c5d3e8;
+      background: #fff;
+      color: #1e293b;
+      border-radius: 10px;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .game-tab.active {
+      background: #0f3b6e;
+      color: #fff;
+      border-color: #0f3b6e;
+    }
+    .game-frame-wrap {
+      --frame-min-height: 560px;
+      --frame-preferred-height: 74vh;
+      --frame-max-height: 700px;
+      margin: 14px auto 0;
+      border: 1px solid #cdd9ea;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #0b1220;
+      width: min(100%, 980px);
+      min-height: var(--frame-min-height);
+    }
+    .game-frame-wrap.game-tetris {
+      --frame-min-height: 640px;
+      --frame-preferred-height: 82vh;
+      --frame-max-height: 860px;
+    }
+    .game-frame {
+      width: 100%;
+      height: clamp(var(--frame-min-height), var(--frame-preferred-height), var(--frame-max-height));
+      min-height: var(--frame-min-height);
+      border: 0;
+      display: block;
+      background: #0b1220;
+      outline: none;
+    }
+    @media (max-width: 768px) {
+      .game-frame-wrap.game-tetris {
+        --frame-min-height: 600px;
+        --frame-preferred-height: 78vh;
+        --frame-max-height: 760px;
+      }
+    }
+    .game-hub-note {
+      margin-top: 10px;
+      font-size: 0.92rem;
+      color: #475569;
+    }
+  </style>
+</head>
+<body class="has-side-nav">
+  {% include "components/side_nav.html" %}
+
+  <main class="container">
+    <header class="topbar topbar-brand">
+      <div class="brand-left">
+        <div>
+          <p class="eyebrow">Enterprise QA Orchestration</p>
+          <h1>게임 센터</h1>
+          <p class="meta-text">JavaScript Mini Game</p>
+        </div>
+      </div>
+      <nav class="topnav">
+        <a class="navlink active" href="/games">게임</a>
+        <a class="navlink" href="/">개요</a>
+        <span class="topbar-nav-sep" aria-hidden="true"></span>
+        <span id="topbarUserName" class="topbar-username" hidden></span>
+        <span id="topbarCountdown" class="topbar-countdown" hidden></span>
+        <form method="post" action="/auth/logout" style="margin:0;display:contents;">
+          <button class="navlink" type="submit" style="white-space:nowrap;">로그아웃</button>
+        </form>
+      </nav>
+    </header>
+
+    <section class="card">
+      <h2>미니게임 플레이</h2>
+      <div class="game-hub">
+        <h3 class="game-hub-title">yjyoon-dev/javascript-mini-game</h3>
+        <p class="game-hub-desc">아래 탭에서 게임을 선택하면 이 페이지 안에서 바로 플레이할 수 있습니다.</p>
+        <div class="game-tabs" role="tablist" aria-label="게임 선택">
+          <button class="game-tab active" type="button" data-game-url="https://yjyoon-dev.github.io/games/2048.html">2048</button>
+          <button class="game-tab" type="button" data-game-url="https://yjyoon-dev.github.io/games/tetris.html">Tetris</button>
+          <button class="game-tab" type="button" data-game-url="https://yjyoon-dev.github.io/games/snake.html">Snake</button>
+          <a class="btn-ghost" href="https://github.com/yjyoon-dev/javascript-mini-game" target="_blank" rel="noopener noreferrer">원본 저장소</a>
+        </div>
+        <div class="game-frame-wrap">
+          <iframe id="gameFrame" class="game-frame" title="Mini game" src="https://yjyoon-dev.github.io/games/2048.html" allow="fullscreen" tabindex="0" scrolling="no"></iframe>
+        </div>
+        <p class="game-hub-note">네트워크 환경에 따라 첫 로딩이 수 초 걸릴 수 있습니다.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/side_nav.js?v=20260320g"></script>
+  <script>
+    (function () {
+      const frame = document.getElementById("gameFrame");
+      const frameWrap = document.querySelector(".game-frame-wrap");
+      const tabs = Array.from(document.querySelectorAll(".game-tab[data-game-url]"));
+      let currentGameUrl = "https://yjyoon-dev.github.io/games/2048.html";
+
+      function isTypingTarget(target) {
+        if (!(target instanceof HTMLElement)) return false;
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+        return target.isContentEditable;
+      }
+
+      function shouldBlock(code) {
+        return code === "ArrowUp" || code === "ArrowDown" || code === "ArrowLeft" || code === "ArrowRight" || code === "Space";
+      }
+
+      function isTetrisActive() {
+        return String(currentGameUrl || "").includes("/games/tetris.html");
+      }
+
+      function refreshGameFrameMode() {
+        if (frameWrap) {
+          frameWrap.classList.toggle("game-tetris", isTetrisActive());
+        }
+      }
+
+      function preventScrollKeys(event) {
+        if (event.defaultPrevented) return;
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+        if (isTypingTarget(event.target)) return;
+        const code = String(event.code || "");
+        if (shouldBlock(code)) {
+          event.preventDefault();
+        }
+      }
+
+      // Prevent browser scrolling while playing with arrow keys/space.
+      window.addEventListener("keydown", preventScrollKeys, { capture: true });
+      document.addEventListener("keydown", preventScrollKeys, { capture: true });
+      window.addEventListener("keyup", preventScrollKeys, { capture: true });
+      document.addEventListener("keyup", preventScrollKeys, { capture: true });
+
+      if (!frame || !tabs.length) return;
+      frame.addEventListener("load", function () {
+        try { frame.focus(); } catch {}
+        refreshGameFrameMode();
+      });
+      setTimeout(function () {
+        try { frame.focus(); } catch {}
+        refreshGameFrameMode();
+      }, 30);
+
+      for (const tab of tabs) {
+        tab.addEventListener("click", function () {
+          const url = String(tab.getAttribute("data-game-url") || "").trim();
+          if (!url) return;
+          currentGameUrl = url;
+          frame.setAttribute("src", url);
+          frame.focus();
+          refreshGameFrameMode();
+          for (const t of tabs) t.classList.remove("active");
+          tab.classList.add("active");
+        });
+      }
+
+      refreshGameFrameMode();
+    })();
+  </script>
+</body>
+</html>

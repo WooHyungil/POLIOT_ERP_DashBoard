@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>마이페이지 | CCI</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20260320e" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260320k" />
 </head>
 <body class="has-side-nav">
   {% include "components/side_nav.html" %}
@@ -32,126 +33,197 @@
       </nav>
     </header>
 
-    <section class="card card-guidance" style="margin-bottom:16px;">
-      <h2>내 계정 정보</h2>
-      <p class="hint">이름, 비밀번호, 계정 정보(소속/직책), 주소를 수정할 수 있습니다. 변경 사항은 즉시 반영됩니다.</p>
-      <p id="mypageFlash" class="hint" style="min-height:22px;"></p>
+    <section class="mypage-hero card">
+      <div class="mypage-hero-left">
+        <div class="mypage-avatar" id="mypageAvatar">?</div>
+        <div>
+          <p class="mypage-eyebrow">Account Center</p>
+          <h2 id="mypageHeroName">계정 정보를 불러오는 중...</h2>
+          <p id="mypageHeroMeta" class="mypage-hero-meta">프로필, 계정 상태, 개인 설정을 한 곳에서 관리합니다.</p>
+          <div class="mypage-badges">
+            <span class="mypage-badge role" id="mypageRoleBadge">권한 확인 중</span>
+            <span class="mypage-badge state" id="mypageApproveBadge">승인 상태 확인 중</span>
+            <span class="mypage-badge session" id="mypageLoginBadge">세션 상태 확인 중</span>
+          </div>
+        </div>
+      </div>
+      <div class="mypage-hero-actions">
+        <button type="button" class="mypage-soft-btn" id="mypageCopyEmailBtn"><i class="fas fa-copy"></i> 이메일 복사</button>
+        <a class="mypage-soft-btn" href="/"><i class="fas fa-house"></i> 개요</a>
+        <a class="mypage-soft-btn" href="/manage"><i class="fas fa-gear"></i> 관리</a>
+        <a class="mypage-soft-btn" href="/qa"><i class="fas fa-chart-line"></i> QA</a>
+        <a class="mypage-soft-btn" href="/admin" id="mypageAdminLink" hidden><i class="fas fa-shield-halved"></i> 관리자</a>
+      </div>
     </section>
 
-    <section class="grid manage-grid">
-      <article class="card manage-panel">
-        <h2>계정 정보 수정</h2>
-        <form id="mypageForm">
-          <div class="mypage-form-grid">
-            <label>
-              이메일 (변경 불가)
-              <input id="mypageEmail" type="email" disabled style="background:#f5f8fc;color:#6a7f99;" />
-            </label>
-            <label>
-              이름
-              <input id="mypageName" type="text" placeholder="홍길동" maxlength="60" />
-            </label>
-            <label class="full-span">
-              계정 정보 (소속 / 직책)
-              <input id="mypageAddress" type="text" placeholder="예: QA개발팀 / 책임" maxlength="200" />
-            </label>
+    <p id="mypageFlash" class="mypage-flash hint"></p>
+
+    <section class="mypage-layout">
+      <div class="mypage-left-column">
+        <article class="card mypage-panel mypage-profile-card">
+          <div class="mypage-section-head">
+            <div>
+              <p class="mypage-section-kicker">Profile Snapshot</p>
+              <h3>내 계정 요약</h3>
+            </div>
+          </div>
+          <div class="mypage-info-list">
+            <div class="mypage-info-row">
+              <span>이메일</span>
+              <strong id="mypageEmailText">-</strong>
+            </div>
+            <div class="mypage-info-row">
+              <span>이름</span>
+              <strong id="mypageNameText">-</strong>
+            </div>
+            <div class="mypage-info-row">
+              <span>계정 정보</span>
+              <strong id="mypageAddressText">-</strong>
+            </div>
+            <div class="mypage-info-row">
+              <span>프로필 완성도</span>
+              <div class="mypage-progress-wrap">
+                <div class="mypage-progress-bar"><span id="mypageProfileProgressBar"></span></div>
+                <strong id="mypageProfileProgressText">0%</strong>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card mypage-panel">
+          <div class="mypage-section-head">
+            <div>
+              <p class="mypage-section-kicker">Session</p>
+              <h3>접속 상태</h3>
+            </div>
+          </div>
+          <div class="mypage-mini-stats">
+            <div class="mypage-mini-stat">
+              <span>로그인 시각</span>
+              <strong id="mypageLoginAt">-</strong>
+            </div>
+            <div class="mypage-mini-stat">
+              <span>마지막 활동</span>
+              <strong id="mypageLastActiveAt">-</strong>
+            </div>
+            <div class="mypage-mini-stat">
+              <span>로그인 허용</span>
+              <strong id="mypageCanLoginText">-</strong>
+            </div>
+          </div>
+        </article>
+
+        <article class="card mypage-panel">
+          <div class="mypage-section-head">
+            <div>
+              <p class="mypage-section-kicker">Workspace</p>
+              <h3>내 사용 현황</h3>
+            </div>
+          </div>
+          <div class="mypage-metric-grid">
+            <div class="mypage-metric-card accent-blue">
+              <span class="mypage-metric-label">저장된 바로가기</span>
+              <strong id="mypageShortcutCount">0</strong>
+              <small>개인 맞춤 링크</small>
+            </div>
+            <div class="mypage-metric-card accent-amber">
+              <span class="mypage-metric-label">열어둔 창 상태</span>
+              <strong id="mypageWindowCount">0</strong>
+              <small>최근 저장 기준</small>
+            </div>
+            <div class="mypage-metric-card accent-violet">
+              <span class="mypage-metric-label">내 일정</span>
+              <strong id="mypageScheduleCount">0</strong>
+              <small>전체 등록 건수</small>
+            </div>
+          </div>
+        </article>
+
+        <article class="card mypage-panel">
+          <div class="mypage-section-head">
+            <div>
+              <p class="mypage-section-kicker">Schedule</p>
+              <h3>내 일정 요약</h3>
+            </div>
+          </div>
+          <div class="mypage-schedule-summary">
+            <span class="mypage-status-pill pending">대기 <b id="mypageSchedulePending">0</b></span>
+            <span class="mypage-status-pill approved">승인 <b id="mypageScheduleApproved">0</b></span>
+            <span class="mypage-status-pill rejected">반려 <b id="mypageScheduleRejected">0</b></span>
+          </div>
+          <div id="mypageScheduleList" class="mypage-schedule-list">
+            <p class="hint">일정 정보를 불러오는 중...</p>
+          </div>
+        </article>
+      </div>
+
+      <div class="mypage-right-column">
+        <article class="card mypage-panel mypage-form-panel">
+          <div class="mypage-section-head">
+            <div>
+              <p class="mypage-section-kicker">Account Settings</p>
+              <h3>계정 정보 수정</h3>
+            </div>
+            <span class="mypage-inline-hint">변경 사항은 즉시 저장됩니다.</span>
           </div>
 
-          <hr style="margin:16px 0;border:none;border-top:1px solid var(--line);" />
+          <form id="mypageForm">
+            <div class="mypage-form-block">
+              <h4>기본 정보</h4>
+              <div class="mypage-form-grid">
+                <label>
+                  이메일
+                  <input id="mypageEmail" type="email" disabled />
+                </label>
+                <label>
+                  이름
+                  <input id="mypageName" type="text" placeholder="홍길동" maxlength="60" />
+                </label>
+                <label class="full-span">
+                  계정 정보 (소속 / 직책)
+                  <input id="mypageAddress" type="text" placeholder="예: QA개발팀 / 책임" maxlength="200" />
+                </label>
+              </div>
+            </div>
 
-          <h3 style="margin:0 0 10px;font-size:0.96rem;">비밀번호 변경 <span style="font-size:0.78rem;font-weight:400;color:var(--muted);">(변경하지 않으면 빈칸으로 두세요)</span></h3>
-          <div class="mypage-form-grid">
-            <label>
-              새 비밀번호
-              <input id="mypagePw1" type="password" placeholder="8자 이상" autocomplete="new-password" minlength="8" maxlength="100" />
-            </label>
-            <label>
-              비밀번호 확인
-              <input id="mypagePw2" type="password" placeholder="동일하게 입력" autocomplete="new-password" minlength="8" maxlength="100" />
-            </label>
-          </div>
+            <div class="mypage-form-block">
+              <h4>보안 설정</h4>
+              <div class="mypage-form-grid">
+                <label>
+                  새 비밀번호
+                  <div class="mypage-password-wrap">
+                    <input id="mypagePw1" type="password" placeholder="8자 이상" autocomplete="new-password" minlength="8" maxlength="100" />
+                    <button type="button" class="mypage-ghost-icon-btn" id="mypageTogglePw1"><i class="fas fa-eye"></i></button>
+                  </div>
+                </label>
+                <label>
+                  비밀번호 확인
+                  <div class="mypage-password-wrap">
+                    <input id="mypagePw2" type="password" placeholder="동일하게 입력" autocomplete="new-password" minlength="8" maxlength="100" />
+                    <button type="button" class="mypage-ghost-icon-btn" id="mypageTogglePw2"><i class="fas fa-eye"></i></button>
+                  </div>
+                </label>
+                <div class="full-span mypage-password-strength">
+                  <div class="mypage-password-strength-bar"><span id="mypagePasswordStrengthBar"></span></div>
+                  <p id="mypagePasswordStrengthText" class="hint">비밀번호를 입력하면 강도를 안내합니다.</p>
+                </div>
+              </div>
+            </div>
 
-          <div class="button-row" style="margin-top:16px;">
-            <button type="submit">저장</button>
-            <button type="button" class="btn-ghost" onclick="window.history.back()">취소</button>
-          </div>
-        </form>
-      </article>
+            <div class="mypage-form-actions">
+              <button type="button" class="btn-ghost" id="mypageResetBtn">되돌리기</button>
+              <div class="mypage-form-actions-right">
+                <button type="button" class="btn-ghost" onclick="window.history.back()">취소</button>
+                <button type="submit" id="mypageSaveBtn">저장</button>
+              </div>
+            </div>
+          </form>
+        </article>
+      </div>
     </section>
   </main>
 
   <script src="/static/side_nav.js?v=20260319c"></script>
-  <script>
-  (function () {
-    const emailEl = document.getElementById("mypageEmail");
-    const nameEl = document.getElementById("mypageName");
-    const addrEl = document.getElementById("mypageAddress");
-    const flash = document.getElementById("mypageFlash");
-    const form = document.getElementById("mypageForm");
-
-    function setFlash(msg, tone) {
-      flash.textContent = msg;
-      flash.setAttribute("data-tone", tone || "");
-      flash.style.color = tone === "ok" ? "#1f6a3f" : tone === "error" ? "#9d1c1c" : "#915d00";
-    }
-
-    fetch("/api/auth/me", { credentials: "same-origin" })
-      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-      .then((data) => {
-        const u = data.user || {};
-        if (emailEl) emailEl.value = u.email || "";
-        if (nameEl) nameEl.value = u.name || "";
-        if (addrEl) addrEl.value = u.address || "";
-      })
-      .catch(() => setFlash("계정 정보를 불러오지 못했습니다.", "error"));
-
-    form.addEventListener("submit", async function (e) {
-      e.preventDefault();
-
-      const pw1 = document.getElementById("mypagePw1").value;
-      const pw2 = document.getElementById("mypagePw2").value;
-
-      if (pw1 || pw2) {
-        if (pw1 !== pw2) {
-          setFlash("비밀번호가 일치하지 않습니다.", "error");
-          return;
-        }
-        if (pw1.length < 8) {
-          setFlash("비밀번호는 8자 이상이어야 합니다.", "error");
-          return;
-        }
-      }
-
-      const payload = {
-        name: nameEl.value.trim(),
-        address: addrEl.value.trim(),
-      };
-      if (pw1) payload.password = pw1;
-
-      try {
-        const res = await fetch("/api/user/me", {
-          method: "PUT",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (res.ok && data.ok) {
-          setFlash("저장되었습니다.", "ok");
-          document.getElementById("mypagePw1").value = "";
-          document.getElementById("mypagePw2").value = "";
-          const topbarName = document.getElementById("topbarUserName");
-          if (topbarName && data.user?.name) {
-            topbarName.textContent = data.user.name + "님";
-          }
-        } else {
-          setFlash(data.detail || "저장 중 오류가 발생했습니다.", "error");
-        }
-      } catch {
-        setFlash("네트워크 오류가 발생했습니다.", "error");
-      }
-    });
-  })();
-  </script>
+  <script src="/static/mypage.js?v=20260320a"></script>
 </body>
 </html>

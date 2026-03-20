@@ -3,8 +3,7 @@
 이 프로젝트는 다음을 제공합니다.
 - 중앙 서버 + 대시보드 UI
 - 엑셀 테스트케이스 업로드(비동기) + AI 기반 변환
-- Android/iOS 단말 에이전트 병렬 실행
-- 실행 횟수 설정, 원클릭 시작
+- 테스트 실행/통계 대시보드 운영
 - 실패 이슈 자동 수집/리포트 생성
 - 단말 이름 설정 및 상태 모니터링
 - 공개 터널 (ngrok ↔ serveo 자동 폴백)
@@ -43,9 +42,6 @@ cci-auto-orchestrator/
 │   ├── public_url.txt    # 현재 공개 URL
 │   └── *.json            # 상태 정보
 │
-├── agent/                # 🤖 자동화 에이전트
-│   └── device_agent.py  # 기기 제어 에이전트
-│
 ├── tools/                # 🛠️ 유틸리티
 │   └── smoke_rbac_test.py # RBAC 테스트
 │
@@ -67,6 +63,11 @@ cci-auto-orchestrator/
 START_PUBLIC_URL.bat
 ```
 
+배치 파일 동작:
+- 서버를 먼저 실행하고
+- 공개 터널을 자동 시도합니다.
+- 고정 ngrok 도메인이 실패하면 랜덤 ngrok 재시도 후 serveo로 폴백합니다.
+
 ### 수동 제어
 ```powershell
 # 1. 공개 터널만 시작
@@ -78,6 +79,11 @@ START_PUBLIC_URL.bat
 # 3. 서버 헬스 체크
 .\scripts\server\smoke_server_check.ps1
 ```
+
+### 외부 URL 장애 대응
+- `403 (ngrok)` 또는 `502 (serveo)`가 나오면 외부 엣지 차단/가용성 문제일 수 있습니다.
+- 스크립트는 자동으로 `고정 ngrok -> 랜덤 ngrok -> serveo` 순서로 재시도합니다.
+- 모두 실패하면 같은 사내망 공유 URL(`http://<내IP>:8000/auth/login`)로 즉시 배포를 진행하세요.
 
 ---
 
@@ -106,7 +112,7 @@ START_PUBLIC_URL.bat 더블클릭
 ## 화면 구성 (분리 운영)
 - `http://127.0.0.1:8000/` : 개요 (단말/이슈/요약)
 - `http://127.0.0.1:8000/excel` : 엑셀 센터 (업로드, AI 변환, 원본 23컬럼 미리보기)
-- `http://127.0.0.1:8000/live` : 라이브 모니터 (실행 제어, 실시간 진행)
+- `http://127.0.0.1:8000/qa` : QA 대시보드 (실행 통계/진행 현황)
 
 엑셀 센터 추가 기능:
 - 변환 후 `TODO` 미해결 목록 자동 표시
@@ -129,20 +135,7 @@ Windows 노트북에서 iOS를 사용할 때:
 - 이 경우 `config/devices.json`에 iOS 단말별 `appiumUrl`(예: `http://192.168.0.10:4725`)을 설정하세요.
 - `start_all.ps1`는 iOS에 `appiumUrl`이 있으면 원격 서버를 사용하고, 없으면 Windows에서 iOS를 자동 스킵합니다.
 
-## 4. 단말 에이전트 실행 (단말마다 1개)
-Android 예시:
-```powershell
-cd "c:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\cci-auto-orchestrator"
-.\scripts\start_agent.ps1 -DeviceId "a01" -Name "Galaxy_S24" -Platform android -AppiumUrl "http://127.0.0.1:4723" -Udid "ANDROID_UDID"
-```
-
-iOS 예시:
-```powershell
-cd "c:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\cci-auto-orchestrator"
-.\scripts\start_agent.ps1 -DeviceId "i01" -Name "iPhone_15" -Platform ios -AppiumUrl "http://127.0.0.1:4725" -Udid "IOS_UDID"
-```
-
-자동 시작 설정 파일:
+## 4. 자동 시작 설정 파일
 - `config/devices.json`
 - 단말명, platform, udid, appiumPort, enabled 설정
 - 선택: `appiumUrl` (원격 Appium 서버 주소, iOS 권장)
@@ -154,7 +147,7 @@ cd "c:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\cci-auto-orche
 1. `엑셀 센터(/excel)`에서 파일 업로드
 2. 업로드가 즉시 Job으로 접수되고 `AI 변환` 진행률이 표시됨
 3. 변환 완료 후 원본 엑셀 23컬럼(A~W) 테이블 확인
-4. `라이브 모니터(/live)`에서 실행 횟수/OS 설정 후 시작
+4. `QA 대시보드(/qa)`에서 실행 현황/품질 지표 확인
 5. 진행 현황/이슈를 실시간 확인
 6. 완료 후 결과 엑셀 내보내기 (O/P/Q + 사유)
 

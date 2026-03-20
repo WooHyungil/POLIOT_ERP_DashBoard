@@ -493,5 +493,578 @@
       "상태: deleted -> active",
       "삭제요청상태: approved -> none"
     ]
+  },
+  {
+    "title": "DefectList_Raw 최신화",
+    "kind": "updated",
+    "scope": "Data",
+    "updated_at": "2026-03-20T08:47:32",
+    "details": [
+      "시트: DefectList_Raw",
+      "범위: B5:R",
+      "반영 시각: 2026-03-20T08:47:32",
+      "이슈 건수: 0"
+    ]
+  },
+  {
+    "title": "DefectList_Raw 최신화",
+    "kind": "updated",
+    "scope": "Data",
+    "updated_at": "2026-03-20T08:51:14",
+    "details": [
+      "시트: DefectList_Raw",
+      "범위: B5:R",
+      "반영 시각: 2026-03-20T08:51:14",
+      "이슈 건수: 4791"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T08:51:43",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-067",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: SW-KOA-057"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 승인",
+    "kind": "removed",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T08:51:58",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-067",
+      "승인자: hiss0723@poliot.co.kr",
+      "상태: pending -> deleted",
+      "삭제요청상태: pending -> approved",
+      "구 관리번호: SW-KOA-057"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 승인 취소",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T08:52:21",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-067",
+      "처리자: hiss0723@poliot.co.kr",
+      "상태: deleted -> cancelled",
+      "삭제요청상태: approved -> cancelled",
+      "구 관리번호: SW-KOA-057"
+    ]
+  },
+  {
+    "title": "일정 생성",
+    "kind": "added",
+    "scope": "일정 관리",
+    "updated_at": "2026-03-20T09:29:01",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: ㄴㅇ",
+      "일정 유형: vacation",
+      "시작일: 2026-03-20",
+      "종료일: 2026-03-24"
+    ]
+  },
+  {
+    "title": "일정 생성",
+    "kind": "added",
+    "scope": "일정 관리",
+    "updated_at": "2026-03-20T10:08:15",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: ㅁㄴㅇㄹ",
+      "일정 유형: memo",
+      "시작일: 2026-03-26",
+      "종료일: 2026-03-27"
+    ]
+  },
+  {
+    "title": "일정 삭제",
+    "kind": "removed",
+    "scope": "일정 관리",
+    "updated_at": "2026-03-20T10:09:26",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: ㅁㄴㅇㄹ",
+      "일정 유형: memo",
+      "시작일: 2026-03-26",
+      "종료일: 2026-03-27"
+    ]
+  },
+  {
+    "title": "일정 삭제",
+    "kind": "removed",
+    "scope": "일정 관리",
+    "updated_at": "2026-03-20T10:09:29",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: ㄴㅇ",
+      "일정 유형: vacation",
+      "시작일: 2026-03-20",
+      "종료일: 2026-03-24"
+    ]
+  },
+  {
+    "title": "일정 생성",
+    "kind": "added",
+    "scope": "일정 관리",
+    "updated_at": "2026-03-20T10:13:04",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: [연차] 26년 03월 04일~05일 연차 사용 신청의 건",
+      "일정 유형: memo",
+      "시작일: 2026-03-20",
+      "종료일: 2026-03-20"
+    ]
+  },
+  {
+    "title": "일정 수정",
+    "kind": "updated",
+    "scope": "일정 관리",
+    "updated_at": "2026-03-20T10:13:14",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: schedule-016439435451",
+      "type: memo -> vacation"
+    ]
+  },
+  {
+    "title": "일정 삭제",
+    "kind": "removed",
+    "scope": "일정 관리",
+    "updated_at": "2026-03-20T10:20:18",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: [연차] 26년 03월 04일~05일 연차 사용 신청의 건",
+      "일정 유형: vacation",
+      "시작일: 2026-03-20",
+      "종료일: 2026-03-20"
+    ]
+  },
+  {
+    "title": "일정 생성",
+    "kind": "added",
+    "scope": "일정 관리",
+    "updated_at": "2026-03-20T10:20:28",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: [연차] 26년 03월 04일~05일 연차 사용 신청의 건",
+      "일정 유형: vacation",
+      "시작일: 2026-03-20",
+      "종료일: 2026-03-20"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T10:22:07",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-008",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: Poliot_EU_S/W_008"
+    ]
+  },
+  {
+    "title": "일정 수정",
+    "kind": "updated",
+    "scope": "일정 관리",
+    "updated_at": "2026-03-20T10:22:21",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: schedule-509e27bb3552",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청 철회",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T10:25:17",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-008",
+      "철회자: hiss0723@poliot.co.kr",
+      "원 요청자: hiss0723@poliot.co.kr",
+      "상태: pending -> active",
+      "삭제요청상태: pending -> none",
+      "구 관리번호: Poliot_EU_S/W_008"
+    ]
+  },
+  {
+    "title": "일정 승인 처리",
+    "kind": "updated",
+    "scope": "일정 관리",
+    "updated_at": "2026-03-20T12:31:40",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: schedule-509e27bb3552",
+      "approval_status: - -> approved",
+      "approved_by: - -> hiss0723@poliot.co.kr",
+      "approved_at: - -> 2026-03-20T03:31:40"
+    ]
+  },
+  {
+    "title": "일정 삭제",
+    "kind": "removed",
+    "scope": "일정 관리",
+    "updated_at": "2026-03-20T12:34:27",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: [연차] 26년 03월 04일~05일 연차 사용 신청의 건",
+      "일정 유형: vacation",
+      "시작일: 2026-03-20",
+      "종료일: 2026-03-20"
+    ]
+  },
+  {
+    "title": "단말 자산 수정",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T13:57:15",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-008",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-20T15:51:43",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: 안녕하세요",
+      "작성자: 우형일",
+      "중요도: High",
+      "ID: board-ac6ec60252ff"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T16:23:41",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-008",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: Poliot_EU_S/W_008"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 승인",
+    "kind": "removed",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T16:23:54",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-008",
+      "승인자: hiss0723@poliot.co.kr",
+      "상태: pending -> deleted",
+      "삭제요청상태: pending -> approved",
+      "구 관리번호: Poliot_EU_S/W_008"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 승인 취소",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T16:24:15",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-008",
+      "처리자: hiss0723@poliot.co.kr",
+      "상태: deleted -> cancelled",
+      "삭제요청상태: approved -> cancelled",
+      "구 관리번호: Poliot_EU_S/W_008"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-20T17:09:34",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: 나는야 우형일",
+      "작성자: 우형일",
+      "중요도: Medium",
+      "ID: board-5d1dd0230169"
+    ]
+  },
+  {
+    "title": "회원가입 승인 요청",
+    "kind": "added",
+    "scope": "회원가입",
+    "updated_at": "2026-03-20T17:11:42",
+    "details": [
+      "작업자: system",
+      "계정: jy.lee@poliot.co.kr",
+      "이름: 기가연지",
+      "전화번호: 01052713459",
+      "상태: 관리자 승인 대기"
+    ]
+  },
+  {
+    "title": "회원 승인",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T17:12:20",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "approved: False -> True",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T17:12:20",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "can_login: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T17:12:24",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T17:26:32",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "title: - -> 책임"
+    ]
+  },
+  {
+    "title": "게시판 글 승인",
+    "kind": "updated",
+    "scope": "게시판",
+    "updated_at": "2026-03-20T17:43:57",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: 나는야 우형일",
+      "ID: board-5d1dd0230169",
+      "승인자: hiss0723@poliot.co.kr"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T17:52:08",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "can_login: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T17:52:08",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T17:52:09",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "can_login: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T17:52:10",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T17:52:10",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "can_login: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T17:52:11",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T17:52:12",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "can_login: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T17:52:12",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-20T17:52:48",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: ㄴㅇㄹ",
+      "작성자: ㄴㅇㄹ",
+      "중요도: Medium",
+      "ID: board-ba15fc78a62f"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-20T17:53:13",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: ㄴㅇㄹ",
+      "작성자: ㄴㄴㅇㄹ",
+      "중요도: High",
+      "ID: board-f38be81ed56a"
+    ]
+  },
+  {
+    "title": "내 정보 수정",
+    "kind": "updated",
+    "scope": "마이페이지",
+    "updated_at": "2026-03-20T19:19:22",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "계정: hiss0723@poliot.co.kr",
+      "address: - -> SW품질/책임",
+      "password: updated"
+    ]
+  },
+  {
+    "title": "게시판 요청 철회",
+    "kind": "updated",
+    "scope": "게시판",
+    "updated_at": "2026-03-20T20:06:04",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: ㄴㅇㄹ",
+      "ID: board-ba15fc78a62f",
+      "요청자: hiss0723@poliot.co.kr",
+      "사유: -"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T20:51:53",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-021",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: SW-GOA-20"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청 철회",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-20T20:52:10",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-021",
+      "철회자: hiss0723@poliot.co.kr",
+      "원 요청자: hiss0723@poliot.co.kr",
+      "상태: pending -> active",
+      "삭제요청상태: pending -> none",
+      "구 관리번호: SW-GOA-20"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T20:54:35",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: hiss0723@poliot.co.kr",
+      "game_access: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-20T20:57:13",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: hiss0723@poliot.co.kr",
+      "game_access: False -> True"
+    ]
   }
 ]

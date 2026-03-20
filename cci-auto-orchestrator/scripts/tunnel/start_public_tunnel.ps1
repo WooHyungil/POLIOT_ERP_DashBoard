@@ -10,7 +10,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$root = Split-Path -Parent $PSScriptRoot
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $runtimeDir = Join-Path $root "runtime"
 if (-not (Test-Path $runtimeDir)) {
 	New-Item -ItemType Directory -Path $runtimeDir | Out-Null
@@ -24,7 +24,8 @@ function Write-PublicUrl {
 	param([string]$Url)
 
 	if (-not [string]::IsNullOrWhiteSpace($Url)) {
-		Set-Content -Path $publicUrlPath -Value $Url -Encoding UTF8
+		$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+		[System.IO.File]::WriteAllText($publicUrlPath, $Url, $utf8NoBom)
 	}
 }
 
@@ -46,6 +47,44 @@ function Test-PublicUrlStatus {
 	}
 }
 
+function Test-PublicUrlHealthy {
+	param([string]$BaseUrl)
+
+	$status = Test-PublicUrlStatus -BaseUrl $BaseUrl
+	return $status -ge 200 -and $status -lt 400
+}
+
+function Resolve-NgrokUrl {
+	param([string]$PreferredDomain)
+
+	for ($i = 0; $i -lt 20; $i++) {
+		Start-Sleep -Milliseconds 500
+		try {
+			$json = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -TimeoutSec 3
+			$httpsTunnels = @($json.tunnels | Where-Object { $_.public_url -like "https://*" })
+			if ($httpsTunnels.Count -eq 0) {
+				continue
+			}
+
+			if (-not [string]::IsNullOrWhiteSpace($PreferredDomain)) {
+				$preferred = $httpsTunnels | Where-Object { $_.public_url -eq "https://$PreferredDomain" } | Select-Object -First 1
+				if ($preferred -and $preferred.public_url) {
+					return "$($preferred.public_url)"
+				}
+			}
+
+			$first = $httpsTunnels | Select-Object -First 1
+			if ($first -and $first.public_url) {
+				return "$($first.public_url)"
+			}
+		} catch {
+			# retry until timeout
+		}
+	}
+
+	return ""
+}
+
 function Start-ServeoTunnel {
 	param(
 		[string]$SubdomainName,
@@ -62,10 +101,69 @@ function Start-ServeoTunnel {
 	$sshArgs = @("-o", "StrictHostKeyChecking=no", "-R", "$SubdomainName:80:localhost:$Port", "serveo.net")
 	Start-Process -FilePath "ssh" -ArgumentList $sshArgs -RedirectStandardOutput $tunnelLogPath -RedirectStandardError $tunnelErrLogPath | Out-Null
 
-	Write-PublicUrl -Url $targetUrl
-	Write-Host "Public URL: $targetUrl"
+	$resolvedUrl = ""
+	for ($i = 0; $i -lt 20; $i++) {
+		Start-Sleep -Milliseconds 500
+		if (-not (Test-Path $tunnelLogPath)) {
+			continue
+		}
+		$raw = (Get-Content -Path $tunnelLogPath -Raw -ErrorAction SilentlyContinue)
+		if ([string]::IsNullOrWhiteSpace($raw)) {
+			continue
+		}
+
+		$httpMatch = [regex]::Match($raw, "https?://[^\s`\"']+")
+		if ($httpMatch.Success) {
+			$resolvedUrl = $httpMatch.Value.Trim()
+			break
+		}
+
+		$tcpMatch = [regex]::Match($raw, "Forwarding TCP connections from\s+([^\s:]+):(\d+)")
+		if ($tcpMatch.Success) {
+			$host = $tcpMatch.Groups[1].Value
+			$p = $tcpMatch.Groups[2].Value
+			if ($host -and $p) {
+				$resolvedUrl = "http://$host`:$p"
+				break
+			}
+		}
+	}
+
+	if ([string]::IsNullOrWhiteSpace($resolvedUrl)) {
+		$resolvedUrl = $targetUrl
+	}
+
+	Write-PublicUrl -Url $resolvedUrl
+	Write-Host "Public URL: $resolvedUrl"
 	Write-Host "Saved to: $publicUrlPath"
-	return $targetUrl
+	return $resolvedUrl
+}
+
+function Start-NgrokTunnel {
+	param(
+		[string]$Domain,
+		[int]$Port,
+		[switch]$StopBeforeStart
+	)
+
+	$ngrokCmd = Get-Command ngrok -ErrorAction SilentlyContinue
+	if (-not $ngrokCmd) {
+		throw "ngrok command not found. Install ngrok and configure authtoken first."
+	}
+
+	if ($StopBeforeStart.IsPresent) {
+		Get-Process ngrok -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+		Start-Sleep -Seconds 1
+	}
+
+	$args = @("http")
+	if (-not [string]::IsNullOrWhiteSpace($Domain)) {
+		$args += "--domain=$Domain"
+	}
+	$args += "$Port"
+
+	Start-Process -FilePath $ngrokCmd.Source -ArgumentList $args -RedirectStandardOutput $tunnelLogPath -RedirectStandardError $tunnelErrLogPath | Out-Null
+	return (Resolve-NgrokUrl -PreferredDomain $Domain)
 }
 
 function Test-LocalServer {
@@ -85,55 +183,42 @@ if (-not (Test-LocalServer -Port $LocalPort)) {
 }
 
 if ($Provider -eq "ngrok") {
-	$ngrokCmd = Get-Command ngrok -ErrorAction SilentlyContinue
-	if (-not $ngrokCmd) {
-		throw "ngrok command not found. Install ngrok and configure authtoken first."
-	}
-
-	if ($StopExisting.IsPresent) {
-		Get-Process ngrok -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-		Start-Sleep -Seconds 1
-	}
-
-	$args = @("http")
-	if (-not [string]::IsNullOrWhiteSpace($NgrokDomain)) {
-		$args += "--domain=$NgrokDomain"
-	}
-	$args += "$LocalPort"
-
-	Start-Process -FilePath $ngrokCmd.Source -ArgumentList $args -RedirectStandardOutput $tunnelLogPath -RedirectStandardError $tunnelErrLogPath | Out-Null
-
-	$url = ""
-	for ($i = 0; $i -lt 20; $i++) {
-		Start-Sleep -Milliseconds 500
-		try {
-			$json = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -TimeoutSec 3
-			$httpsTunnel = $json.tunnels | Where-Object { $_.public_url -like "https://*" } | Select-Object -First 1
-			if ($httpsTunnel -and $httpsTunnel.public_url) {
-				$url = "$($httpsTunnel.public_url)"
-				break
-			}
-		} catch {
-			# retry until timeout
-		}
-	}
-
-	if (-not [string]::IsNullOrWhiteSpace($NgrokDomain)) {
-		$url = "https://$NgrokDomain"
-	}
-
+	$url = Start-NgrokTunnel -Domain $NgrokDomain -Port $LocalPort -StopBeforeStart:$StopExisting
 	if ([string]::IsNullOrWhiteSpace($url)) {
 		throw "Failed to resolve ngrok public URL. Check $tunnelLogPath"
 	}
 
 	$status = Test-PublicUrlStatus -BaseUrl $url
-	if ($status -eq 403 -or $status -eq 404) {
+	if (-not (Test-PublicUrlHealthy -BaseUrl $url)) {
 		Write-Warning "ngrok URL check returned $status for $url"
+
+		# Static domain failure case: retry with random ngrok URL.
+		if (-not [string]::IsNullOrWhiteSpace($NgrokDomain)) {
+			Write-Warning "Retrying ngrok without fixed domain..."
+			$url2 = Start-NgrokTunnel -Domain "" -Port $LocalPort -StopBeforeStart:$true
+			if (-not [string]::IsNullOrWhiteSpace($url2)) {
+				$status2 = Test-PublicUrlStatus -BaseUrl $url2
+				if (Test-PublicUrlHealthy -BaseUrl $url2) {
+					Write-PublicUrl -Url $url2
+					Write-Host "Public URL: $url2"
+					Write-Host "Saved to: $publicUrlPath"
+					exit 0
+				}
+				Write-Warning "Random ngrok URL check returned $status2 for $url2"
+			}
+		}
+
 		if ($EnableServeoFallback) {
 			Write-Warning "Falling back to serveo tunnel..."
-			$serveoUrl = Start-ServeoTunnel -SubdomainName $Subdomain -Port $LocalPort -StopBeforeStart:$StopExisting
-			Write-Host "Fallback URL: $serveoUrl"
-			exit 0
+			$serveoUrl = Start-ServeoTunnel -SubdomainName $Subdomain -Port $LocalPort -StopBeforeStart:$true
+			Start-Sleep -Seconds 2
+			$serveoStatus = Test-PublicUrlStatus -BaseUrl $serveoUrl
+			if (Test-PublicUrlHealthy -BaseUrl $serveoUrl) {
+				Write-Host "Fallback URL: $serveoUrl"
+				exit 0
+			}
+			Write-Warning "Serveo URL check returned $serveoStatus for $serveoUrl"
+			throw "All public tunnel options failed. Last statuses: ngrok=$status, serveo=$serveoStatus"
 		}
 	}
 

@@ -32,6 +32,7 @@ function esc(value) {
 	let pendingDeleteRequests = [];
 	let activityLogItems = [];
 	let preferredDecisionId = "";
+	let canManageGameAccess = false;
 
 	const CORE_ADMINS = new Set(["sue@poliot.co.kr", "hiss0723@poliot.co.kr"]);
 
@@ -88,16 +89,24 @@ function esc(value) {
 				const isCoreAdmin = CORE_ADMINS.has(email);
 				const approved = Boolean(x.approved);
 				const canLogin = Boolean(x.can_login);
+				const gameAccess = Boolean(x.game_access);
+				const canSeeGameControl = canManageGameAccess && email !== "hiss0723@poliot.co.kr" && String(x.role || "").toLowerCase() !== "admin";
+				const titlePhone = [String(x.title || "").trim(), String(x.phone || "").trim()].filter(Boolean).join(" / ") || "-";
+				const createdAt = formatDisplayDateTime(x.created_at || "");
 				return `
 					<tr>
 						<td>${esc(email || "-")}</td>
 						<td>${esc(x.name || "-")}</td>
+						<td>${esc(titlePhone)}</td>
 						<td>${esc(x.role || "user")}</td>
 						<td>${approved ? "승인" : "대기"}</td>
 						<td>${canLogin ? "허용" : "차단"}</td>
+						<td>${gameAccess ? "허용" : "차단"}</td>
+						<td>${esc(createdAt)}</td>
 						<td>
 							<button type="button" data-approve-member="${esc(email)}" ${approved ? "disabled" : ""}>승인</button>
 							<button type="button" class="btn-secondary" data-toggle-login-member="${esc(email)}" data-next-login="${canLogin ? "0" : "1"}" ${isCoreAdmin ? "disabled" : ""}>${canLogin ? "로그인 차단" : "로그인 허용"}</button>
+							${canSeeGameControl ? `<button type="button" class="btn-secondary" data-toggle-game-member="${esc(email)}" data-next-game="${gameAccess ? "0" : "1"}">어떠한 승인</button>` : ""}
 							<button type="button" class="btn-ghost" data-del-member="${esc(email)}" ${isCoreAdmin ? "disabled" : ""}>삭제</button>
 						</td>
 					</tr>
@@ -130,11 +139,12 @@ function esc(value) {
 	async function refreshMembers() {
 		try {
 			const data = await requestJson("/api/admin/users", { method: "GET" });
+			canManageGameAccess = Boolean(data.can_manage_game_access);
 			const items = Array.isArray(data.items) ? data.items : [];
 			items.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
 			renderMembers(items);
 		} catch (error) {
-			memberBody.innerHTML = `<tr><td colspan="6">${esc(error?.message || "사용자 목록을 불러오지 못했습니다.")}</td></tr>`;
+			memberBody.innerHTML = `<tr><td colspan="9">${esc(error?.message || "사용자 목록을 불러오지 못했습니다.")}</td></tr>`;
 			if (memberDetailBody) {
 				memberDetailBody.innerHTML = `<tr><td>상태</td><td>${esc(error?.message || "통계를 불러오지 못했습니다.")}</td></tr>`;
 			}
@@ -150,7 +160,9 @@ function esc(value) {
 		assetDeleteRequestBody.innerHTML = items
 			.map((x) => {
 				const requestId = String(x.request_id || "");
-				const canDecide = String(x.source_type || "") === "asset-delete";
+				const sourceType = String(x.source_type || "");
+				const canDecide = sourceType === "asset-delete" || sourceType === "schedule";
+				const canWithdraw = sourceType === "asset-delete" || sourceType === "schedule";
 				return `
 					<tr>
 						<td>${esc(x.page_name || "-")}</td>
@@ -161,7 +173,7 @@ function esc(value) {
 							<button type="button" data-open-asset-decision="${esc(requestId)}" ${canDecide ? "" : "disabled"}>판단하기</button>
 						</td>
 						<td>
-							<button type="button" class="btn-ghost" data-withdraw-asset-request="${esc(requestId)}" ${canDecide ? "" : "disabled"}>요청철회</button>
+							<button type="button" class="btn-ghost" data-withdraw-asset-request="${esc(requestId)}" ${canWithdraw ? "" : "disabled"}>요청철회</button>
 						</td>
 					</tr>
 				`;
@@ -214,7 +226,10 @@ function esc(value) {
 	}
 
 	function getActionableRequests(items) {
-		return (items || []).filter((x) => String(x?.source_type || "") === "asset-delete");
+		return (items || []).filter((x) => {
+			const sourceType = String(x?.source_type || "");
+			return sourceType === "asset-delete" || sourceType === "schedule";
+		});
 	}
 
 	function updateDecisionSelectionSummary() {
@@ -238,13 +253,22 @@ function esc(value) {
 		if (!withdrawId) {
 			throw new Error("철회할 요청 대상을 찾지 못했습니다.");
 		}
-		if (String(requestItem?.source_type || "") !== "asset-delete") {
-			throw new Error("현재는 단말관리 요청만 요청취소할 수 있습니다.");
+		const sourceType = String(requestItem?.source_type || "");
+		if (sourceType === "asset-delete") {
+			await requestJson(`/api/admin/assets/${encodeURIComponent(withdrawId)}/withdraw-request`, {
+				method: "POST",
+				body: JSON.stringify({}),
+			});
+			return;
 		}
-		await requestJson(`/api/admin/assets/${encodeURIComponent(withdrawId)}/withdraw-request`, {
-			method: "POST",
-			body: JSON.stringify({}),
-		});
+		if (sourceType === "schedule") {
+			await requestJson(`/api/manage/schedules/${encodeURIComponent(withdrawId)}/withdraw-request`, {
+				method: "POST",
+				body: JSON.stringify({}),
+			});
+			return;
+		}
+		throw new Error("지원하지 않는 요청 유형입니다.");
 	}
 
 	function renderDecisionQueue(items) {
@@ -258,7 +282,9 @@ function esc(value) {
 			.map((x) => {
 				const requestId = String(x.request_id || "");
 				const isPreferred = preferredDecisionId && preferredDecisionId === requestId;
-				const canDecide = String(x.source_type || "") === "asset-delete";
+				const sourceType = String(x.source_type || "");
+				const canDecide = sourceType === "asset-delete" || sourceType === "schedule";
+				const canWithdraw = sourceType === "asset-delete" || sourceType === "schedule";
 				return `
 					<tr data-decision-row-id="${esc(requestId)}">
 						<td><input type="checkbox" class="decision-row-check" data-id="${esc(requestId)}" ${isPreferred ? "checked" : ""} ${canDecide ? "" : "disabled"} /></td>
@@ -267,7 +293,7 @@ function esc(value) {
 						<td><span class="decision-time">${esc(formatDisplayDateTime(x.requested_at || ""))}</span></td>
 						<td><button type="button" class="btn-secondary" data-show-request-details="${esc(requestId)}">내용</button></td>
 						<td><span class="asset-status-badge status-pending">${canDecide ? "대기중" : "조회전용"}</span></td>
-						<td><button type="button" class="btn-warning" data-withdraw-decision-request="${esc(requestId)}" ${canDecide ? "" : "disabled"}>요청취소</button></td>
+						<td><button type="button" class="btn-warning" data-withdraw-decision-request="${esc(requestId)}" ${canWithdraw ? "" : "disabled"}>요청취소</button></td>
 					</tr>
 				`;
 			})
@@ -390,6 +416,8 @@ function esc(value) {
 		const approveEmail = target.getAttribute("data-approve-member");
 		const toggleEmail = target.getAttribute("data-toggle-login-member");
 		const nextLogin = target.getAttribute("data-next-login");
+		const toggleGameEmail = target.getAttribute("data-toggle-game-member");
+		const nextGame = target.getAttribute("data-next-game");
 		const deleteEmail = target.getAttribute("data-del-member");
 
 		try {
@@ -408,6 +436,16 @@ function esc(value) {
 					body: JSON.stringify({ can_login: String(nextLogin) === "1" }),
 				});
 				await refreshMembers();
+				return;
+			}
+
+			if (toggleGameEmail) {
+				await requestJson(`/api/admin/users/${encodeURIComponent(toggleGameEmail)}`, {
+					method: "PUT",
+					body: JSON.stringify({ game_access: String(nextGame) === "1" }),
+				});
+				await refreshMembers();
+				window.dispatchEvent(new Event("cci:auth-updated"));
 				return;
 			}
 
@@ -586,20 +624,35 @@ function esc(value) {
 			for (const requestId of selectedIds) {
 				const requestItem = getPendingRequestById(requestId);
 				const id = String(requestItem?.target_id || "");
-				if (String(requestItem?.source_type || "") !== "asset-delete" || !id) {
-					throw new Error("현재는 단말관리 요청만 승인/반려 처리할 수 있습니다.");
+				const sourceType = String(requestItem?.source_type || "");
+				if (!id) {
+					throw new Error("처리할 요청 대상을 찾지 못했습니다.");
 				}
-				if (decisionType === "approve") {
-					await requestJson(`/api/admin/assets/${encodeURIComponent(id)}/approve-delete`, {
+				if (sourceType === "asset-delete") {
+					if (decisionType === "approve") {
+						await requestJson(`/api/admin/assets/${encodeURIComponent(id)}/approve-delete`, {
+							method: "POST",
+							body: JSON.stringify({}),
+						});
+						continue;
+					}
+					await requestJson(`/api/admin/assets/${encodeURIComponent(id)}/reject-delete`, {
 						method: "POST",
-						body: JSON.stringify({}),
+						body: JSON.stringify({ reason }),
 					});
 					continue;
 				}
-				await requestJson(`/api/admin/assets/${encodeURIComponent(id)}/reject-delete`, {
-					method: "POST",
-					body: JSON.stringify({ reason }),
-				});
+				if (sourceType === "schedule") {
+					await requestJson(`/api/manage/schedules/${encodeURIComponent(id)}/approval`, {
+						method: "POST",
+						body: JSON.stringify({
+							status: decisionType === "approve" ? "approved" : "rejected",
+							reason: decisionType === "reject" ? reason : "",
+						}),
+					});
+					continue;
+				}
+				throw new Error("지원하지 않는 요청 유형입니다.");
 			}
 			await refreshAssetDeleteRequests();
 			await refreshAssetDeletedItems();
@@ -609,7 +662,7 @@ function esc(value) {
 			preferredDecisionId = "";
 			renderDecisionQueue(pendingDeleteRequests);
 		} catch (error) {
-			window.alert(error?.message || "삭제 승인 처리 중 오류가 발생했습니다.");
+			window.alert(error?.message || "요청 승인 처리 중 오류가 발생했습니다.");
 		}
 	});
 
@@ -714,4 +767,113 @@ function esc(value) {
 	refreshAssetDeletedItems();
 	refreshAssetRejectedItems();
 	refreshActivityLog();
+
+	// ── 게시판 승인 관리 ────────────────────────────────────────────
+	let boardAdminFilter = 'pending';
+
+	function escBoard(s) {
+		return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+	}
+	function fmtBoardDate(iso) {
+		if (!iso) return '-';
+		try { return new Intl.DateTimeFormat('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }).format(new Date(iso + 'Z')); } catch { return iso; }
+	}
+	function priorityBadge(p) {
+		if (p === 'High')   return `<span class="board-priority-badge priority-high"><i class="fas fa-exclamation-circle"></i> High</span>`;
+		if (p === 'Low')    return `<span class="board-priority-badge priority-low"><i class="fas fa-arrow-circle-down"></i> Low</span>`;
+		return `<span class="board-priority-badge priority-medium"><i class="fas fa-minus-circle"></i> Medium</span>`;
+	}
+
+	async function refreshAdminBoardPosts() {
+		const container = document.getElementById('adminBoardPostsList');
+		if (!container) return;
+		container.innerHTML = '<p class="hint"><i class="fas fa-circle-notch fa-spin"></i> 불러오는 중...</p>';
+		try {
+			const r = await fetch('/api/board/posts', { credentials: 'include' });
+			const data = await r.json();
+			let items = data.items || [];
+			if (boardAdminFilter === 'pending') {
+				items = items.filter(p => p.status === 'pending');
+			}
+			if (items.length === 0) {
+				container.innerHTML = '<p class="hint" style="padding:16px">해당 게시글이 없습니다.</p>';
+				return;
+			}
+			container.innerHTML = items.map(p => {
+				const priorityCls = `priority-${String(p.priority).toLowerCase()}`;
+				const statusBadge = p.status === 'approved'
+					? `<span style="color:#059669;font-size:0.75rem;font-weight:600;">✅ 승인됨</span>`
+					: p.status === 'rejected'
+					? `<span style="color:#dc2626;font-size:0.75rem;font-weight:600;">❌ 반려됨</span>`
+					: `<span style="color:#ca8a04;font-size:0.75rem;font-weight:600;">⏳ 대기</span>`;
+				return `<div class="board-admin-post-card ${priorityCls}" data-post-id="${escBoard(p.id)}">
+					<div>
+						<div class="board-admin-post-meta">
+							${priorityBadge(p.priority)}
+							${statusBadge}
+							<span style="font-size:0.73rem;color:#94a3b8;">${fmtBoardDate(p.created_at)}</span>
+						</div>
+						<div class="board-admin-post-title">${escBoard(p.title)}</div>
+						<div class="board-admin-post-info">
+							<i class="fas fa-user"></i> ${escBoard(p.author_name)}
+							${p.comment_count > 0 ? ` &nbsp;<i class="fas fa-comment"></i> ${p.comment_count}` : ''}
+							${p.file_count > 0 ? ` &nbsp;<i class="fas fa-paperclip"></i> ${p.file_count}` : ''}
+						</div>
+					</div>
+					<div class="board-admin-post-actions">
+						${p.status !== 'approved' ? `<button type="button" class="btn-approve board-admin-approve-btn" data-id="${escBoard(p.id)}" style="padding:6px 12px;font-size:0.8rem;"><i class="fas fa-check"></i> 승인</button>` : ''}
+						${p.status !== 'rejected' ? `<button type="button" class="btn-reject board-admin-reject-btn" data-id="${escBoard(p.id)}" style="padding:6px 12px;font-size:0.8rem;"><i class="fas fa-times"></i> 반려</button>` : ''}
+						<a href="/board#${escBoard(p.id)}" target="_blank" style="padding:6px 12px;font-size:0.8rem;border:1px solid #c7d5eb;border-radius:7px;color:#334155;text-decoration:none;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-external-link-alt"></i> 보기</a>
+					</div>
+				</div>`;
+			}).join('');
+
+			// 승인 버튼
+			container.querySelectorAll('.board-admin-approve-btn').forEach(btn => {
+				btn.addEventListener('click', async () => {
+					const id = btn.dataset.id;
+					btn.disabled = true;
+					try {
+						await fetch(`/api/board/posts/${encodeURIComponent(id)}/approve`, { method: 'POST', credentials: 'include' });
+						await refreshAdminBoardPosts();
+					} catch (e) { alert('승인 실패: ' + e.message); btn.disabled = false; }
+				});
+			});
+
+			// 반려 버튼
+			container.querySelectorAll('.board-admin-reject-btn').forEach(btn => {
+				btn.addEventListener('click', async () => {
+					const id = btn.dataset.id;
+					const reason = prompt('반려 사유를 입력하세요 (선택사항)') ?? '';
+					if (reason === null) return;
+					btn.disabled = true;
+					try {
+						await fetch(`/api/board/posts/${encodeURIComponent(id)}/reject`, {
+							method: 'POST',
+							credentials: 'include',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({ reason }),
+						});
+						await refreshAdminBoardPosts();
+					} catch (e) { alert('반려 실패: ' + e.message); btn.disabled = false; }
+				});
+			});
+		} catch (e) {
+			container.innerHTML = `<p class="hint" style="color:#dc2626;">불러오기 실패: ${escBoard(e.message)}</p>`;
+		}
+	}
+
+	// 게시판 필터 버튼
+	document.querySelectorAll('.board-admin-filter-btn').forEach(btn => {
+		btn.addEventListener('click', () => {
+			document.querySelectorAll('.board-admin-filter-btn').forEach(b => b.classList.remove('active'));
+			btn.classList.add('active');
+			boardAdminFilter = btn.dataset.status;
+			refreshAdminBoardPosts();
+		});
+	});
+	document.getElementById('adminBoardRefreshBtn')?.addEventListener('click', refreshAdminBoardPosts);
+
+	refreshAdminBoardPosts();
+	setInterval(refreshAdminBoardPosts, 60000);
 })();

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CCI Manage Panel</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260320e" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260320i" />
   <script src="/static/auto_logout.js"></script>
 </head>
 <body class="has-side-nav">
@@ -29,7 +29,6 @@
         <a class="navlink" href="/">개요</a>
         <a class="navlink active" href="/manage">관리</a>
         <a class="navlink" href="/qa">QA 대시보드</a>
-        <a class="navlink" href="/remote">원격 리모컨</a>
         <span class="topbar-nav-sep" aria-hidden="true"></span>
         <span id="topbarUserName" class="topbar-username" hidden></span>
         <span id="topbarCountdown" class="topbar-countdown" hidden></span>
@@ -42,7 +41,83 @@
 
     <section class="card" id="manageScheduleTab" hidden>
       <h2>일정 관리</h2>
-      <p class="hint">일정 관리 화면은 준비 중입니다.</p>
+      <p class="hint">휴가/반차/연차/병가/배포/회의/브랜드 회의는 등록 후 관리자 승인으로 확정됩니다.</p>
+
+      <div class="schedule-wrap">
+        <article class="schedule-panel schedule-calendar-panel">
+          <div class="schedule-calendar-head">
+            <button id="schedulePrevMonthBtn" type="button" class="btn-ghost">이전</button>
+            <h3 id="scheduleMonthLabel">-</h3>
+            <button id="scheduleNextMonthBtn" type="button" class="btn-ghost">다음</button>
+          </div>
+          <div class="schedule-weekdays" aria-hidden="true">
+            <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+          </div>
+          <div id="scheduleCalendarGrid" class="schedule-calendar-grid"></div>
+          <p class="hint" id="scheduleCalendarHint">날짜를 클릭하면 시작일/종료일이 채워집니다.</p>
+        </article>
+
+        <article class="schedule-panel schedule-editor-panel">
+          <form id="scheduleForm" class="schedule-form">
+            <input id="scheduleId" type="hidden" />
+            <label>일정 종류
+              <select id="scheduleType" required>
+                <option value="vacation">휴가</option>
+                <option value="half_day">반차</option>
+                <option value="annual_leave">연차</option>
+                <option value="sick_leave">병가</option>
+                <option value="deployment">배포 일정</option>
+                <option value="meeting">회의</option>
+                <option value="brand_meeting">브랜드 회의</option>
+              </select>
+            </label>
+            <label>제목
+              <input id="scheduleTitle" type="text" maxlength="120" placeholder="예: 앱 배포 점검 / 주간 정기회의" />
+            </label>
+            <label>브랜드 (선택)
+              <input id="scheduleBrand" type="text" maxlength="80" placeholder="예: ONEAPP EU" />
+            </label>
+            <div class="schedule-form-row">
+              <label>시작일
+                <input id="scheduleStartDate" type="date" required />
+              </label>
+              <label>종료일
+                <input id="scheduleEndDate" type="date" required />
+              </label>
+            </div>
+            <label>메모
+              <textarea id="scheduleNote" rows="3" maxlength="500" placeholder="추가 전달 사항"></textarea>
+            </label>
+            <div class="button-row">
+              <button id="scheduleSaveBtn" type="submit">일정 저장</button>
+              <button id="scheduleResetBtn" type="button" class="btn-ghost">초기화</button>
+            </div>
+          </form>
+          <p id="scheduleFormHint" class="hint"></p>
+        </article>
+      </div>
+
+      <article class="schedule-panel schedule-list-panel" style="margin-top:12px;">
+        <h3 style="margin-top:0;">등록된 일정</h3>
+        <div class="asset-table-container">
+          <table class="asset-table">
+            <thead>
+              <tr>
+                <th>종류</th>
+                <th>제목</th>
+                <th>기간</th>
+                <th>승인</th>
+                <th>작성자</th>
+                <th>메모</th>
+                <th>작업</th>
+              </tr>
+            </thead>
+            <tbody id="scheduleRows">
+              <tr><td colspan="7" class="hint">일정을 불러오는 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
     </section>
 
     <section class="card" id="managePeopleTab" hidden>
@@ -143,52 +218,198 @@
     <!-- 자산 등록 모달 -->
     <div id="assetModal" class="modal" style="display: none;">
       <div class="modal-overlay"></div>
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>단말 등록/수정</h2>
+      <div class="modal-content asset-modal-content">
+        <div class="modal-header asset-modal-header">
+          <div class="asset-modal-header-info">
+            <span class="asset-modal-header-icon"><i class="fas fa-mobile-alt"></i></span>
+            <div>
+              <h2>단말 등록 / 수정</h2>
+              <p class="asset-modal-header-sub">항목을 입력한 후 저장 버튼을 눌러주세요.</p>
+            </div>
+          </div>
           <button type="button" class="modal-close-btn" onclick="closeAssetModal()">
             <i class="fas fa-times"></i>
           </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body asset-modal-body">
           <form id="assetForm">
             <input id="assetId" type="hidden" />
-            <div class="manage-form-grid">
-              <label>구 관리번호<input id="assetOldNo" type="text" /></label>
-              <label>NEW 관리 번호<input id="assetNewNo" type="text" /></label>
-              <label>OS<input id="assetOsType" type="text" /></label>
-              <label>제조사<input id="assetMaker" type="text" /></label>
-              <label>기기형태<input id="assetFormFactor" type="text" /></label>
-              <label>구매기기<input id="assetPurchaseDevice" type="text" /></label>
-              <label>OS 버전<input id="assetOsVersion" type="text" /></label>
-              <label>최종 OS 지원 버전<input id="assetOsMax" type="text" /></label>
-              <label>모델번호<input id="assetModelNo" type="text" /></label>
-              <label>제조번호(S/N)<input id="assetSerial" type="text" /></label>
-              <label>사용 향지<input id="assetRegion" type="text" /></label>
-              <label>사용 브랜드<input id="assetUseBrand" type="text" /></label>
-              <label>기기 소지자<input id="assetOwner" type="text" /></label>
-              <label>엠콜스 어싸인<input id="assetAssignee" type="text" /></label>
-              <label>비고<input id="assetMemo" type="text" /></label>
-              <label>디키 여부<input id="assetDicky" type="text" /></label>
-              <label>무선 MAC<input id="assetMac" type="text" /></label>
-              <label>해상도<input id="assetResolution" type="text" /></label>
-              <label>케이스<input id="assetCase" type="text" /></label>
-              <label>구매년도<input id="assetYear" type="text" /></label>
-              <label>구매날짜<input id="assetDate" type="text" /></label>
-              <label>구매비용<input id="assetCost" type="text" /></label>
-              <label>브랜드<input id="assetBrand" type="text" /></label>
-              <label>보유처<input id="assetHolder" type="text" /></label>
-              <label>영수증 번호<input id="assetReceipt" type="text" /></label>
-              <label>실물 사진 번호<input id="assetPhoto" type="text" /></label>
-              <label>구동 여부<input id="assetOperable" type="text" /></label>
-              <label>비고(기타)<input id="assetEtc" type="text" /></label>
-              <label>구매 프로젝트<input id="assetProject" type="text" /></label>
-              <label>엠콜스 티켓 NO<input id="assetTicket" type="text" /></label>
+
+            <!-- 섹션 1: 관리 번호 -->
+            <div class="asset-form-section">
+              <div class="asset-form-section-title">
+                <i class="fas fa-hashtag"></i> 관리 번호
+              </div>
+              <div class="asset-form-grid asset-form-grid-2">
+                <label class="asset-form-field">
+                  <span>구 관리번호</span>
+                  <input id="assetOldNo" type="text" placeholder="예) D-001" />
+                </label>
+                <label class="asset-form-field">
+                  <span>NEW 관리 번호</span>
+                  <input id="assetNewNo" type="text" placeholder="예) NEW-001" />
+                </label>
+              </div>
             </div>
-            <div class="button-row" style="margin-top: 16px;">
-              <button type="submit">저장</button>
-              <button id="assetResetBtn" type="button" class="btn-ghost">초기화</button>
-              <button type="button" class="btn-ghost" onclick="closeAssetModal()">닫기</button>
+
+            <!-- 섹션 2: 기기 사양 -->
+            <div class="asset-form-section">
+              <div class="asset-form-section-title">
+                <i class="fas fa-microchip"></i> 기기 사양
+              </div>
+              <div class="asset-form-grid asset-form-grid-3">
+                <label class="asset-form-field">
+                  <span>OS</span>
+                  <input id="assetOsType" type="text" placeholder="예) Android, iOS" />
+                </label>
+                <label class="asset-form-field">
+                  <span>제조사</span>
+                  <input id="assetMaker" type="text" placeholder="예) Samsung, Apple" />
+                </label>
+                <label class="asset-form-field">
+                  <span>기기형태</span>
+                  <input id="assetFormFactor" type="text" placeholder="예) 스마트폰, 태블릿" />
+                </label>
+                <label class="asset-form-field">
+                  <span>구매기기</span>
+                  <input id="assetPurchaseDevice" type="text" placeholder="기기명 입력" />
+                </label>
+                <label class="asset-form-field">
+                  <span>OS 버전</span>
+                  <input id="assetOsVersion" type="text" placeholder="예) 14.0" />
+                </label>
+                <label class="asset-form-field">
+                  <span>최종 OS 지원 버전</span>
+                  <input id="assetOsMax" type="text" placeholder="예) 15.0" />
+                </label>
+                <label class="asset-form-field">
+                  <span>모델번호</span>
+                  <input id="assetModelNo" type="text" placeholder="모델번호 입력" />
+                </label>
+                <label class="asset-form-field">
+                  <span>제조번호 (S/N)</span>
+                  <input id="assetSerial" type="text" placeholder="시리얼 번호 입력" />
+                </label>
+                <label class="asset-form-field">
+                  <span>해상도</span>
+                  <input id="assetResolution" type="text" placeholder="예) 1920×1080" />
+                </label>
+              </div>
+            </div>
+
+            <!-- 섹션 3: 사용 현황 -->
+            <div class="asset-form-section">
+              <div class="asset-form-section-title">
+                <i class="fas fa-user-tag"></i> 사용 현황
+              </div>
+              <div class="asset-form-grid asset-form-grid-3">
+                <label class="asset-form-field">
+                  <span>사용 향지</span>
+                  <input id="assetRegion" type="text" placeholder="향지 입력" />
+                </label>
+                <label class="asset-form-field">
+                  <span>사용 브랜드</span>
+                  <input id="assetUseBrand" type="text" placeholder="브랜드명 입력" />
+                </label>
+                <label class="asset-form-field">
+                  <span>기기 소지자</span>
+                  <input id="assetOwner" type="text" placeholder="소지자 이름 입력" />
+                </label>
+                <label class="asset-form-field">
+                  <span>엠콜스 어싸인</span>
+                  <input id="assetAssignee" type="text" placeholder="어싸인 이름 입력" />
+                </label>
+                <label class="asset-form-field">
+                  <span>구동 여부</span>
+                  <input id="assetOperable" type="text" placeholder="예) 정상, 불량" />
+                </label>
+                <label class="asset-form-field">
+                  <span>디키 여부</span>
+                  <input id="assetDicky" type="text" placeholder="예) Y, N" />
+                </label>
+              </div>
+            </div>
+
+            <!-- 섹션 4: 구매 정보 -->
+            <div class="asset-form-section">
+              <div class="asset-form-section-title">
+                <i class="fas fa-shopping-cart"></i> 구매 정보
+              </div>
+              <div class="asset-form-grid asset-form-grid-3">
+                <label class="asset-form-field">
+                  <span>구매년도</span>
+                  <input id="assetYear" type="text" placeholder="예) 2024" />
+                </label>
+                <label class="asset-form-field">
+                  <span>구매날짜</span>
+                  <input id="assetDate" type="text" placeholder="예) 2024-01-15" />
+                </label>
+                <label class="asset-form-field">
+                  <span>구매비용</span>
+                  <input id="assetCost" type="text" placeholder="예) 1,200,000" />
+                </label>
+                <label class="asset-form-field">
+                  <span>브랜드</span>
+                  <input id="assetBrand" type="text" placeholder="브랜드명 입력" />
+                </label>
+                <label class="asset-form-field">
+                  <span>보유처</span>
+                  <input id="assetHolder" type="text" placeholder="보유 위치 입력" />
+                </label>
+                <label class="asset-form-field">
+                  <span>구매 프로젝트</span>
+                  <input id="assetProject" type="text" placeholder="프로젝트명 입력" />
+                </label>
+                <label class="asset-form-field">
+                  <span>영수증 번호</span>
+                  <input id="assetReceipt" type="text" placeholder="영수증 번호 입력" />
+                </label>
+                <label class="asset-form-field">
+                  <span>실물 사진 번호</span>
+                  <input id="assetPhoto" type="text" placeholder="사진 번호 입력" />
+                </label>
+                <label class="asset-form-field">
+                  <span>엠콜스 티켓 NO</span>
+                  <input id="assetTicket" type="text" placeholder="티켓 번호 입력" />
+                </label>
+              </div>
+            </div>
+
+            <!-- 섹션 5: 기타 -->
+            <div class="asset-form-section">
+              <div class="asset-form-section-title">
+                <i class="fas fa-ellipsis-h"></i> 기타
+              </div>
+              <div class="asset-form-grid asset-form-grid-3">
+                <label class="asset-form-field">
+                  <span>무선 MAC</span>
+                  <input id="assetMac" type="text" placeholder="MAC 주소 입력" />
+                </label>
+                <label class="asset-form-field">
+                  <span>케이스</span>
+                  <input id="assetCase" type="text" placeholder="케이스 여부 입력" />
+                </label>
+                <label class="asset-form-field asset-form-field-full">
+                  <span>비고</span>
+                  <input id="assetMemo" type="text" placeholder="비고 내용 입력" />
+                </label>
+                <label class="asset-form-field asset-form-field-full">
+                  <span>비고 (기타)</span>
+                  <input id="assetEtc" type="text" placeholder="기타 내용 입력" />
+                </label>
+              </div>
+            </div>
+
+            <div class="asset-form-footer">
+              <button id="assetResetBtn" type="button" class="asset-form-reset-btn">
+                <i class="fas fa-undo"></i> 초기화
+              </button>
+              <div class="asset-form-footer-right">
+                <button type="button" class="asset-form-cancel-btn" onclick="closeAssetModal()">취소</button>
+                <button type="submit" class="asset-form-save-btn">
+                  <i class="fas fa-save"></i> 저장
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -197,6 +418,79 @@
   </main>
 
   <script src="/static/side_nav.js?v=20260319c"></script>
-  <script src="/static/manage.js?v=20260320j"></script>
+  <script src="/static/manage.js?v=20260320p"></script>
+
+  <style>
+    .schedule-wrap { display:grid; grid-template-columns: 1.25fr 1fr; gap:12px; }
+    .schedule-panel { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff; }
+    .schedule-calendar-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+    .schedule-calendar-head h3 { margin:0; font-size:18px; }
+    .schedule-weekdays { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:6px; font-size:12px; font-weight:700; color:#64748b; text-align:center; }
+    .schedule-calendar-grid { display:grid; grid-template-columns:repeat(7,1fr); column-gap:2px; row-gap:4px; }
+    .schedule-day { min-height:74px; border:1px solid #e5e7eb; border-radius:8px; background:#fafafa; padding:6px 5px; cursor:pointer; overflow:hidden; }
+    .schedule-day.muted { opacity:.35; }
+    .schedule-day.today { border-color:#0ea5e9; box-shadow:0 0 0 1px #0ea5e9 inset; }
+    .schedule-day-num { font-size:12px; font-weight:700; color:#334155; margin-bottom:4px; }
+    .schedule-dot { display:block; border-radius:999px; color:#fff; font-size:10px; padding:2px 6px; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; text-align:center; line-height:1.25; position:relative; z-index:2; }
+    .schedule-dot.cont-start { border-top-left-radius:9px; border-bottom-left-radius:9px; border-top-right-radius:0; border-bottom-right-radius:0; margin-right:-3px; }
+    .schedule-dot.cont-mid { border-radius:0; margin-left:-3px; margin-right:-3px; }
+    .schedule-dot.cont-end { border-top-left-radius:0; border-bottom-left-radius:0; border-top-right-radius:9px; border-bottom-right-radius:9px; margin-left:-3px; }
+    .schedule-dot.cont-single { border-radius:999px; }
+    .schedule-dot.vacation { background:#2563eb; }
+    .schedule-dot.annual_leave { background:#0f766e; }
+    .schedule-dot.half_day { background:#16a34a; }
+    .schedule-dot.sick_leave { background:#dc2626; }
+    .schedule-dot.deployment { background:#7c3aed; }
+    .schedule-dot.meeting { background:#ea580c; }
+    .schedule-dot.brand_meeting { background:#b91c1c; }
+    .schedule-form { display:flex; flex-direction:column; gap:8px; }
+    .schedule-form-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .schedule-form label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:#334155; }
+    .schedule-type-badge { display:inline-flex; align-items:center; border-radius:999px; color:#fff; font-size:12px; font-weight:700; padding:4px 8px; }
+    .schedule-type-badge.vacation { background:#2563eb; }
+    .schedule-type-badge.annual_leave { background:#0f766e; }
+    .schedule-type-badge.half_day { background:#16a34a; }
+    .schedule-type-badge.sick_leave { background:#dc2626; }
+    .schedule-type-badge.deployment { background:#7c3aed; }
+    .schedule-type-badge.meeting { background:#ea580c; }
+    .schedule-type-badge.brand_meeting { background:#b91c1c; }
+    .schedule-range-chip { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:linear-gradient(90deg,#eff6ff,#ecfeff); color:#0f172a; font-weight:700; font-size:12px; border:1px solid #bfdbfe; }
+    .schedule-range-chip.long { background:linear-gradient(90deg,#fef3c7,#ffe4e6); border-color:#fdba74; }
+    .schedule-approval-badge { display:inline-flex; align-items:center; border-radius:999px; font-size:12px; font-weight:700; padding:4px 8px; }
+    .schedule-approval-badge.pending { background:#fff7ed; color:#c2410c; border:1px solid #fed7aa; }
+    .schedule-approval-badge.approved { background:#ecfdf3; color:#166534; border:1px solid #bbf7d0; }
+    .schedule-approval-badge.rejected { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+    @media (max-width: 980px) {
+      .schedule-wrap { grid-template-columns: 1fr; }
+    }
+    .schedule-popup-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; }
+    .schedule-popup-overlay.active { display:block; }
+    .schedule-popup-modal { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:12px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04); z-index:1001; max-width:600px; width:90%; max-height:85vh; overflow-y:auto; }
+    .schedule-popup-header { display:flex; align-items:center; justify-content:space-between; padding:16px 24px; border-bottom:1px solid #e5e7eb; }
+    .schedule-popup-header h3 { margin:0; font-size:18px; font-weight:700; }
+    .schedule-popup-close { background:none; border:none; font-size:24px; color:#6b7280; cursor:pointer; padding:0; width:28px; height:28px; display:flex; align-items:center; justify-content:center; }
+    .schedule-popup-close:hover { color:#111; }
+    .schedule-popup-body { padding:24px; }
+    .schedule-popup-item { display:flex; gap:12px; margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid #f3f4f6; }
+    .schedule-popup-item:last-child { border-bottom:none; margin-bottom:0; padding-bottom:0; }
+    .schedule-popup-badge { display:inline-flex; align-items:center; }
+    .schedule-popup-content { flex:1; }
+    .schedule-popup-title { font-size:14px; font-weight:700; margin:0 0 6px 0; }
+    .schedule-popup-meta { display:flex; gap:8px; flex-wrap:wrap; font-size:12px; color:#6b7280; margin:0; }
+    .schedule-popup-date { display:flex; align-items:center; gap:4px; }
+    .schedule-popup-brand { background:#f0f9ff; color:#0369a1; padding:2px 8px; border-radius:4px; font-weight:500; }
+    .schedule-popup-note { font-size:12px; color:#4b5563; margin-top:8px; line-height:1.5; }
+    .schedule-popup-status { display:flex; gap:4px; align-items:center; }
+    .schedule-popup-author { font-size:11px; color:#9ca3af; margin-top:8px; }
+  </style>
+
+  <div id="schedulePopupOverlay" class="schedule-popup-overlay"></div>
+  <div id="schedulePopupModal" class="schedule-popup-modal" style="display:none;">
+    <div class="schedule-popup-header">
+      <h3 id="schedulePopupTitle">-</h3>
+      <button type="button" class="schedule-popup-close" aria-label="닫기">&times;</button>
+    </div>
+    <div id="schedulePopupBody" class="schedule-popup-body"></div>
+  </div>
 </body>
 </html>

@@ -33,6 +33,27 @@
 			<a class="side-nav-sublink" data-path="/upload/full-tc" href="/upload/full-tc" data-requires-admin="true">📚 Full_TC 업로드</a>
 		</div>
 
+		<!-- 섹션: 커뮤니케이션 -->
+		<div class="side-nav-section-label">💬 소통</div>
+
+		<a class="side-nav-link" data-path="/board" href="/board" title="게시판">
+			<span class="side-nav-icon">📋</span>
+			<span class="side-nav-text">게시판</span>
+			<span class="side-nav-urgent-dot" id="sideNavBoardUrgentDot" hidden></span>
+		</a>
+
+		<!-- 섹션: 게임 -->
+		<div class="side-nav-section-label" data-requires-game="true" hidden>🎮 게임</div>
+
+		<button class="side-nav-link side-nav-parent" type="button" data-path="/games" data-submenu-target="gamesSubmenu" data-requires-game="true" title="게임 센터" hidden>
+			<span class="side-nav-icon">🕹️</span>
+			<span class="side-nav-text">게임 센터</span>
+			<span class="side-nav-caret">▼</span>
+		</button>
+		<div class="side-nav-submenu" id="gamesSubmenu" data-requires-game="true" hidden>
+			<a class="side-nav-sublink" data-path="/games" href="/games" data-requires-game="true" hidden>🎯 JavaScript 미니게임</a>
+		</div>
+
 		<!-- 섹션: 관리 (⚙️) -->
 		<div class="side-nav-section-label">⚙️ 관리</div>
 
@@ -56,6 +77,7 @@
 			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminPeopleTab" href="/admin#adminPeopleTab" data-requires-admin="true">👥 인원관리</a>
 			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminAssetDecisionTab" href="/admin#adminAssetDecisionTab" data-requires-admin="true">🧾 승인판단</a>
 			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminActivityLogTab" href="/admin#adminActivityLogTab" data-requires-admin="true">📋 활동이력</a>
+			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminBoardApprovalTab" href="/admin#adminBoardApprovalTab" data-requires-admin="true">📝 게시판승인</a>
 			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminAssetDeletedTab" href="/admin#adminAssetDeletedTab" data-requires-admin="true">🗑️ 삭제됨</a>
 			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminAssetRejectedTab" href="/admin#adminAssetRejectedTab" data-requires-admin="true">↩️ 반려됨</a>
 		</div>
@@ -63,6 +85,14 @@
 
 	<!-- CSS 스타일 추가 -->
 	<style>
+		[data-requires-game="true"] {
+			display: none !important;
+		}
+
+		html[data-game-access="1"] [data-requires-game="true"] {
+			display: revert !important;
+		}
+
 		.side-nav-section-label {
 			padding: 12px 6px 8px;
 			font-size: 12px;
@@ -83,5 +113,101 @@
 		.side-nav-caret::before {
 			content: '';
 		}
+
+		.side-nav-urgent-dot {
+			display: inline-block;
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			background: #ef4444;
+			margin-left: auto;
+			animation: urgentPulse 1.5s ease-in-out infinite;
+			flex-shrink: 0;
+		}
+
+		@keyframes urgentPulse {
+			0%, 100% { opacity: 1; transform: scale(1); }
+			50% { opacity: 0.5; transform: scale(1.4); }
+		}
 	</style>
 </aside>
+
+<!-- 긴급 게시물 플로팅 배너 (모든 페이지 공통) -->
+<div id="globalBoardUrgentFloat" class="board-urgent-float" hidden></div>
+<script>
+(function() {
+  'use strict';
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  function fmtDateShort(iso) {
+    if (!iso) return '';
+    try {
+      return new Intl.DateTimeFormat('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })
+        .format(new Date(iso + (iso.includes('T') ? 'Z' : '')));
+    } catch { return iso; }
+  }
+  async function loadGlobalUrgent() {
+    try {
+      const r = await fetch('/api/board/urgent', { credentials: 'include' });
+      if (!r.ok) return;
+      const data = await r.json();
+      const items = data.items || [];
+			const signature = items.map((p) => `${String(p.id || '')}:${String(p.created_at || '')}`).join('|');
+			let dismissedSignature = '';
+			try {
+				dismissedSignature = String(localStorage.getItem('cci_global_urgent_dismissed_signature') || '');
+			} catch {}
+      // 사이드 네비 닷 표시
+      const dot = document.getElementById('sideNavBoardUrgentDot');
+      if (dot) dot.hidden = items.length === 0;
+
+      // board 페이지에는 이미 자체 플로팅이 있으므로 건너뜀
+      if (window.location.pathname === '/board') return;
+
+      const float = document.getElementById('globalBoardUrgentFloat');
+      if (!float) return;
+			if (items.length === 0) { float.hidden = true; return; }
+			if (dismissedSignature && dismissedSignature === signature) {
+				float.hidden = true;
+				return;
+			}
+      float.hidden = false;
+      float.innerHTML = `
+        <div class="board-urgent-header" id="globalUrgentToggle">
+          <span class="board-urgent-fire"><i class="fas fa-fire"></i></span>
+          <span class="board-urgent-title">긴급 게시물</span>
+          <span class="board-urgent-count">${items.length}</span>
+					<button type="button" class="board-urgent-collapse" id="globalUrgentDismissBtn" title="닫기">✕</button>
+          <button type="button" class="board-urgent-collapse" id="globalUrgentCollapseBtn" title="접기/펼치기">▼</button>
+        </div>
+        <div class="board-urgent-body" id="globalUrgentBody">
+          ${items.map(p => `
+            <a class="board-urgent-item" href="/board#${esc(p.id)}">
+              <span class="board-urgent-item-title">${esc(p.title)}</span>
+              <span class="board-urgent-item-date">${fmtDateShort(p.created_at)}</span>
+            </a>`).join('')}
+          <a href="/board" class="board-urgent-more">게시판 전체 보기 →</a>
+        </div>`;
+
+      document.getElementById('globalUrgentCollapseBtn')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const body = document.getElementById('globalUrgentBody');
+        const btn = document.getElementById('globalUrgentCollapseBtn');
+        const collapsed = body.style.display === 'none';
+        body.style.display = collapsed ? '' : 'none';
+        btn.textContent = collapsed ? '▼' : '▲';
+      });
+
+			document.getElementById('globalUrgentDismissBtn')?.addEventListener('click', (e) => {
+				e.preventDefault();
+				float.hidden = true;
+				try {
+					localStorage.setItem('cci_global_urgent_dismissed_signature', signature);
+				} catch {}
+			});
+    } catch (e) { /* ignore */ }
+  }
+  document.addEventListener('DOMContentLoaded', loadGlobalUrgent);
+})();
+</script>

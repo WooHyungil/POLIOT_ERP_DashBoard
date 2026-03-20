@@ -1,0 +1,43 @@
+[
+  {
+    "id": "board-ac6ec60252ff",
+    "title": "안녕하세요",
+    "author_name": "우형일",
+    "author_email": "hiss0723@poliot.co.kr",
+    "content": "집중집중",
+    "priority": "High",
+    "status": "pending",
+    "files": [],
+    "comments": [],
+    "created_at": "2026-03-20T06:51:43",
+    "updated_at": "2026-03-20T06:51:43"
+  },
+  {
+    "id": "board-ba15fc78a62f",
+    "title": "ㄴㅇㄹ",
+    "author_name": "ㄴㅇㄹ",
+    "author_email": "hiss0723@poliot.co.kr",
+    "content": "ㄴㅇㄹ",
+    "priority": "Medium",
+    "status": "withdrawn",
+    "files": [],
+    "comments": [],
+    "created_at": "2026-03-20T08:52:48",
+    "updated_at": "2026-03-20T08:52:48",
+    "reviewed_by": "hiss0723@poliot.co.kr",
+    "reviewed_at": "2026-03-20T11:06:04"
+  },
+  {
+    "id": "board-f38be81ed56a",
+    "title": "ㄴㅇㄹ",
+    "author_name": "ㄴㄴㅇㄹ",
+    "author_email": "hiss0723@poliot.co.kr",
+    "content": "ㄴㅇㄹㄴㅇㄹ",
+    "priority": "High",
+    "status": "pending",
+    "files": [],
+    "comments": [],
+    "created_at": "2026-03-20T08:53:13",
+    "updated_at": "2026-03-20T08:53:13"
+  }
+]

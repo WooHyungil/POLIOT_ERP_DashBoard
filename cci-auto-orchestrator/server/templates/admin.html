@@ -42,16 +42,62 @@
     <section class="grid grid-wide admin-grid" id="adminMainGrid">
       <article class="card" id="adminPeopleTab">
         <h2>인원 관리</h2>
-        <p class="hint">현재 관리자 데이터 스크립트를 점검 중입니다. 기본 사용자 목록은 아래 표에서 확인 가능합니다.</p>
+        <p class="hint">회원가입 계정의 승인 대기, 로그인 권한, 역할 상태를 한 화면에서 빠르게 처리할 수 있도록 구성했습니다.</p>
+
+        <div class="admin-people-stats" id="adminMemberStatsCards">
+          <article class="admin-people-stat-card">
+            <p class="admin-people-stat-label">전체 계정</p>
+            <strong class="admin-people-stat-value" id="adminMemberStatTotal">-</strong>
+          </article>
+          <article class="admin-people-stat-card pending">
+            <p class="admin-people-stat-label">승인 대기</p>
+            <strong class="admin-people-stat-value" id="adminMemberStatPending">-</strong>
+          </article>
+          <article class="admin-people-stat-card approved">
+            <p class="admin-people-stat-label">승인 완료</p>
+            <strong class="admin-people-stat-value" id="adminMemberStatApproved">-</strong>
+          </article>
+          <article class="admin-people-stat-card blocked">
+            <p class="admin-people-stat-label">로그인 차단</p>
+            <strong class="admin-people-stat-value" id="adminMemberStatBlocked">-</strong>
+          </article>
+        </div>
+
+        <section class="admin-pending-queue" aria-label="회원가입 승인 대기">
+          <div class="admin-pending-queue-head">
+            <h3>승인 대기 계정</h3>
+            <button type="button" class="btn-secondary" id="adminApproveAllPendingBtn">대기 전체 승인</button>
+          </div>
+          <div id="adminPendingMemberQueue" class="admin-pending-queue-list">
+            <p class="hint">대기 계정을 불러오는 중...</p>
+          </div>
+        </section>
+
+        <div class="admin-people-toolbar" role="group" aria-label="인원 목록 필터">
+          <input type="search" id="adminMemberSearchInput" placeholder="이름, 이메일, 직책, 연락처 검색" />
+          <select id="adminMemberStatusFilter" aria-label="상태 필터">
+            <option value="all">전체</option>
+            <option value="pending">승인 대기</option>
+            <option value="approved">승인 완료</option>
+            <option value="blocked">로그인 차단</option>
+            <option value="admin">관리자</option>
+          </select>
+          <button type="button" class="btn-ghost" id="adminMemberRefreshBtn">새로고침</button>
+        </div>
+
+        <p class="hint" id="adminMemberResultCount">조회 결과 0명</p>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>이메일</th>
                 <th>이름</th>
+                <th>직책/연락처</th>
                 <th>권한</th>
                 <th>승인 상태</th>
                 <th>로그인 상태</th>
+                <th>게임 권한</th>
+                <th>가입일</th>
                 <th>작업</th>
               </tr>
             </thead>
@@ -92,6 +138,35 @@
               </tr>
             </thead>
             <tbody id="assetDeleteRequestRows"></tbody>
+          </table>
+        </div>
+
+        <hr style="margin:16px 0;border:none;border-top:1px solid #e2e8f0;" />
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px;">
+          <h3 style="margin:0;">게시판 승인</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="board-admin-filter-btn active" data-status="pending" id="boardAdminFilterPending" style="padding:5px 12px;border:1px solid #f59e0b;border-radius:8px;background:#fffbeb;color:#92400e;font-size:0.8rem;font-weight:700;cursor:pointer;">⏳ 대기</button>
+            <button type="button" class="board-admin-filter-btn" data-status="all" style="padding:5px 12px;border:1px solid #c7d5eb;border-radius:8px;background:#fff;color:#4a5568;font-size:0.8rem;font-weight:700;cursor:pointer;">전체</button>
+            <button type="button" id="adminBoardRefreshBtn" style="padding:5px 12px;border:1px solid #c7d5eb;border-radius:8px;background:#fff;color:#4a5568;font-size:0.8rem;cursor:pointer;" title="새로고침"><i class="fas fa-sync-alt"></i></button>
+          </div>
+        </div>
+        <p class="hint">게시글의 승인/반려는 여기서만 처리합니다.</p>
+        <div class="table-wrap" style="margin-top:12px;">
+          <table>
+            <thead>
+              <tr>
+                <th>제목</th>
+                <th>작성자</th>
+                <th>작성일시</th>
+                <th>상태</th>
+                <th>승인</th>
+                <th>반려</th>
+                <th>상세</th>
+              </tr>
+            </thead>
+            <tbody id="adminBoardPostsList">
+              <tr><td colspan="7"><span class="hint"><i class="fas fa-circle-notch fa-spin"></i> 불러오는 중...</span></td></tr>
+            </tbody>
           </table>
         </div>
       </article>
@@ -211,6 +286,7 @@
           </table>
         </div>
       </article>
+
     </section>
   </main>
 
@@ -227,7 +303,69 @@
     </div>
   </section>
 
-  <script src="/static/side_nav.js?v=20260319c"></script>
-  <script src="/static/admin.js?v=20260320p"></script>
+  <section class="modal" id="memberEditModal" hidden>
+    <div class="modal-backdrop" data-close-member-edit="1"></div>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="memberEditModalTitle">
+      <div class="modal-head">
+        <h3 id="memberEditModalTitle">회원 정보 수정</h3>
+        <button type="button" class="btn-ghost" data-close-member-edit="1">닫기</button>
+      </div>
+      <div class="modal-body">
+        <form id="memberEditForm" class="admin-member-edit-form">
+          <input type="hidden" id="memberEditEmail" />
+          <div class="admin-member-edit-grid">
+            <div class="admin-member-edit-field">
+              <label for="memberEditName">이름</label>
+              <input type="text" id="memberEditName" maxlength="60" required />
+            </div>
+            <div class="admin-member-edit-field">
+              <label for="memberEditRole">권한</label>
+              <select id="memberEditRole">
+                <option value="user">user</option>
+                <option value="admin">admin</option>
+              </select>
+            </div>
+            <div class="admin-member-edit-field">
+              <label for="memberEditTitle">직책</label>
+              <input type="text" id="memberEditTitle" maxlength="60" />
+            </div>
+            <div class="admin-member-edit-field">
+              <label for="memberEditPhone">연락처</label>
+              <input type="text" id="memberEditPhone" maxlength="40" />
+            </div>
+            <div class="admin-member-edit-field">
+              <label for="memberEditBirth">생년</label>
+              <input type="text" id="memberEditBirth" maxlength="30" />
+            </div>
+            <div class="admin-member-edit-field admin-member-edit-field--wide">
+              <label for="memberEditAddress">주소</label>
+              <input type="text" id="memberEditAddress" maxlength="160" />
+            </div>
+          </div>
+          <div class="admin-member-edit-flags">
+            <label><input type="checkbox" id="memberEditApproved" /> 승인 완료</label>
+            <label><input type="checkbox" id="memberEditCanLogin" /> 로그인 허용</label>
+            <label><input type="checkbox" id="memberEditGameAccess" /> 게임 메뉴 허용</label>
+          </div>
+          <div class="button-row">
+            <button type="submit" id="memberEditSaveBtn">저장</button>
+            <button type="button" class="btn-ghost" data-close-member-edit="1">취소</button>
+          </div>
+        </form>
+        <hr class="admin-member-modal-divider" />
+        <form id="memberPasswordForm" class="admin-member-password-form">
+          <h4>비밀번호 변경</h4>
+          <p class="hint">관리자가 즉시 비밀번호를 재설정할 수 있습니다. 8자 이상으로 입력하세요.</p>
+          <div class="admin-member-password-row">
+            <input type="password" id="memberPasswordInput" placeholder="새 비밀번호" minlength="8" required />
+            <button type="submit" id="memberPasswordSaveBtn">비밀번호 변경</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <script src="/static/side_nav.js?v=20260320h"></script>
+  <script src="/static/admin.js?v=20260320h"></script>
 </body>
 </html>

@@ -23,8 +23,6 @@ HTML 템플릿 (Jinja2)
 **주요 페이지:**
 - **overview.html**: 대시보드 홈 (URL 공유, 서버 상태)
 - **qa_dashboard.html**: QA 테스트 관리
-- **remote_control.html**: 원격 제어 대시보드
-- **live_monitor.html**: 실시간 모니터링
 - **excel_center.html**: 엑셀 업로드 센터
 - **manage.html**: 시스템 관리
 - **admin.html**: 관리자 페이지
@@ -76,8 +74,6 @@ HTML 템플릿 (Jinja2)
 | `/` | 대시보드 홈 |
 | `/auth/login` | 로그인 |
 | `/qa` | QA 테스트 관리 |
-| `/remote` | 원격 제어 |
-| `/monitor` | 실시간 모니터링 |
 | `/excel` | 엑셀 업로드 |
 | `/manage` | 관리 페이지 |
 | `/mypage` | 사용자 페이지 |

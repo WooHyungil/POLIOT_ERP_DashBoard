@@ -4,7 +4,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$root = Split-Path -Parent $PSScriptRoot
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $runtimeDir = Join-Path $root "runtime"
 $publicUrlPath = Join-Path $runtimeDir "public_url.txt"
 
@@ -29,7 +29,8 @@ if ($RefreshFromNgrokApi.IsPresent) {
 		if (-not (Test-Path $runtimeDir)) {
 			New-Item -ItemType Directory -Path $runtimeDir | Out-Null
 		}
-		Set-Content -Path $publicUrlPath -Value $url -Encoding UTF8
+		$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+		[System.IO.File]::WriteAllText($publicUrlPath, $url, $utf8NoBom)
 		Write-Output $url
 		exit 0
 	}
@@ -45,7 +46,8 @@ if ([string]::IsNullOrWhiteSpace($url)) {
 		if (-not (Test-Path $runtimeDir)) {
 			New-Item -ItemType Directory -Path $runtimeDir | Out-Null
 		}
-		Set-Content -Path $publicUrlPath -Value $url -Encoding UTF8
+		$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+		[System.IO.File]::WriteAllText($publicUrlPath, $url, $utf8NoBom)
 	}
 }
 

@@ -12,7 +12,7 @@ import json
 import re
 import base64
 import hashlib
-from urllib.parse import quote
+from urllib.parse import quote, urlencode, urljoin, urlsplit, urlunsplit
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -60,14 +60,18 @@ OVERVIEW_UPDATES_FILE = BASE_DIR.parent / "config" / "dashboard_updates.json"
 OVERVIEW_UPDATE_STATE_FILE = BASE_DIR.parent / "config" / "dashboard_update_state.json"
 USERS_FILE = BASE_DIR.parent / "config" / "users.json"
 EMPLOYEES_FILE = BASE_DIR.parent / "config" / "employees.json"
+LEGACY_USERS_FILE = BASE_DIR.parent / "config" / "core" / "users.json"
+LEGACY_EMPLOYEES_FILE = BASE_DIR.parent / "config" / "core" / "employees.json"
 ASSETS_FILE = BASE_DIR.parent / "config" / "assets.json"
 MANAGE_SCHEDULES_FILE = BASE_DIR.parent / "config" / "manage_schedules.json"
+GAME_SCORES_FILE = BASE_DIR.parent / "config" / "game_scores.json"
 AUTH_LOCK = threading.Lock()
 
 ADMIN_EMAILS = {
     "sue@poliot.co.kr",
     "hiss0723@poliot.co.kr",
 }
+GAME_ACCESS_MANAGER_EMAIL = "hiss0723@poliot.co.kr"
 
 # Fixed shortcut URLs are configurable so production can point to the team's real Google Sheets.
 GOOGLE_SHORTCUT_DEFECTLIST_URL = os.getenv(
@@ -139,6 +143,16 @@ GOOGLE_DEFECT_SHEET_URL = os.getenv(
     "https://docs.google.com/spreadsheets/d/1vEiIZM--JUzh7WYX8DLTqi8dysplrOY7n20nNT18eL8/edit?gid=1901079782#gid=1901079782",
 )
 DEFAULT_PUBLIC_SHARE_URL = os.getenv("DEFAULT_PUBLIC_SHARE_URL", "https://cci-dashboard.serveousercontent.com").strip()
+GROUPWARE_BASE_URL = os.getenv("GROUPWARE_BASE_URL", "https://gw.poliot.co.kr").strip().rstrip("/")
+GROUPWARE_LOGIN_PATH = "/groupware/login.php"
+GROUPWARE_PROXY_PREFIX = "/groupware/proxy"
+GROUPWARE_EMBED_PREFIX = "/groupware"
+GROUPWARE_PROXY_TIMEOUT = (10, 60)
+GROUPWARE_PROXY_LOCK = threading.Lock()
+GROUPWARE_PROXY_SESSIONS: dict[str, requests.Session] = {}
+GROUPWARE_ATTR_RE = re.compile(r'(?P<attr>\b(?:href|src|action|poster)\s*=\s*)(?P<quote>["\'])(?P<value>.*?)(?P=quote)', re.IGNORECASE)
+GROUPWARE_CSS_URL_RE = re.compile(r'url\((?P<quote>["\']?)(?P<value>.*?)(?P=quote)\)', re.IGNORECASE)
+GROUPWARE_CSS_IMPORT_RE = re.compile(r'@import\s+(?P<quote>["\'])(?P<value>.*?)(?P=quote)', re.IGNORECASE)
 GOOGLE_DEFECT_SHEET_NAME = os.getenv("GOOGLE_DEFECT_SHEET_NAME", "DefectList_Raw")
 GOOGLE_DEFECT_SHEET_RANGE = os.getenv("GOOGLE_DEFECT_SHEET_RANGE", "B2:R")
 GOOGLE_DEFECTLIST_SHEET_NAME = os.getenv("GOOGLE_DEFECTLIST_SHEET_NAME", "DefectList")
@@ -231,7 +245,17 @@ app = FastAPI(title="CCI Automation Orchestrator")
 APP_SESSION_SECRET = os.getenv("CCI_SESSION_SECRET", "cci-dashboard-session-secret-2026").strip()
 SESSION_IDLE_TIMEOUT_SECONDS = 60 * 60 * 1        # 유휴 1시간 → 자동 로그아웃
 SESSION_MAX_AGE_SECONDS = 60 * 60 * 2             # 쿠키 최대 수명 2시간 (heartbeat가 주기적으로 갱신)
-app.add_middleware(SessionMiddleware, secret_key=APP_SESSION_SECRET, max_age=SESSION_MAX_AGE_SECONDS)
+SESSION_COOKIE_SAMESITE = os.getenv("CCI_SESSION_SAMESITE", "lax").strip().lower() or "lax"
+if SESSION_COOKIE_SAMESITE not in {"lax", "strict", "none"}:
+    SESSION_COOKIE_SAMESITE = "lax"
+SESSION_COOKIE_HTTPS_ONLY = os.getenv("CCI_SESSION_HTTPS_ONLY", "0").strip().lower() in {"1", "true", "yes", "on"}
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=APP_SESSION_SECRET,
+    max_age=SESSION_MAX_AGE_SECONDS,
+    same_site=SESSION_COOKIE_SAMESITE,
+    https_only=SESSION_COOKIE_HTTPS_ONLY,
+)
 
 # Middleware to skip ngrok browser warning
 class NgrokWarningSkipMiddleware(BaseHTTPMiddleware):
@@ -285,12 +309,16 @@ def _ensure_users_file() -> None:
                         "role": "admin",
                         "name": admin_email.split("@")[0],
                         "created_at": datetime.utcnow().isoformat(timespec="seconds"),
+                        "game_access": admin_email == GAME_ACCESS_MANAGER_EMAIL,
                         "shortcut_items": [],
                         "shortcut_windows": [],
                     }
                 )
             else:
                 by_email[admin_email]["role"] = "admin"
+                # Core admin game permission policy is deterministic:
+                # only the designated manager can access game features.
+                by_email[admin_email]["game_access"] = admin_email == GAME_ACCESS_MANAGER_EMAIL
         _save_json_array(USERS_FILE, users)
 
 
@@ -336,6 +364,34 @@ def _is_user_approved(user: dict | None) -> bool:
     if raw is None:
         return _can_user_login(user)
     return bool(raw)
+
+
+def _can_manage_game_access(user: dict | None) -> bool:
+    if not user:
+        return False
+    email = str(user.get("email", "")).strip().lower()
+    return email == GAME_ACCESS_MANAGER_EMAIL
+
+
+def _has_game_access(user: dict | None) -> bool:
+    if not user:
+        return False
+    if _can_manage_game_access(user):
+        return True
+    if _is_admin_user(user):
+        return False
+    raw = user.get("game_access", None)
+    if raw is None:
+        return False
+    return bool(raw)
+
+
+def _load_game_scores() -> list[dict]:
+    return _load_json_array(GAME_SCORES_FILE)
+
+
+def _save_game_scores(items: list[dict]) -> None:
+    _save_json_array(GAME_SCORES_FILE, items)
 
 
 def _decode_session_cookie_value(raw_cookie: str) -> dict:
@@ -394,6 +450,15 @@ def _require_admin(request: Request) -> dict:
     return user or {}
 
 
+def _require_game_access(request: Request) -> dict:
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+    if not _has_game_access(user):
+        raise HTTPException(status_code=403, detail="game access denied")
+    return user
+
+
 def _is_public_path(path: str) -> bool:
     if path in {"/favicon.ico", "/auth/login", "/auth/register", "/auth/logout"}:
         return True
@@ -401,6 +466,334 @@ def _is_public_path(path: str) -> bool:
         if path.startswith(prefix):
             return True
     return False
+
+
+def _groupware_session_key(request: Request) -> str | None:
+    user = _current_user_from_request(request)
+    email = str((user or {}).get("email", "")).strip().lower()
+    cookie = str(request.cookies.get("session", "")).strip()
+    # 같은 계정을 여러 브라우저/터널에서 동시에 쓰더라도 업스트림 세션이 섞이지 않게 분리한다.
+    if email and cookie:
+        cookie_hash = hashlib.sha256(cookie.encode("utf-8", errors="ignore")).hexdigest()
+        return f"gw:{email}:{cookie_hash}"
+    if email:
+        return f"gw:{email}"
+    if cookie:
+        return "gw:anon:" + hashlib.sha256(cookie.encode("utf-8", errors="ignore")).hexdigest()
+    return None
+
+
+def _get_groupware_client(request: Request) -> requests.Session:
+    key = _groupware_session_key(request)
+    if not key:
+        raise HTTPException(status_code=401, detail="login required")
+    with GROUPWARE_PROXY_LOCK:
+        found = GROUPWARE_PROXY_SESSIONS.get(key)
+        if found is not None:
+            return found
+        session = requests.Session()
+        GROUPWARE_PROXY_SESSIONS[key] = session
+        return session
+
+
+def _clear_groupware_client(request: Request) -> None:
+    key = _groupware_session_key(request)
+    if not key:
+        return
+    with GROUPWARE_PROXY_LOCK:
+        found = GROUPWARE_PROXY_SESSIONS.pop(key, None)
+    if found is not None:
+        try:
+            found.close()
+        except Exception:
+            pass
+
+
+def _groupware_target_path_from_request_path(request_path: str) -> str:
+    path = str(request_path or "").strip()
+
+    def _tail(src: str, prefix: str) -> str:
+        return str(src[len(prefix):] if src.startswith(prefix) else "").lstrip("/")
+
+    if path.startswith("/groupware/cjs/"):
+        tail = _tail(path, "/groupware/cjs/")
+        return f"/cjs/{tail}" if tail else "/cjs/"
+    if path.startswith("/groupware/upload_file/"):
+        tail = _tail(path, "/groupware/upload_file/")
+        return f"/upload_file/{tail}" if tail else "/upload_file/"
+    if path.startswith("/groupware/chtml/"):
+        tail = _tail(path, "/groupware/chtml/")
+        return f"/chtml/{tail}" if tail else "/chtml/"
+    if path.startswith("/groupware/static/"):
+        tail = _tail(path, "/groupware/static/")
+        return f"/static/{tail}" if tail else "/static/"
+    if path.startswith("/groupware/img/"):
+        tail = _tail(path, "/groupware/img/")
+        return f"/groupware/img/{tail}" if tail else "/groupware/img/"
+    if path.startswith("/groupware/main/"):
+        tail = _tail(path, "/groupware/main/")
+        return f"/groupware/main/{tail}" if tail else "/groupware/main/"
+    if path.startswith("/cjs/"):
+        tail = _tail(path, "/cjs/")
+        return f"/cjs/{tail}" if tail else "/cjs/"
+    if path.startswith("/upload_file/"):
+        tail = _tail(path, "/upload_file/")
+        return f"/upload_file/{tail}" if tail else "/upload_file/"
+    if path.startswith("/chtml/"):
+        tail = _tail(path, "/chtml/")
+        return f"/chtml/{tail}" if tail else "/chtml/"
+    if path.startswith("/static/"):
+        tail = _tail(path, "/static/")
+        return f"/static/{tail}" if tail else "/static/"
+    if path.startswith("/img/"):
+        tail = _tail(path, "/img/")
+        return f"/groupware/img/{tail}" if tail else "/groupware/img/"
+    if path.startswith("/main/"):
+        tail = _tail(path, "/main/")
+        return f"/groupware/main/{tail}" if tail else "/groupware/main/"
+    if path.startswith(GROUPWARE_PROXY_PREFIX):
+        tail = _tail(path, GROUPWARE_PROXY_PREFIX + "/")
+        return f"/{tail}" if tail else GROUPWARE_LOGIN_PATH
+    if path.startswith("/groupware"):
+        return path if path != "/groupware" else GROUPWARE_LOGIN_PATH
+    return GROUPWARE_LOGIN_PATH
+
+
+def _groupware_proxy_url_from_value(raw_value: str) -> str:
+    value = str(raw_value or "").strip()
+    if not value or value.startswith(("#", "javascript:", "mailto:", "data:")):
+        return value
+    if value.startswith("//"):
+        value = "https:" + value
+    parts = urlsplit(value)
+    group_parts = urlsplit(GROUPWARE_BASE_URL)
+
+    def map_path(path: str) -> str:
+        clean = str(path or "/").strip() or "/"
+        # 로그인 HTML이 잘못 참조하는 정적 자산 경로 보정
+        if clean.startswith("/groupware/cjs/"):
+            return clean.removeprefix("/groupware")
+        if clean.startswith("/groupware/upload_file/"):
+            return clean.removeprefix("/groupware")
+        # img는 업스트림에서 /groupware/img/... 경로를 사용한다.
+        if clean.startswith("/groupware/img/"):
+            return clean
+        if clean.startswith("/groupware/main/"):
+            return clean.removeprefix("/groupware")
+        if clean.startswith("/groupware/chtml/"):
+            return clean.removeprefix("/groupware")
+        if clean.startswith("/groupware/static/"):
+            return clean.removeprefix("/groupware")
+        if clean.startswith("/cjs/") or clean.startswith("/upload_file/") or clean.startswith("/main/") or clean.startswith("/chtml/") or clean.startswith("/static/"):
+            return clean
+        if clean.startswith("/img/"):
+            return f"/groupware{clean}"
+        if clean.startswith("/groupware/") or clean == "/groupware":
+            return clean
+        return f"{GROUPWARE_EMBED_PREFIX}{clean}"
+
+    if parts.scheme and parts.netloc:
+        if parts.netloc.lower() != group_parts.netloc.lower():
+            return value
+        mapped = map_path(parts.path or "/")
+        return urlunsplit(("", "", mapped, parts.query, parts.fragment))
+    if value.startswith(GROUPWARE_PROXY_PREFIX) or value.startswith(GROUPWARE_EMBED_PREFIX) or value.startswith("/cjs/") or value.startswith("/upload_file/") or value.startswith("/main/") or value.startswith("/chtml/") or value.startswith("/img/") or value.startswith("/static/"):
+        return value
+    if value.startswith("/"):
+        return map_path(value)
+    return value
+
+
+def _rewrite_groupware_html(content: str, upstream_url: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        return f"{match.group('attr')}{match.group('quote')}{_groupware_proxy_url_from_value(match.group('value'))}{match.group('quote')}"
+
+    rewritten = GROUPWARE_ATTR_RE.sub(repl, content)
+    current = urlsplit(upstream_url)
+    current_real_url = urlunsplit(("https", current.netloc, current.path or "/", current.query, current.fragment))
+    
+        # iframe 내 링크 처리 JavaScript inject
+    link_interceptor_js = """
+<script>
+(function() {
+  try {
+        // 로그인 필요 시 전달된 복귀 URL을 저장
+        try {
+            var sp = new URLSearchParams(window.location.search || "");
+            var ret = sp.get("gw_return");
+            if (ret) {
+                sessionStorage.setItem("gw_return", ret);
+            }
+        } catch(_) {}
+
+    function toProxyUrl(raw) {
+      const s = String(raw || "").trim();
+      if (!s || s.startsWith("#") || s.startsWith("javascript:") || s.startsWith("mailto:") || s.startsWith("data:")) return s;
+      
+      // 이미 프록시 경로면 그대로 반환
+      if (s.startsWith("/groupware") || s.startsWith("/cjs") || s.startsWith("/upload_file") || 
+          s.startsWith("/main") || s.startsWith("/chtml") || s.startsWith("/img") || s.startsWith("/static")) {
+        return s;
+      }
+      
+      // gw.poliot.co.kr 도메인 내부 다른 프로토콜 URL
+      if ((s.startsWith("http://") || s.startsWith("https://")) && s.includes("gw.poliot.co.kr")) {
+        const u = new URL(s);
+        const path = u.pathname || "/";
+        const query = u.search || "";
+        const hash = u.hash || "";
+        // /groupware/ 또는 /cjs/, /main/ 등으로 보정
+        if (path.includes("/groupware/")) {
+          return path.replace(/^\\/groupware/, "/groupware") + query + hash;
+        } else if (path.includes("/cjs") || path.includes("/main") || path.includes("/chtml") || 
+                   path.includes("/img") || path.includes("/upload_file") || path.includes("/static")) {
+          return path + query + hash;
+        } else {
+          return "/groupware" + path + query + hash;
+        }
+      }
+      
+      // 절대경로
+      if (s.startsWith("/")) {
+        return s;
+      }
+      
+      return s;
+    }
+    
+    // 모든 <a> 클릭 intercept
+    document.addEventListener("click", function(e) {
+      let el = e.target;
+      while (el && el !== document) {
+        if (el.tagName === "A" || el.tagName === "a") {
+          const href = el.getAttribute("href");
+          if (href && !href.startsWith("#") && !href.startsWith("javascript:") && !href.startsWith("mailto:")) {
+            const proxyUrl = toProxyUrl(href);
+            if (proxyUrl !== href) {
+              e.preventDefault();
+              window.location.href = proxyUrl;
+              return;
+            }
+          }
+          break;
+        }
+        el = el.parentNode;
+      }
+    }, true);
+    
+    // XMLHttpRequest 프록시 변환
+    var origOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+      const proxyUrl = toProxyUrl(String(url || ""));
+      return origOpen.apply(this, [method, proxyUrl]);
+    };
+
+        // 새창/팝업을 같은 프레임 내 이동으로 강제 (메일쓰기 포함)
+        var origWindowOpen = window.open;
+        window.open = function(url, name, specs) {
+            const proxyUrl = toProxyUrl(String(url || ""));
+            if (proxyUrl && proxyUrl !== "" && proxyUrl !== "about:blank") {
+                window.location.href = proxyUrl;
+                return window;
+            }
+            return origWindowOpen.apply(window, arguments);
+        };
+        try { if (window.parent && window.parent !== window) { window.parent.open = window.open; } } catch(_) {}
+        try { if (window.top && window.top !== window) { window.top.open = window.open; } } catch(_) {}
+
+        // _blank 폼 전송을 같은 프레임으로 고정
+        document.addEventListener("submit", function(e) {
+            const form = e.target;
+            if (!form || !form.getAttribute) return;
+            const action = form.getAttribute("action") || "";
+            const proxyAction = toProxyUrl(action);
+            if (proxyAction && proxyAction !== action) {
+                form.setAttribute("action", proxyAction);
+            }
+            const target = String(form.getAttribute("target") || "").toLowerCase();
+            if (target === "_blank" || target === "blank") {
+                form.setAttribute("target", "_self");
+            }
+        }, true);
+
+        // 페이지 내 기존 _blank 링크/폼도 즉시 고정
+        try {
+            document.querySelectorAll('a[target="_blank"], form[target="_blank"]').forEach(function(el){
+                el.setAttribute('target', '_self');
+            });
+        } catch(_) {}
+
+        // 로그인 성공 후 메인으로 떨어지면 원래 요청 URL로 자동 복귀
+        try {
+            var pending = sessionStorage.getItem("gw_return") || "";
+            var p = String(window.location.pathname || "");
+            var isLanding = (
+                p === "/groupware/index.php" ||
+                p === "/groupware/" ||
+                p === "/groupware" ||
+                p === "/groupware/main/main.php" ||
+                p === "/groupware/main/" ||
+                p === "/groupware/main"
+            );
+            if (pending && isLanding) {
+                sessionStorage.removeItem("gw_return");
+                window.location.replace(pending);
+            }
+        } catch(_) {}
+    
+  } catch(err) {
+    console.error("Groupware proxy interceptor error:", err);
+  }
+})();
+</script>
+"""
+    
+    # 스크립트/인라인 문자열에 남아 있는 절대 URL도 프록시 URL로 치환
+    rewritten = rewritten.replace("https://gw.poliot.co.kr/groupware", "/groupware")
+    rewritten = rewritten.replace("http://gw.poliot.co.kr/groupware", "/groupware")
+    rewritten = rewritten.replace("https:\\/\\/gw.poliot.co.kr\\/groupware", "/groupware")
+    rewritten = rewritten.replace("http:\\/\\/gw.poliot.co.kr\\/groupware", "/groupware")
+    rewritten = rewritten.replace(GROUPWARE_BASE_URL + "/groupware", "/groupware")
+
+    if "<body" in rewritten.lower():
+        rewritten = re.sub(
+            r"</body>",
+            link_interceptor_js + "</body>",
+            rewritten,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        rewritten = re.sub(
+            r"<body([^>]*)>",
+            lambda m: f'<body{m.group(1)} data-groupware-url="{current_real_url}">',
+            rewritten,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    elif "<html" in rewritten.lower():
+        rewritten = re.sub(
+            r"</html>",
+            link_interceptor_js + "</html>",
+            rewritten,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    
+    return rewritten
+
+
+def _rewrite_groupware_css(content: str) -> str:
+    def repl_url(match: re.Match[str]) -> str:
+        quote_char = match.group("quote") or ""
+        value = _groupware_proxy_url_from_value(match.group("value"))
+        return f"url({quote_char}{value}{quote_char})"
+
+    rewritten = GROUPWARE_CSS_URL_RE.sub(repl_url, content)
+    rewritten = GROUPWARE_CSS_IMPORT_RE.sub(
+        lambda m: f"@import {m.group('quote')}{_groupware_proxy_url_from_value(m.group('value'))}{m.group('quote')}",
+        rewritten,
+    )
+    return rewritten
 
 
 def _normalize_shortcut_items(raw_items: list) -> list[dict]:
@@ -508,6 +901,18 @@ def _save_user_shortcut_state(user_email: str, items: list, windows: list) -> di
 async def auth_guard_middleware(request: Request, call_next):
     path = request.url.path
     if _is_public_path(path):
+        return await call_next(request)
+
+    # 그룹웨어 프록시/자산 경로는 로컬 세션이 끊겨도 그룹웨어 자체 로그인 흐름을 유지한다.
+    groupware_passthrough_prefixes = (
+        "/groupware",
+        "/cjs/",
+        "/upload_file/",
+        "/main/",
+        "/chtml/",
+        "/img/",
+    )
+    if path.startswith(groupware_passthrough_prefixes):
         return await call_next(request)
 
     if _is_session_timed_out(request):
@@ -822,6 +1227,7 @@ def auth_register_submit(
 
 @app.post("/auth/logout")
 def auth_logout(request: Request):
+    _clear_groupware_client(request)
     if request.session:
         request.session.clear()
     return RedirectResponse(url="/auth/login", status_code=303)
@@ -840,6 +1246,8 @@ def auth_me(request: Request):
             "role": "admin" if _is_admin_user(user) else "user",
             "approved": _is_user_approved(user),
             "can_login": _can_user_login(user),
+            "game_access": _has_game_access(user),
+            "can_manage_game_access": _can_manage_game_access(user),
             "address": str(user.get("address", "") or ""),
             "login_at": str(request.session.get("login_at", "") or ""),
             "last_active_at": str(request.session.get("last_active_at", "") or request.session.get("login_at", "") or ""),
@@ -912,12 +1320,38 @@ async def user_self_update(request: Request):
 @app.get("/api/admin/users")
 def admin_users(request: Request):
     _require_admin(request)
-    users = _load_users()
+
+    # Read both primary and legacy stores so admin page can always show signup fields.
+    users_by_email: dict[str, dict] = {}
+    for path in (LEGACY_USERS_FILE, USERS_FILE):
+        for row in _load_json_array(path):
+            email = str(row.get("email", "")).strip().lower()
+            if not email:
+                continue
+            prev = users_by_email.get(email) or {}
+            users_by_email[email] = {**prev, **row, "email": email}
+
+    employees_by_email: dict[str, dict] = {}
+    for path in (LEGACY_EMPLOYEES_FILE, EMPLOYEES_FILE):
+        for row in _load_json_array(path):
+            email = str(row.get("account_email", "")).strip().lower()
+            if not email:
+                continue
+            prev = employees_by_email.get(email) or {}
+            employees_by_email[email] = {**prev, **row, "account_email": email}
+
     out = []
-    for row in users:
+    for row in users_by_email.values():
         email = str(row.get("email", "")).strip().lower()
         password_hash = str(row.get("password_hash", "") or "")
         password_hash_preview = password_hash if password_hash else "(없음)"
+        employee = employees_by_email.get(email) or {}
+
+        title = str(row.get("title", "") or "").strip() or str(employee.get("title", "") or "").strip()
+        phone = str(row.get("phone", "") or "").strip() or str(employee.get("phone", "") or "").strip()
+        birth = str(row.get("birth", "") or "").strip() or str(employee.get("birth", "") or "").strip()
+        address = str(row.get("address", "") or "").strip() or str(employee.get("address", "") or "").strip()
+
         out.append(
             {
                 "email": email,
@@ -926,11 +1360,20 @@ def admin_users(request: Request):
                 "created_at": str(row.get("created_at", "")),
                 "approved": _is_user_approved(row),
                 "can_login": _can_user_login(row),
+                "game_access": _has_game_access(row),
+                "title": title,
+                "phone": phone,
+                "birth": birth,
+                "address": address,
                 "password_hash_preview": password_hash_preview,
             }
         )
     out.sort(key=lambda x: str(x.get("created_at", "")), reverse=True)
-    return {"ok": True, "items": out}
+    return {
+        "ok": True,
+        "items": out,
+        "can_manage_game_access": _can_manage_game_access(_current_user_from_request(request)),
+    }
 
 
 @app.post("/api/admin/users")
@@ -970,6 +1413,7 @@ async def admin_user_create(request: Request):
         "created_at": datetime.utcnow().isoformat(timespec="seconds"),
         "approved": approved,
         "can_login": can_login,
+        "game_access": False,
         "approved_at": datetime.utcnow().isoformat(timespec="seconds") if approved else "",
         "shortcut_items": [],
         "shortcut_windows": [],
@@ -984,6 +1428,7 @@ async def admin_user_create(request: Request):
         "created_at": str(created.get("created_at", "")),
         "approved": _is_user_approved(created),
         "can_login": _can_user_login(created),
+        "game_access": _has_game_access(created),
     }
     _append_audit_update(
         "회원 계정 추가",
@@ -993,6 +1438,7 @@ async def admin_user_create(request: Request):
             f"권한: {item['role']}",
             f"승인: {'예' if item['approved'] else '아니오'}",
             f"로그인 허용: {'예' if item['can_login'] else '아니오'}",
+            f"게임 접근: {'허용' if item['game_access'] else '차단'}",
         ],
         kind="added",
         scope="인원 관리",
@@ -1027,6 +1473,14 @@ async def admin_user_update(user_email: str, request: Request):
 
         if "name" in payload:
             row["name"] = str(payload.get("name", "")).strip() or str(row.get("name", ""))
+        if "title" in payload:
+            row["title"] = str(payload.get("title", "") or "").strip()
+        if "phone" in payload:
+            row["phone"] = str(payload.get("phone", "") or "").strip()
+        if "birth" in payload:
+            row["birth"] = str(payload.get("birth", "") or "").strip()
+        if "address" in payload:
+            row["address"] = str(payload.get("address", "") or "").strip()
         if "password" in payload:
             password = str(payload.get("password", "") or "")
             if password:
@@ -1043,6 +1497,12 @@ async def admin_user_update(user_email: str, request: Request):
                 row["approved_at"] = datetime.utcnow().isoformat(timespec="seconds")
         if "can_login" in payload and not is_core_admin:
             row["can_login"] = bool(payload.get("can_login"))
+        if "game_access" in payload:
+            if not _can_manage_game_access(admin_user):
+                raise HTTPException(status_code=403, detail="only hiss0723 can manage game access")
+            if str(row.get("role", "user")).strip().lower() == "admin":
+                raise HTTPException(status_code=400, detail="admin game access cannot be changed")
+            row["game_access"] = bool(payload.get("game_access"))
         if is_core_admin:
             row["role"] = "admin"
             row["approved"] = True
@@ -1056,19 +1516,26 @@ async def admin_user_update(user_email: str, request: Request):
             "created_at": str(row.get("created_at", "")),
             "approved": _is_user_approved(row),
             "can_login": _can_user_login(row),
+            "game_access": _has_game_access(row),
+            "title": str(row.get("title", "") or ""),
+            "phone": str(row.get("phone", "") or ""),
+            "birth": str(row.get("birth", "") or ""),
+            "address": str(row.get("address", "") or ""),
         }
         change_lines = _build_change_lines(
             {
                 **before,
                 "approved": str(_is_user_approved(before)),
                 "can_login": str(_can_user_login(before)),
+                "game_access": str(_has_game_access(before)),
             },
             {
                 **row,
                 "approved": str(_is_user_approved(row)),
                 "can_login": str(_can_user_login(row)),
+                "game_access": str(_has_game_access(row)),
             },
-            ["name", "role", "approved", "can_login"],
+            ["name", "title", "phone", "birth", "address", "role", "approved", "can_login", "game_access"],
         )
         if "password" in payload and str(payload.get("password", "") or ""):
             change_lines.append("password: updated")
@@ -1170,6 +1637,134 @@ def manage_page(request: Request):
     return templates.TemplateResponse("manage.html", {"request": request})
 
 
+@app.get("/games", response_class=HTMLResponse)
+def games_page(request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        return RedirectResponse(url="/auth/login?next=/games", status_code=303)
+    if not _has_game_access(user):
+        raise HTTPException(status_code=403, detail="game access denied")
+    return templates.TemplateResponse("games.html", {"request": request})
+
+
+@app.get("/games/stats", response_class=HTMLResponse)
+def games_stats_page(request: Request):
+    # Legacy path is kept for compatibility and redirected to the new game center.
+    return RedirectResponse(url="/games", status_code=303)
+
+
+@app.get("/api/games/scores")
+def games_scores(request: Request):
+    user = _require_game_access(request)
+    records = _load_game_scores()
+    valid_games = {"omok", "missile", "reva"}
+
+    filtered = []
+    for row in records:
+        game = str(row.get("game", "")).strip().lower()
+        if game not in valid_games:
+            continue
+        score_value = row.get("score", 0)
+        try:
+            score = int(score_value)
+        except Exception:
+            continue
+        filtered.append(
+            {
+                "game": game,
+                "score": score,
+                "email": str(row.get("email", "")).strip().lower(),
+                "name": str(row.get("name", "") or "").strip(),
+                "played_at": str(row.get("played_at", "") or "").strip(),
+            }
+        )
+
+    by_game: dict[str, list[dict]] = {"omok": [], "missile": [], "reva": []}
+    for game in by_game:
+        rows = [x for x in filtered if x["game"] == game]
+        rows.sort(key=lambda x: (x["score"], x["played_at"]), reverse=True)
+        by_game[game] = rows[:20]
+
+    totals: dict[str, dict] = {}
+    for row in filtered:
+        key = row["email"]
+        if not key:
+            continue
+        rec = totals.setdefault(
+            key,
+            {
+                "email": key,
+                "name": row["name"] or key.split("@")[0],
+                "total_score": 0,
+                "plays": 0,
+                "best_reva": 0,
+            },
+        )
+        rec["total_score"] += int(row["score"])
+        rec["plays"] += 1
+        if row["game"] == "reva":
+            rec["best_reva"] = max(int(rec["best_reva"]), int(row["score"]))
+
+    ranking = sorted(
+        totals.values(),
+        key=lambda x: (int(x["best_reva"]), int(x["total_score"]), -int(x["plays"])),
+        reverse=True,
+    )
+    for idx, rec in enumerate(ranking, start=1):
+        rec["rank"] = idx
+
+    my_email = str(user.get("email", "")).strip().lower()
+    my_stats = next((x for x in ranking if str(x.get("email", "")).lower() == my_email), None)
+
+    return {
+        "ok": True,
+        "games": by_game,
+        "ranking": ranking,
+        "my_stats": my_stats,
+    }
+
+
+@app.post("/api/games/scores")
+async def submit_game_score(request: Request):
+    user = _require_game_access(request)
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="invalid payload")
+
+    game = str(payload.get("game", "")).strip().lower()
+    if game not in {"omok", "missile", "reva"}:
+        raise HTTPException(status_code=400, detail="invalid game")
+
+    try:
+        score = int(payload.get("score", 0))
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid score")
+    if score < 0:
+        raise HTTPException(status_code=400, detail="invalid score")
+
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    email = str(user.get("email", "")).strip().lower()
+    name = str(user.get("name", "") or "").strip() or email.split("@")[0]
+
+    row = {
+        "id": uuid.uuid4().hex,
+        "game": game,
+        "score": score,
+        "email": email,
+        "name": name,
+        "played_at": now,
+    }
+
+    with AUTH_LOCK:
+        records = _load_game_scores()
+        records.append(row)
+        if len(records) > 5000:
+            records = records[-5000:]
+        _save_game_scores(records)
+
+    return {"ok": True, "item": row}
+
+
 @app.get("/api/manage/assets")
 def manage_assets(request: Request):
     user = _current_user_from_request(request)
@@ -1183,8 +1778,20 @@ def manage_schedules(request: Request):
     user = _current_user_from_request(request)
     if not user:
         return JSONResponse(status_code=401, content={"ok": False, "detail": "login required"})
+    raw_items = _load_json_array(MANAGE_SCHEDULES_FILE)
     items = sorted(
-        _load_json_array(MANAGE_SCHEDULES_FILE),
+        [
+            {
+                **row,
+                "type": _normalize_manage_schedule_type(row.get("type", "vacation")),
+                "approval_status": _normalize_manage_schedule_approval(row.get("approval_status", "pending")),
+                "approved_by": str(row.get("approved_by", "") or "").strip().lower(),
+                "approved_at": str(row.get("approved_at", "") or "").strip(),
+                "reject_reason": str(row.get("reject_reason", "") or "").strip(),
+                "brand": str(row.get("brand", "") or "").strip(),
+            }
+            for row in raw_items
+        ],
         key=lambda row: (
             str(row.get("start_date", "")),
             str(row.get("end_date", "")),
@@ -1194,23 +1801,75 @@ def manage_schedules(request: Request):
     return {"ok": True, "items": items}
 
 
+def _normalize_manage_schedule_type(raw_type: str) -> str:
+    text = str(raw_type or "").strip().lower()
+    aliases = {
+        "vacation": "vacation",
+        "annual_leave": "annual_leave",
+        "annual-leave": "annual_leave",
+        "annual": "annual_leave",
+        "half_day": "half_day",
+        "half-day": "half_day",
+        "halfday": "half_day",
+        "sick_leave": "sick_leave",
+        "sick-leave": "sick_leave",
+        "sick": "sick_leave",
+        "deployment": "deployment",
+        "release": "deployment",
+        "meeting": "meeting",
+        "brand_meeting": "brand_meeting",
+        "brand-meeting": "brand_meeting",
+        "brand": "brand_meeting",
+        "schedule": "meeting",
+        "memo": "meeting",
+        "admin_schedule": "meeting",
+    }
+    return aliases.get(text, "vacation")
+
+
+def _normalize_manage_schedule_approval(raw_status: str) -> str:
+    text = str(raw_status or "").strip().lower()
+    aliases = {
+        "pending": "pending",
+        "requested": "pending",
+        "waiting": "pending",
+        "approved": "approved",
+        "approve": "approved",
+        "ok": "approved",
+        "rejected": "rejected",
+        "reject": "rejected",
+        "denied": "rejected",
+    }
+    return aliases.get(text, "pending")
+
+
 def _parse_manage_schedule_payload(payload: dict) -> dict:
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="invalid payload")
 
-    schedule_type = str(payload.get("type", "memo") or "memo").strip().lower()
-    if schedule_type not in {"vacation", "schedule", "memo"}:
-        schedule_type = "memo"
+    schedule_type = _normalize_manage_schedule_type(payload.get("type", "vacation"))
 
     start_date = str(payload.get("start_date", "") or "").strip()
     end_date = str(payload.get("end_date", "") or start_date).strip()
     title = str(payload.get("title", "") or "").strip()
+    brand = str(payload.get("brand", "") or "").strip()
     note = str(payload.get("note", "") or "").strip()
 
     if not start_date:
         raise HTTPException(status_code=400, detail="start date required")
     if not title:
-        raise HTTPException(status_code=400, detail="title required")
+        if schedule_type in {"meeting", "deployment", "brand_meeting"}:
+            raise HTTPException(status_code=400, detail="title required")
+        title_defaults = {
+            "vacation": "휴가",
+            "annual_leave": "연차",
+            "half_day": "반차",
+            "sick_leave": "병가",
+            "deployment": "배포 일정",
+            "meeting": "회의",
+            "brand_meeting": "브랜드 회의",
+        }
+        title = title_defaults.get(schedule_type, "일정")
 
     try:
         start_dt = date.fromisoformat(start_date)
@@ -1226,6 +1885,7 @@ def _parse_manage_schedule_payload(payload: dict) -> dict:
         "start_date": start_dt.isoformat(),
         "end_date": end_dt.isoformat(),
         "title": title,
+        "brand": brand,
         "note": note,
     }
 
@@ -1238,9 +1898,18 @@ async def manage_schedule_create(request: Request):
     payload = await request.json()
     parsed = _parse_manage_schedule_payload(payload)
 
+    # 모든 일정은 관리자 승인 흐름으로 들어가도록 요청 상태를 pending으로 시작한다.
+    approval_status = "pending"
+    approved_by = ""
+    approved_at = ""
+
     item = {
         "id": f"schedule-{uuid.uuid4().hex[:12]}",
         **parsed,
+        "approval_status": approval_status,
+        "approved_by": approved_by,
+        "approved_at": approved_at,
+        "reject_reason": "",
         "author_email": str(user.get("email", "")).strip().lower(),
         "author_name": str(user.get("name", "")).strip() or str(user.get("email", "")).strip().lower(),
         "created_at": datetime.utcnow().isoformat(timespec="seconds"),
@@ -1258,6 +1927,7 @@ async def manage_schedule_create(request: Request):
             f"일정 유형: {str(item.get('type', '')).strip() or '-'}",
             f"시작일: {str(item.get('start_date', '')).strip() or '-'}",
             f"종료일: {str(item.get('end_date', '')).strip() or '-'}",
+            f"승인 상태: {str(item.get('approval_status', '')).strip() or '-'}",
         ],
         kind="added",
         scope="일정 관리",
@@ -1286,6 +1956,10 @@ async def manage_schedule_update(schedule_id: str, request: Request):
         if not target:
             raise HTTPException(status_code=404, detail="schedule not found")
 
+        current_status = _normalize_manage_schedule_approval(target.get("approval_status", target.get("request_status", "pending")))
+        if current_status == "approved":
+            raise HTTPException(status_code=409, detail="approved schedule is locked")
+
         actor_email = str(user.get("email", "")).strip().lower()
         owner_email = str(target.get("author_email", "")).strip().lower()
         if actor_email != owner_email and not _is_admin_user(user):
@@ -1293,9 +1967,14 @@ async def manage_schedule_update(schedule_id: str, request: Request):
 
         before = dict(target)
         target.update(parsed)
+        # 수정 시에는 작성자/관리자 구분 없이 재승인 대상으로 전환한다.
+        target["approval_status"] = "pending"
+        target["approved_by"] = ""
+        target["approved_at"] = ""
+        target["reject_reason"] = ""
         _save_json_array(MANAGE_SCHEDULES_FILE, items)
 
-    change_lines = _build_change_lines(before, target, ["type", "start_date", "end_date", "title", "note"])
+    change_lines = _build_change_lines(before, target, ["type", "start_date", "end_date", "title", "brand", "note", "approval_status"])
     _append_audit_update(
         "일정 수정",
         [f"ID: {target_id}", *(change_lines or ["변경 항목 없음"])],
@@ -1323,6 +2002,10 @@ def manage_schedule_delete(schedule_id: str, request: Request):
         if not target:
             raise HTTPException(status_code=404, detail="schedule not found")
 
+        current_status = _normalize_manage_schedule_approval(target.get("approval_status", target.get("request_status", "pending")))
+        if current_status == "approved":
+            raise HTTPException(status_code=409, detail="approved schedule is locked")
+
         actor_email = str(user.get("email", "")).strip().lower()
         owner_email = str(target.get("author_email", "")).strip().lower()
         if actor_email != owner_email and not _is_admin_user(user):
@@ -1344,6 +2027,93 @@ def manage_schedule_delete(schedule_id: str, request: Request):
         actor=user,
     )
     return {"ok": True, "deleted": True}
+
+
+@app.post("/api/manage/schedules/{schedule_id}/approval")
+async def manage_schedule_approval(schedule_id: str, request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"ok": False, "detail": "login required"})
+    if not _is_admin_user(user):
+        raise HTTPException(status_code=403, detail="admin only")
+
+    target_id = str(schedule_id or "").strip()
+    if not target_id:
+        raise HTTPException(status_code=400, detail="invalid schedule id")
+
+    payload = await request.json()
+    status = _normalize_manage_schedule_approval((payload or {}).get("status", "pending"))
+    if status not in {"approved", "rejected"}:
+        raise HTTPException(status_code=400, detail="invalid approval status")
+
+    reject_reason = str((payload or {}).get("reason", "") or "").strip()
+    if status == "rejected" and not reject_reason:
+        raise HTTPException(status_code=400, detail="reject reason required")
+
+    with AUTH_LOCK:
+        items = _load_json_array(MANAGE_SCHEDULES_FILE)
+        target = next((row for row in items if str(row.get("id", "")).strip() == target_id), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="schedule not found")
+
+        before = dict(target)
+        target["approval_status"] = status
+        target["approved_by"] = str(user.get("email", "")).strip().lower()
+        target["approved_at"] = datetime.utcnow().isoformat(timespec="seconds")
+        target["reject_reason"] = reject_reason if status == "rejected" else ""
+        _save_json_array(MANAGE_SCHEDULES_FILE, items)
+
+    change_lines = _build_change_lines(before, target, ["approval_status", "approved_by", "approved_at", "reject_reason"])
+    _append_audit_update(
+        "일정 승인 처리",
+        [f"ID: {target_id}", *(change_lines or ["변경 항목 없음"])],
+        kind="updated",
+        scope="일정 관리",
+        actor=user,
+    )
+
+    return {"ok": True, "item": target}
+
+
+@app.post("/api/manage/schedules/{schedule_id}/withdraw-request")
+async def manage_schedule_withdraw_request(schedule_id: str, request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"ok": False, "detail": "login required"})
+    if not _is_admin_user(user):
+        raise HTTPException(status_code=403, detail="admin only")
+
+    target_id = str(schedule_id or "").strip()
+    if not target_id:
+        raise HTTPException(status_code=400, detail="invalid schedule id")
+
+    with AUTH_LOCK:
+        items = _load_json_array(MANAGE_SCHEDULES_FILE)
+        target = next((row for row in items if str(row.get("id", "")).strip() == target_id), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="schedule not found")
+
+        current_status = _normalize_manage_schedule_approval(target.get("approval_status", "pending"))
+        if current_status != "pending":
+            raise HTTPException(status_code=400, detail="pending request not found")
+
+        before = dict(target)
+        target["approval_status"] = "rejected"
+        target["approved_by"] = str(user.get("email", "")).strip().lower()
+        target["approved_at"] = datetime.utcnow().isoformat(timespec="seconds")
+        target["reject_reason"] = "관리자 요청취소"
+        _save_json_array(MANAGE_SCHEDULES_FILE, items)
+
+    change_lines = _build_change_lines(before, target, ["approval_status", "approved_by", "approved_at", "reject_reason"])
+    _append_audit_update(
+        "일정 요청 취소",
+        [f"ID: {target_id}", *(change_lines or ["변경 항목 없음"])],
+        kind="updated",
+        scope="일정 관리",
+        actor=user,
+    )
+
+    return {"ok": True, "item": target}
 
 
 @app.get("/api/admin/employees")
@@ -1566,6 +2336,11 @@ async def admin_asset_update(item_id: str, request: Request):
     change_lines: list[str] = []
     for idx, row in enumerate(items):
         if str(row.get("id", "")) == str(item_id):
+            current_status = str(row.get("status", "active") or "active").strip().lower()
+            current_req_status = str(row.get("delete_request_status", "none") or "none").strip().lower()
+            if current_status in {"pending", "deleted", "cancelled"} or current_req_status == "pending":
+                raise HTTPException(status_code=409, detail="asset is locked by delete approval workflow")
+
             before = dict(row)
             merged = {**row, **(payload if isinstance(payload, dict) else {})}
             merged["id"] = str(item_id)
@@ -1631,6 +2406,10 @@ def admin_asset_request_delete(item_id: str, request: Request):
             target["id"] = f"asset-{uuid.uuid4().hex[:10]}"
         before_status = str(target.get("status", "active") or "active").strip().lower()
         before_delete_status = str(target.get("delete_request_status", "none") or "none").strip().lower()
+
+        if before_status in {"pending", "deleted", "cancelled"} or before_delete_status == "pending":
+            raise HTTPException(status_code=409, detail="asset is already in delete approval workflow")
+
         target["status"] = "pending"
         target["delete_request_status"] = "pending"
         target["delete_requested_by"] = actor_email
@@ -1677,6 +2456,7 @@ async def admin_asset_request_delete_bulk(request: Request):
 
     items = _load_json_array(ASSETS_FILE)
     not_found: list[str] = []
+    locked_ids: list[str] = []
     updated_items: list[dict] = []
 
     for req_id in request_ids:
@@ -1690,6 +2470,11 @@ async def admin_asset_request_delete_bulk(request: Request):
             target["id"] = f"asset-{uuid.uuid4().hex[:10]}"
         before_status = str(target.get("status", "active") or "active").strip().lower()
         before_delete_status = str(target.get("delete_request_status", "none") or "none").strip().lower()
+
+        if before_status in {"pending", "deleted", "cancelled"} or before_delete_status == "pending":
+            locked_ids.append(req_id)
+            continue
+
         target["status"] = "pending"
         target["delete_request_status"] = "pending"
         target["delete_requested_by"] = actor_email
@@ -1715,7 +2500,14 @@ async def admin_asset_request_delete_bulk(request: Request):
         )
 
     if not updated_items:
-        raise HTTPException(status_code=404, detail=f"asset not found: {', '.join(not_found[:5])}")
+        if locked_ids and not not_found:
+            raise HTTPException(status_code=409, detail=f"asset is already in delete approval workflow: {', '.join(locked_ids[:5])}")
+        if not_found and not locked_ids:
+            raise HTTPException(status_code=404, detail=f"asset not found: {', '.join(not_found[:5])}")
+        raise HTTPException(
+            status_code=409,
+            detail=f"request blocked (locked: {', '.join(locked_ids[:3]) or '-'}, not found: {', '.join(not_found[:3]) or '-'})",
+        )
 
     _save_json_array(ASSETS_FILE, items)
 
@@ -1819,7 +2611,8 @@ def admin_asset_delete_requests(request: Request):
 
     # 일정관리 승인 요청 데이터가 같은 파일 포맷으로 저장되면 동일 목록에 합류시킨다.
     for row in _load_json_array(MANAGE_SCHEDULES_FILE):
-        approval_status = str(row.get("approval_status", row.get("request_status", "none")) or "none").strip().lower()
+        raw_status = row.get("approval_status", row.get("request_status", "none"))
+        approval_status = _normalize_manage_schedule_approval(raw_status)
         if approval_status != "pending":
             continue
 
@@ -2154,11 +2947,547 @@ def admin_asset_restore_rejected(item_id: str, request: Request):
     return {"ok": True, "item": target}
 
 
+# ─── 게시판 (Board) ────────────────────────────────────────────────────────────
+BOARD_POSTS_FILE = BASE_DIR.parent / "config" / "board_posts.json"
+BOARD_UPLOAD_DIR = UPLOAD_DIR / "board"
+BOARD_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+BOARD_LOCK = threading.Lock()
+BOARD_MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
+BOARD_ALLOWED_EXT = {
+    ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt",
+    ".txt", ".zip", ".png", ".jpg", ".jpeg", ".gif", ".mp4", ".csv",
+}
+
+
+def _board_summary(p: dict) -> dict:
+    return {
+        "id": str(p.get("id", "")),
+        "title": str(p.get("title", "")),
+        "author_name": str(p.get("author_name", "")),
+        "author_email": str(p.get("author_email", "")),
+        "priority": str(p.get("priority", "Medium")),
+        "status": str(p.get("status", "pending")),
+        "comment_count": len(list(p.get("comments") or [])),
+        "file_count": len(list(p.get("files") or [])),
+        "created_at": str(p.get("created_at", "")),
+        "reviewed_at": str(p.get("reviewed_at", "") or ""),
+        "reject_reason": str(p.get("reject_reason", "") or ""),
+    }
+
+
+def _can_view_board_post(post: dict, user: dict | None) -> bool:
+    if not user:
+        return False
+    status = str(post.get("status", "pending")).strip().lower()
+    if status == "approved":
+        return True
+    if _is_admin_user(user):
+        return True
+    viewer_email = str(user.get("email", "")).strip().lower()
+    author_email = str(post.get("author_email", "")).strip().lower()
+    return bool(viewer_email and author_email and viewer_email == author_email)
+
+
+@app.get("/board", response_class=HTMLResponse)
+def board_page(request: Request):
+    return templates.TemplateResponse("board.html", {"request": request})
+
+
+@app.get("/api/board/posts")
+def board_list(request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+    posts = _load_json_array(BOARD_POSTS_FILE)
+    is_admin = _is_admin_user(user)
+    result = []
+    for p in posts:
+        if _can_view_board_post(p, user):
+            result.append(_board_summary(p))
+    result.sort(key=lambda r: str(r.get("created_at", "")), reverse=True)
+    return {"ok": True, "items": result, "is_admin": is_admin}
+
+
+@app.get("/api/board/posts/{post_id}")
+def board_get_post(post_id: str, request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+    posts = _load_json_array(BOARD_POSTS_FILE)
+    post = next((p for p in posts if p.get("id") == post_id), None)
+    if not post:
+        raise HTTPException(status_code=404, detail="post not found")
+    is_admin = _is_admin_user(user)
+    if not _can_view_board_post(post, user):
+        raise HTTPException(status_code=403, detail="not approved")
+    return {"ok": True, "post": post, "is_admin": is_admin,
+            "current_email": str(user.get("email", "")).strip().lower()}
+
+
+@app.post("/api/board/posts")
+async def board_create_post(
+    request: Request,
+    title: str = Form(...),
+    author_name: str = Form(...),
+    content: str = Form(...),
+    priority: str = Form("Medium"),
+    files: list[UploadFile] = File(default=[]),
+):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+    priority = priority if priority in ("High", "Medium", "Low") else "Medium"
+    post_id = f"board-{uuid.uuid4().hex[:12]}"
+    now = datetime.utcnow().isoformat(timespec="seconds")
+
+    saved_files = []
+    for f in files:
+        if not f.filename:
+            continue
+        ext = Path(f.filename).suffix.lower()
+        if ext not in BOARD_ALLOWED_EXT:
+            continue
+        safe_name = f"{post_id}_{uuid.uuid4().hex[:6]}{ext}"
+        dest = BOARD_UPLOAD_DIR / safe_name
+        content_bytes = await f.read()
+        if len(content_bytes) > BOARD_MAX_FILE_SIZE:
+            continue
+        dest.write_bytes(content_bytes)
+        saved_files.append({"original_name": f.filename, "path": f"/uploads/board/{safe_name}"})
+
+    post = {
+        "id": post_id,
+        "title": str(title)[:200].strip(),
+        "author_name": str(author_name)[:50].strip(),
+        "author_email": str(user.get("email", "")).strip().lower(),
+        "content": str(content)[:5000].strip(),
+        "priority": priority,
+        "status": "pending",
+        "files": saved_files,
+        "comments": [],
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    with BOARD_LOCK:
+        posts = _load_json_array(BOARD_POSTS_FILE)
+        posts.append(post)
+        _save_json_array(BOARD_POSTS_FILE, posts)
+
+    _append_audit_update(
+        "게시판 글 등록",
+        [f"제목: {post['title']}", f"작성자: {author_name}", f"중요도: {priority}", f"ID: {post_id}"],
+        kind="added",
+        scope="게시판",
+        actor=user,
+    )
+    return {"ok": True, "post": _board_summary(post)}
+
+
+@app.put("/api/board/posts/{post_id}")
+async def board_update_post(post_id: str, request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+    payload = await request.json()
+    title = str((payload or {}).get("title", "")).strip()[:200]
+    author_name = str((payload or {}).get("author_name", "")).strip()[:50]
+    content = str((payload or {}).get("content", "")).strip()[:5000]
+    priority = str((payload or {}).get("priority", "Medium"))
+    if not title or not author_name or not content:
+        raise HTTPException(status_code=400, detail="required fields missing")
+    if priority not in ("High", "Medium", "Low"):
+        priority = "Medium"
+
+    user_email = str(user.get("email", "")).strip().lower()
+    is_admin = _is_admin_user(user)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+
+    with BOARD_LOCK:
+        posts = _load_json_array(BOARD_POSTS_FILE)
+        idx = next((i for i, p in enumerate(posts) if p.get("id") == post_id), -1)
+        if idx < 0:
+            raise HTTPException(status_code=404, detail="post not found")
+        post = dict(posts[idx])
+        author_email = str(post.get("author_email", "")).strip().lower()
+        if not is_admin and user_email != author_email:
+            raise HTTPException(status_code=403, detail="not allowed")
+
+        post["title"] = title
+        post["author_name"] = author_name
+        post["content"] = content
+        post["priority"] = priority
+        post["updated_at"] = now
+
+        # 작성자 수정은 재승인을 요구한다.
+        if not is_admin:
+            post["status"] = "pending"
+            post.pop("reviewed_by", None)
+            post.pop("reviewed_at", None)
+            post.pop("reject_reason", None)
+
+        posts[idx] = post
+        _save_json_array(BOARD_POSTS_FILE, posts)
+
+    _append_audit_update(
+        "게시판 글 수정",
+        [f"제목: {post.get('title', '')}", f"ID: {post_id}", f"수정자: {user.get('email', '')}"],
+        kind="updated",
+        scope="게시판",
+        actor=user,
+    )
+    return {"ok": True, "post": _board_summary(post)}
+
+
+@app.post("/api/board/posts/{post_id}/withdraw")
+async def board_withdraw_post(post_id: str, request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+    payload = await request.json()
+    reason = str((payload or {}).get("reason", "")).strip()[:300]
+
+    user_email = str(user.get("email", "")).strip().lower()
+    is_admin = _is_admin_user(user)
+
+    with BOARD_LOCK:
+        posts = _load_json_array(BOARD_POSTS_FILE)
+        idx = next((i for i, p in enumerate(posts) if p.get("id") == post_id), -1)
+        if idx < 0:
+            raise HTTPException(status_code=404, detail="post not found")
+        post = dict(posts[idx])
+        author_email = str(post.get("author_email", "")).strip().lower()
+        if not is_admin and user_email != author_email:
+            raise HTTPException(status_code=403, detail="not allowed")
+        if str(post.get("status", "")).strip().lower() not in ("pending", "rejected"):
+            raise HTTPException(status_code=400, detail="cannot withdraw in current status")
+
+        post["status"] = "withdrawn"
+        post["reviewed_by"] = user_email
+        post["reviewed_at"] = datetime.utcnow().isoformat(timespec="seconds")
+        if reason:
+            post["reject_reason"] = reason
+        posts[idx] = post
+        _save_json_array(BOARD_POSTS_FILE, posts)
+
+    _append_audit_update(
+        "게시판 요청 철회",
+        [f"제목: {post.get('title', '')}", f"ID: {post_id}", f"요청자: {user.get('email', '')}", f"사유: {reason or '-'}"],
+        kind="updated",
+        scope="게시판",
+        actor=user,
+    )
+    return {"ok": True, "post": _board_summary(post)}
+
+
+@app.post("/api/board/posts/{post_id}/comments")
+async def board_add_comment(post_id: str, request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+    payload = await request.json()
+    content = str((payload or {}).get("content", "")).strip()[:1000]
+    parent_id = str((payload or {}).get("parent_id", "")).strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="content required")
+
+    comment = {
+        "id": f"cmt-{uuid.uuid4().hex[:10]}",
+        "author_name": str(user.get("name", "") or user.get("email", "")).strip(),
+        "author_email": str(user.get("email", "")).strip().lower(),
+        "content": content,
+        "parent_id": parent_id or "",
+        "created_at": datetime.utcnow().isoformat(timespec="seconds"),
+    }
+
+    with BOARD_LOCK:
+        posts = _load_json_array(BOARD_POSTS_FILE)
+        idx = next((i for i, p in enumerate(posts) if p.get("id") == post_id), -1)
+        if idx < 0:
+            raise HTTPException(status_code=404, detail="post not found")
+        post = dict(posts[idx])
+        if str(post.get("status", "")) != "approved" and not _is_admin_user(user):
+            raise HTTPException(status_code=403, detail="not approved")
+        comments = list(post.get("comments") or [])
+        if parent_id:
+            parent_exists = any(str(c.get("id", "")).strip() == parent_id for c in comments)
+            if not parent_exists:
+                raise HTTPException(status_code=400, detail="parent comment not found")
+        comments.append(comment)
+        post["comments"] = comments
+        posts[idx] = post
+        _save_json_array(BOARD_POSTS_FILE, posts)
+
+    return {"ok": True, "comment": comment}
+
+
+@app.post("/api/board/posts/{post_id}/approve")
+def board_approve_post(post_id: str, request: Request):
+    admin = _require_admin(request)
+    with BOARD_LOCK:
+        posts = _load_json_array(BOARD_POSTS_FILE)
+        idx = next((i for i, p in enumerate(posts) if p.get("id") == post_id), -1)
+        if idx < 0:
+            raise HTTPException(status_code=404, detail="post not found")
+        post = dict(posts[idx])
+        post["status"] = "approved"
+        post["reviewed_by"] = str(admin.get("email", "")).strip().lower()
+        post["reviewed_at"] = datetime.utcnow().isoformat(timespec="seconds")
+        post.pop("reject_reason", None)
+        posts[idx] = post
+        _save_json_array(BOARD_POSTS_FILE, posts)
+
+    _append_audit_update(
+        "게시판 글 승인",
+        [f"제목: {post.get('title', '')}", f"ID: {post_id}", f"승인자: {admin.get('email', '')}"],
+        kind="updated",
+        scope="게시판",
+        actor=admin,
+    )
+    return {"ok": True}
+
+
+@app.post("/api/board/posts/{post_id}/reject")
+async def board_reject_post(post_id: str, request: Request):
+    admin = _require_admin(request)
+    payload = await request.json()
+    reason = str((payload or {}).get("reason", "")).strip()[:300]
+    with BOARD_LOCK:
+        posts = _load_json_array(BOARD_POSTS_FILE)
+        idx = next((i for i, p in enumerate(posts) if p.get("id") == post_id), -1)
+        if idx < 0:
+            raise HTTPException(status_code=404, detail="post not found")
+        post = dict(posts[idx])
+        post["status"] = "rejected"
+        post["reviewed_by"] = str(admin.get("email", "")).strip().lower()
+        post["reviewed_at"] = datetime.utcnow().isoformat(timespec="seconds")
+        if reason:
+            post["reject_reason"] = reason
+        posts[idx] = post
+        _save_json_array(BOARD_POSTS_FILE, posts)
+
+    _append_audit_update(
+        "게시판 글 반려",
+        [f"제목: {post.get('title', '')}", f"ID: {post_id}",
+         f"반려자: {admin.get('email', '')}", f"사유: {reason or '-'}"],
+        kind="removed",
+        scope="게시판",
+        actor=admin,
+    )
+    return {"ok": True}
+
+
+@app.delete("/api/board/posts/{post_id}")
+def board_delete_post(post_id: str, request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+    is_admin = _is_admin_user(user)
+    user_email = str(user.get("email", "")).strip().lower()
+    with BOARD_LOCK:
+        posts = _load_json_array(BOARD_POSTS_FILE)
+        idx = next((i for i, p in enumerate(posts) if p.get("id") == post_id), -1)
+        if idx < 0:
+            raise HTTPException(status_code=404, detail="post not found")
+        post = posts[idx]
+        if not is_admin and str(post.get("author_email", "")).strip().lower() != user_email:
+            raise HTTPException(status_code=403, detail="not allowed")
+        posts.pop(idx)
+        _save_json_array(BOARD_POSTS_FILE, posts)
+    return {"ok": True}
+
+
+@app.get("/api/board/urgent")
+def board_urgent(request: Request):
+    """High priority + approved posts for floating indicator and overview widget."""
+    user = _current_user_from_request(request)
+    if not user:
+        return {"ok": True, "items": []}
+    posts = _load_json_array(BOARD_POSTS_FILE)
+    urgent = [
+        _board_summary(p)
+        for p in posts
+        if str(p.get("priority", "")) == "High" and _can_view_board_post(p, user)
+    ]
+    urgent.sort(key=lambda r: str(r.get("created_at", "")), reverse=True)
+    return {"ok": True, "items": urgent[:5]}
+
+
+@app.get("/api/board/overview")
+def board_overview(request: Request):
+    """Recent approved posts for overview page widget."""
+    user = _current_user_from_request(request)
+    if not user:
+        return {"ok": True, "items": []}
+    posts = _load_json_array(BOARD_POSTS_FILE)
+    visible = [_board_summary(p) for p in posts if _can_view_board_post(p, user)]
+    visible.sort(key=lambda r: (
+        {"High": 0, "Medium": 1, "Low": 2}.get(r.get("priority", "Low"), 2),
+        str(r.get("created_at", ""))
+    ))
+    visible.sort(key=lambda r: str(r.get("created_at", "")), reverse=True)
+    return {"ok": True, "items": visible[:8]}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     _sync_android_devices_from_adb()
     data = orchestrator.get_dashboard_data()
     return templates.TemplateResponse("overview.html", {"request": request, "data": data})
+
+
+@app.get("/static/company_logo.png")
+def company_logo_fallback():
+    tiny_png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5Wn2kAAAAASUVORK5CYII="
+    )
+    return Response(content=tiny_png, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.api_route("/cjs/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/upload_file/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/main/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/chtml/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/img/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/static/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/groupware/cjs/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/groupware/upload_file/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/groupware/main/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/groupware/chtml/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/groupware/img/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/groupware/static/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/groupware", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/groupware/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/groupware/proxy", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route("/groupware/proxy/{proxy_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def groupware_proxy(request: Request, proxy_path: str = ""):
+    user = _current_user_from_request(request)
+    if not user:
+        next_url = quote(str(request.url.path or "/groupware/login.php"), safe="/:#?=&")
+        return RedirectResponse(url=f"/auth/login?next={next_url}", status_code=303)
+
+    request_path = str(request.url.path or "").strip()
+    target_path = _groupware_target_path_from_request_path(request_path)
+
+    upstream_url = GROUPWARE_BASE_URL + target_path
+    if request.url.query:
+        upstream_url = f"{upstream_url}?{request.url.query}"
+
+    # 업스트림에 실파일이 없는 배경 이미지 요청은 1x1 gif를 즉시 반환해 404 폭주를 막는다.
+    if target_path in {"/groupware/main/my_desk_bg.gif", "/main/my_desk_bg.gif"}:
+        tiny_gif = base64.b64decode("R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==")
+        return Response(content=tiny_gif, status_code=200, media_type="image/gif", headers={"Cache-Control": "public, max-age=86400"})
+
+    client = _get_groupware_client(request)
+    body = await request.body() if request.method.upper() not in {"GET", "HEAD"} else None
+
+    forwarded_headers: dict[str, str] = {
+        "User-Agent": str(request.headers.get("user-agent", "Mozilla/5.0 CCI Groupware Proxy")).strip(),
+        "Accept": str(request.headers.get("accept", "*/*")).strip(),
+        "Accept-Language": str(request.headers.get("accept-language", "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7")).strip(),
+    }
+
+    raw_referer = str(request.headers.get("referer", "")).strip()
+    if raw_referer:
+        try:
+            ref = urlsplit(raw_referer)
+            if ref.path:
+                ref_path = _groupware_target_path_from_request_path(ref.path)
+                forwarded_headers["Referer"] = GROUPWARE_BASE_URL + ref_path + (f"?{ref.query}" if ref.query else "")
+        except Exception:
+            pass
+    if "Referer" not in forwarded_headers:
+        forwarded_headers["Referer"] = GROUPWARE_BASE_URL + GROUPWARE_LOGIN_PATH
+
+    raw_origin = str(request.headers.get("origin", "")).strip()
+    if raw_origin:
+        try:
+            o = urlsplit(raw_origin)
+            if o.scheme and o.netloc:
+                forwarded_headers["Origin"] = f"{o.scheme}://{o.netloc}"
+        except Exception:
+            pass
+    if "Origin" not in forwarded_headers:
+        forwarded_headers["Origin"] = GROUPWARE_BASE_URL
+
+    content_type = str(request.headers.get("content-type", "")).strip()
+    if content_type:
+        forwarded_headers["Content-Type"] = content_type
+    x_requested_with = str(request.headers.get("x-requested-with", "")).strip()
+    if x_requested_with:
+        forwarded_headers["X-Requested-With"] = x_requested_with
+
+    try:
+        upstream_resp = client.request(
+            method=request.method.upper(),
+            url=upstream_url,
+            headers=forwarded_headers,
+            data=body,
+            allow_redirects=False,
+            timeout=GROUPWARE_PROXY_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        return Response(content=f"그룹웨어 연결 실패: {exc}", status_code=502, media_type="text/plain; charset=utf-8")
+
+    if 300 <= upstream_resp.status_code < 400:
+        location = str(upstream_resp.headers.get("location", "")).strip()
+        if location:
+            return RedirectResponse(url=_groupware_proxy_url_from_value(location), status_code=upstream_resp.status_code)
+
+    content_type = str(upstream_resp.headers.get("content-type", "application/octet-stream")).strip()
+    response_headers = {}
+    cache_control = str(upstream_resp.headers.get("cache-control", "")).strip()
+    if cache_control:
+        response_headers["Cache-Control"] = cache_control
+
+    if "text/html" in content_type:
+        text = upstream_resp.text
+        lowered = text.lower()
+        if "로그인 이후에 이용가능합니다" in text or "document.location.replace('/groupware/login.php')" in lowered:
+            _clear_groupware_client(request)
+            next_target = str(request.url.path or "/groupware/index.php")
+            if request.url.query:
+                next_target = f"{request.url.path}?{request.url.query}"
+            login_qs = urlencode({"next": next_target, "gw_return": next_target})
+            return RedirectResponse(url=f"/groupware/login.php?{login_qs}", status_code=303)
+        rewritten = _rewrite_groupware_html(text, upstream_url)
+        response_headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        return Response(content=rewritten, status_code=upstream_resp.status_code, media_type="text/html", headers=response_headers)
+
+    if "text/css" in content_type:
+        text = upstream_resp.text
+        rewritten = _rewrite_groupware_css(text)
+        return Response(content=rewritten, status_code=upstream_resp.status_code, media_type="text/css", headers=response_headers)
+
+    if "javascript" in content_type or "ecmascript" in content_type:
+        text = upstream_resp.text
+        # 경로 재작성 순서 중요: 구체적인 것부터 일반적인 것으로
+        text = text.replace(GROUPWARE_BASE_URL + "/groupware/cjs/", "/cjs/")
+        text = text.replace(GROUPWARE_BASE_URL + "/groupware/upload_file/", "/upload_file/")
+        text = text.replace(GROUPWARE_BASE_URL + "/groupware/main/", "/main/")
+        text = text.replace(GROUPWARE_BASE_URL + "/groupware/chtml/", "/chtml/")
+        text = text.replace(GROUPWARE_BASE_URL + "/groupware/img/", "/groupware/img/")
+        text = text.replace(GROUPWARE_BASE_URL + "/groupware/static/", "/static/")
+        text = text.replace(GROUPWARE_BASE_URL + "/groupware/", "/groupware/")
+        text = text.replace(GROUPWARE_BASE_URL + "/", "/groupware/")
+        # 문자열 리터럴의 경로도 재작성
+        text = text.replace('"/groupware/cjs/', '"/cjs/')
+        text = text.replace("'/groupware/cjs/", "'/cjs/")
+        text = text.replace('"/groupware/upload_file/', '"/upload_file/')
+        text = text.replace("'/groupware/upload_file/", "'/upload_file/")
+        text = text.replace('"/groupware/main/', '"/main/')
+        text = text.replace("'/groupware/main/", "'/main/")
+        text = text.replace('"/groupware/chtml/', '"/chtml/')
+        text = text.replace("'/groupware/chtml/", "'/chtml/")
+        text = text.replace('"/groupware/img/', '"/groupware/img/')
+        text = text.replace("'/groupware/img/", "'/groupware/img/")
+        text = text.replace('"/groupware/static/', '"/static/')
+        text = text.replace("'/groupware/static/", "'/static/")
+        return Response(content=text, status_code=upstream_resp.status_code, media_type=content_type.split(";")[0], headers=response_headers)
+
+    return Response(content=upstream_resp.content, status_code=upstream_resp.status_code, media_type=content_type.split(";")[0], headers=response_headers)
 
 
 @app.get("/excel", response_class=HTMLResponse)
@@ -2180,16 +3509,12 @@ def upload_full_tc_page(request: Request):
 
 @app.get("/live", response_class=HTMLResponse)
 def live_monitor(request: Request):
-    _sync_android_devices_from_adb()
-    data = orchestrator.get_dashboard_data()
-    return templates.TemplateResponse("live_monitor.html", {"request": request, "data": data})
+    return RedirectResponse(url="/qa", status_code=307)
 
 
 @app.get("/remote", response_class=HTMLResponse)
 def remote_control(request: Request):
-    _sync_android_devices_from_adb()
-    data = orchestrator.get_dashboard_data()
-    return templates.TemplateResponse("remote_control.html", {"request": request, "data": data})
+    return RedirectResponse(url="/qa", status_code=307)
 
 
 @app.get("/qa", response_class=HTMLResponse)
@@ -5179,324 +6504,6 @@ def resync_devices():
             "last_used_path": ADB_LAST_USED_PATH,
             "last_error": ADB_LAST_ERROR,
         },
-    }
-
-
-@app.get("/api/devices/{device_id}/live-shot")
-def device_live_shot(device_id: str):
-    data = orchestrator.get_dashboard_data()
-    target = None
-    for d in data.get("devices", []):
-        if d.device_id == device_id:
-            target = d
-            break
-
-    if target is None:
-        raise HTTPException(status_code=404, detail="Device not found")
-    if target.platform != "android":
-        raise HTTPException(status_code=400, detail="Live ADB shot is supported for android only")
-
-    _ensure_live_shot_worker(device_id)
-
-    # Serve recent frame aggressively and dedupe in-flight captures for low-latency sharing.
-    now_mono = time.monotonic()
-    with LIVE_SHOT_LOCK:
-        cached = LIVE_SHOT_CACHE.get(device_id)
-        cached_ts = LIVE_SHOT_CACHE_TS.get(device_id, 0.0)
-        inflight = device_id in LIVE_SHOT_INFLIGHT
-    cache_age = now_mono - cached_ts
-    if cached and cache_age < LIVE_SHOT_MIN_INTERVAL_SEC:
-        return Response(
-            content=cached,
-            media_type="image/png",
-            headers={
-                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                "X-LiveShot-Cache": "frame-share",
-            },
-        )
-
-    if cached and cache_age < LIVE_SHOT_STALE_MAX_SEC:
-        return Response(
-            content=cached,
-            media_type="image/png",
-            headers={
-                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                "X-LiveShot-Cache": "bg-recent",
-            },
-        )
-
-    if inflight and cached:
-        return Response(
-            content=cached,
-            media_type="image/png",
-            headers={
-                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                "X-LiveShot-Cache": "inflight-share",
-            },
-        )
-
-    with LIVE_SHOT_LOCK:
-        LIVE_SHOT_INFLIGHT.add(device_id)
-
-    try:
-        try:
-            png = _capture_android_png(target)
-        except Exception:
-            png = None
-
-        if png is None:
-            with LIVE_SHOT_LOCK:
-                cached = LIVE_SHOT_CACHE.get(device_id)
-            if cached:
-                return Response(
-                    content=cached,
-                    media_type="image/png",
-                    headers={
-                        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                        "X-LiveShot-Cache": "timeout-fallback",
-                    },
-                )
-            raise HTTPException(status_code=504, detail="adb screencap timeout")
-
-        with LIVE_SHOT_LOCK:
-            LIVE_SHOT_CACHE[device_id] = png
-            LIVE_SHOT_CACHE_TS[device_id] = time.monotonic()
-
-        return Response(
-            content=png,
-            media_type="image/png",
-            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
-        )
-    finally:
-        with LIVE_SHOT_LOCK:
-            if device_id in LIVE_SHOT_INFLIGHT:
-                LIVE_SHOT_INFLIGHT.remove(device_id)
-
-
-@app.post("/api/devices/{device_id}/tap")
-def device_tap(device_id: str, x: int = Form(...), y: int = Form(...)):
-    data = orchestrator.get_dashboard_data()
-    target = None
-    for d in data.get("devices", []):
-        if d.device_id == device_id:
-            target = d
-            break
-
-    if target is None:
-        raise HTTPException(status_code=404, detail="Device not found")
-    if target.platform != "android":
-        raise HTTPException(status_code=400, detail="tap control is supported for android only")
-
-    try:
-        proc = _run_adb(target, ["shell", "input", "tap", str(int(x)), str(int(y))], timeout_sec=5)
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="adb tap timeout")
-
-    if proc.returncode != 0:
-        err = (proc.stderr or b"").decode("utf-8", errors="ignore")[:200]
-        raise HTTPException(status_code=503, detail=f"adb tap failed: {err}")
-
-    return {"ok": True, "device_id": device_id, "x": int(x), "y": int(y)}
-
-
-@app.post("/api/devices/{device_id}/swipe")
-def device_swipe(
-    device_id: str,
-    x1: int = Form(...),
-    y1: int = Form(...),
-    x2: int = Form(...),
-    y2: int = Form(...),
-    duration_ms: int = Form(260),
-):
-    data = orchestrator.get_dashboard_data()
-    target = None
-    for d in data.get("devices", []):
-        if d.device_id == device_id:
-            target = d
-            break
-
-    if target is None:
-        raise HTTPException(status_code=404, detail="Device not found")
-    if target.platform != "android":
-        raise HTTPException(status_code=400, detail="swipe control is supported for android only")
-
-    dur = max(80, min(2000, int(duration_ms)))
-    try:
-        proc = _run_adb(
-            target,
-            ["shell", "input", "swipe", str(int(x1)), str(int(y1)), str(int(x2)), str(int(y2)), str(dur)],
-            timeout_sec=6,
-        )
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="adb swipe timeout")
-
-    if proc.returncode != 0:
-        err = (proc.stderr or b"").decode("utf-8", errors="ignore")[:200]
-        raise HTTPException(status_code=503, detail=f"adb swipe failed: {err}")
-
-    return {
-        "ok": True,
-        "device_id": device_id,
-        "x1": int(x1),
-        "y1": int(y1),
-        "x2": int(x2),
-        "y2": int(y2),
-        "duration_ms": dur,
-    }
-
-
-@app.post("/api/devices/{device_id}/key")
-def device_key(device_id: str, key: str = Form(...)):
-    data = orchestrator.get_dashboard_data()
-    target = None
-    for d in data.get("devices", []):
-        if d.device_id == device_id:
-            target = d
-            break
-
-    if target is None:
-        raise HTTPException(status_code=404, detail="Device not found")
-    if target.platform != "android":
-        raise HTTPException(status_code=400, detail="key control is supported for android only")
-
-    key_code_map = {
-        "back": "4",
-        "home": "3",
-        "recent": "187",
-    }
-    code = key_code_map.get(str(key).strip().lower())
-    if not code:
-        raise HTTPException(status_code=400, detail="Unsupported key. Use back/home/recent")
-
-    try:
-        proc = _run_adb(target, ["shell", "input", "keyevent", code], timeout_sec=5)
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="adb keyevent timeout")
-
-    if proc.returncode != 0:
-        err = (proc.stderr or b"").decode("utf-8", errors="ignore")[:200]
-        raise HTTPException(status_code=503, detail=f"adb keyevent failed: {err}")
-
-    return {"ok": True, "device_id": device_id, "key": str(key).strip().lower()}
-
-
-@app.post("/api/devices/{device_id}/disconnect")
-def disconnect_device(device_id: str):
-    ok = orchestrator.unregister_device(device_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Device not found")
-    return {"ok": True, "device_id": device_id}
-
-
-@app.post("/api/devices/{device_id}/reconnect")
-def reconnect_device(device_id: str):
-    # Force synchronization with adb/config and check whether target device is now present.
-    _sync_android_devices_from_adb(force=True)
-    data = orchestrator.get_dashboard_data()
-    target = next((d for d in data.get("devices", []) if d.device_id == device_id), None)
-    if target is not None:
-        orchestrator.heartbeat(device_id)
-        return {"ok": True, "device_id": device_id, "detail": "reconnected"}
-
-    raise HTTPException(status_code=404, detail="Device not found after reconnect sync")
-
-
-@app.post("/api/devices/{device_id}/lock")
-def device_lock(device_id: str):
-    data = orchestrator.get_dashboard_data()
-    target = next((d for d in data.get("devices", []) if d.device_id == device_id), None)
-    if target is None:
-        raise HTTPException(status_code=404, detail="Device not found")
-    if target.platform != "android":
-        raise HTTPException(status_code=400, detail="lock control is supported for android only")
-    _lock_android(target)
-    return {"ok": True, "device_id": device_id, "action": "lock"}
-
-
-@app.post("/api/devices/{device_id}/unlock")
-def device_unlock(device_id: str, mode: str = Form("pattern"), pattern: str = Form("1,2,3,6,9")):
-    data = orchestrator.get_dashboard_data()
-    target = next((d for d in data.get("devices", []) if d.device_id == device_id), None)
-    if target is None:
-        raise HTTPException(status_code=404, detail="Device not found")
-    if target.platform != "android":
-        raise HTTPException(status_code=400, detail="unlock control is supported for android only")
-
-    m = str(mode).strip().lower()
-    if m == "pattern":
-        _unlock_android_pattern(target, pattern=pattern)
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported unlock mode. Use pattern")
-
-    return {"ok": True, "device_id": device_id, "action": "unlock", "mode": m}
-
-
-@app.post("/api/devices/bulk-key")
-def devices_bulk_key(key: str = Form(...), platform: str = Form("android")):
-    data = orchestrator.get_dashboard_data()
-    p = str(platform).strip().lower()
-    targets = [d for d in data.get("devices", []) if (p == "all" or d.platform == p)]
-    if not targets:
-        return {"ok": True, "count": 0, "results": []}
-
-    results = []
-    for d in targets:
-        if d.platform != "android":
-            results.append({"device_id": d.device_id, "ok": False, "detail": "android only"})
-            continue
-        try:
-            proc = _run_adb(d, ["shell", "input", "keyevent", {"back": "4", "home": "3", "recent": "187"}.get(key.lower(), "3")], timeout_sec=5)
-            if proc.returncode == 0:
-                results.append({"device_id": d.device_id, "ok": True})
-            else:
-                err = (proc.stderr or b"").decode("utf-8", errors="ignore")[:120]
-                results.append({"device_id": d.device_id, "ok": False, "detail": err})
-        except Exception as e:
-            results.append({"device_id": d.device_id, "ok": False, "detail": str(e)})
-
-    return {"ok": True, "count": len(targets), "results": results}
-
-
-@app.post("/api/devices/bulk-action")
-def devices_bulk_action(action: str = Form(...), platform: str = Form("android"), pattern: str = Form("1,2,3,6,9")):
-    data = orchestrator.get_dashboard_data()
-    p = str(platform).strip().lower()
-    act = str(action).strip().lower()
-    targets = [d for d in data.get("devices", []) if (p == "all" or d.platform == p)]
-    results = []
-
-    for d in targets:
-        if d.platform != "android":
-            results.append({"device_id": d.device_id, "ok": False, "detail": "android only"})
-            continue
-        try:
-            if act in ("home", "back", "recent"):
-                code = {"back": "4", "home": "3", "recent": "187"}[act]
-                proc = _run_adb(d, ["shell", "input", "keyevent", code], timeout_sec=5)
-                if proc.returncode != 0:
-                    err = (proc.stderr or b"").decode("utf-8", errors="ignore")[:120]
-                    results.append({"device_id": d.device_id, "ok": False, "detail": err})
-                    continue
-            elif act == "lock":
-                _lock_android(d)
-            elif act == "unlock":
-                _unlock_android_pattern(d, pattern=pattern)
-            else:
-                results.append({"device_id": d.device_id, "ok": False, "detail": "unsupported action"})
-                continue
-            results.append({"device_id": d.device_id, "ok": True})
-        except Exception as e:
-            results.append({"device_id": d.device_id, "ok": False, "detail": str(e)})
-
-    success_count = sum(1 for x in results if bool(x.get("ok")))
-    failure_count = max(0, len(targets) - success_count)
-    return {
-        "ok": success_count > 0,
-        "count": len(targets),
-        "action": act,
-        "success_count": success_count,
-        "failure_count": failure_count,
-        "results": results,
     }
 
 
