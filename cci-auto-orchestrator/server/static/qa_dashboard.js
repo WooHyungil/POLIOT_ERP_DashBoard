@@ -22,15 +22,31 @@ let currentClosingDetailMeta = { cycle: "", phase: "", group: "", severity: "" }
 let currentClosingStatus = "";
 let currentClosingGroups = [];
 let qaIsAdmin = false;
+const DEFAULT_FETCH_TIMEOUT_MS = 12000;
+
+async function fetchJson(url, options = {}, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { credentials: "same-origin", ...options, signal: controller.signal });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(String(data?.detail || `${res.status} ${res.statusText || "request failed"}`).trim());
+    }
+    return data;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("요청 시간이 초과되었습니다.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 async function applyQaRoleGuard() {
   try {
-    const res = await fetch("/api/auth/me", { credentials: "same-origin" });
-    if (!res.ok) {
-      qaIsAdmin = false;
-      return;
-    }
-    const data = await res.json();
+    const data = await fetchJson("/api/auth/me");
     const role = String(data?.user?.role || "user").toLowerCase();
     const email = String(data?.user?.email || "").trim().toLowerCase();
     if (email) {
@@ -1138,12 +1154,10 @@ async function refreshRegularRelease(force) {
 }
 
 async function refreshQa() {
-  const [dashboardResp, validateResp] = await Promise.all([
-    fetch("/api/dashboard"),
-    fetch("/api/devices/validate"),
+  const [dashboard, validate] = await Promise.all([
+    fetchJson("/api/dashboard"),
+    fetchJson("/api/devices/validate"),
   ]);
-  const dashboard = await dashboardResp.json();
-  const validate = await validateResp.json();
 
   const summary = document.getElementById("summary");
   const systemStats = document.getElementById("systemStats");
@@ -1322,7 +1336,13 @@ async function bootstrapQaDashboard() {
   applyQaHashMode();
   window.addEventListener("hashchange", applyQaHashMode);
 
-  refreshQa();
+  await refreshQa().catch((e) => {
+    const qualityStats = document.getElementById("qualityStats");
+    if (qualityStats) {
+      qualityStats.innerHTML = statCard("데이터 연결 상태", "오류", "danger") + statCard("안내", e?.message || "대시보드 데이터를 불러오지 못했습니다.");
+    }
+    toast(`대시보드 로딩 실패: ${String(e?.message || e)}`, "error");
+  });
   if (qaIsAdmin) {
     refreshIssueStats(false).catch((e) => toast(`최근 이슈 통계 조회 실패: ${String(e)}`, "error"));
   }
@@ -1331,7 +1351,9 @@ async function bootstrapQaDashboard() {
   refreshClosingSummary(false, "").catch((e) => toast(`마감 통계 조회 실패: ${String(e)}`, "error"));
   refreshClosingSummaryDetails(false, { cycle: "", phase: "", group: "", severity: "" }).catch((e) => toast(`Summary 상세 조회 실패: ${String(e)}`, "error"));
 
-  setInterval(refreshQa, 3000);
+  setInterval(function () {
+    refreshQa().catch(function () {});
+  }, 3000);
   if (qaIsAdmin) {
     setInterval(function () {
       refreshIssueStats(false).catch(function () {});

@@ -61,7 +61,50 @@
     "role": "admin",
     "name": "sue",
     "created_at": "2026-03-20T10:57:46",
-    "shortcut_items": [],
+    "shortcut_items": [
+      {
+        "id": "fixed-defectlist",
+        "name": "[EU]_DefectList",
+        "url": "https://docs.google.com/spreadsheets/d/1vEiIZM--JUzh7WYX8DLTqi8dysplrOY7n20nNT18eL8/edit?gid=407769955#gid=407769955",
+        "fixed": true
+      },
+      {
+        "id": "fixed-fulltc",
+        "name": "[EU]_Full_TC",
+        "url": "https://docs.google.com/spreadsheets/d/1UP6ruF4DlPwzNgVuEastRcxoky1SihNlsqIWMTIkQuI/edit?gid=529386068#gid=529386068&fvid=1436018023",
+        "fixed": true
+      },
+      {
+        "id": "fixed-sanity-check",
+        "name": "[EU]_Sanity/Check",
+        "url": "https://docs.google.com/spreadsheets/d/11bv1DKhFLLIHXiq3JChsJrqoyU4BBats53-fVoteVxw/edit?gid=1196102142#gid=1196102142",
+        "fixed": true
+      },
+      {
+        "id": "fixed-spec-sheet",
+        "name": "[EU]_사양시트",
+        "url": "https://docs.google.com/spreadsheets/d/1ldoiVk1mc3dwpFhK4zh0aV15YFtFyCYSmFr9A8Tp35s/edit?gid=636517542#gid=636517542",
+        "fixed": true
+      },
+      {
+        "id": "fixed-asset-manage",
+        "name": "[EU]_단말관리",
+        "url": "https://docs.google.com/spreadsheets/d/1anqfp6zx7PJrsUmvhqhiuvK4ptwCXX_Ilnl89WccfBI/edit?gid=301763855#gid=301763855",
+        "fixed": true
+      },
+      {
+        "id": "fixed-schedule",
+        "name": "[EU]_일정관리",
+        "url": "https://docs.google.com/spreadsheets/d/1QNRyS2gj4_QEigFiQGVaytGaISJjDF3e0N5C4Jf-v7k/edit?gid=0#gid=0",
+        "fixed": true
+      },
+      {
+        "id": "fixed-account",
+        "name": "[EU]_계정관리",
+        "url": "https://docs.google.com/spreadsheets/d/16jL3vexlJx0hav91Z603QGd-dJ34UjNpfapHASmoV3o/edit?gid=1838534105#gid=1838534105",
+        "fixed": true
+      }
+    ],
     "shortcut_windows": [],
     "game_access": false
   }

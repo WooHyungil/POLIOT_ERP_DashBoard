@@ -1066,5 +1066,95 @@
       "대상: hiss0723@poliot.co.kr",
       "game_access: False -> True"
     ]
+  },
+  {
+    "title": "DefectList_Raw 최신화",
+    "kind": "updated",
+    "scope": "Data",
+    "updated_at": "2026-03-20T22:50:47",
+    "details": [
+      "시트: DefectList_Raw",
+      "범위: B5:R",
+      "반영 시각: 2026-03-20T22:50:47",
+      "이슈 건수: 4791"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-21T22:17:23",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: Test",
+      "작성자: 우형일",
+      "중요도: Low",
+      "ID: board-d7c1d4dcc5a3"
+    ]
+  },
+  {
+    "title": "게시판 요청 철회",
+    "kind": "updated",
+    "scope": "게시판",
+    "updated_at": "2026-03-21T22:33:23",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: Test",
+      "ID: board-d7c1d4dcc5a3",
+      "요청자: hiss0723@poliot.co.kr",
+      "사유: -"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-21T22:33:40",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: Test",
+      "작성자: 우형일",
+      "중요도: Medium",
+      "ID: board-c49c8017a9a4"
+    ]
+  },
+  {
+    "title": "게시판 글 반려",
+    "kind": "removed",
+    "scope": "게시판",
+    "updated_at": "2026-03-21T22:34:07",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: Test",
+      "ID: board-c49c8017a9a4",
+      "반려자: hiss0723@poliot.co.kr",
+      "사유: -"
+    ]
+  },
+  {
+    "title": "게시판 글 반려",
+    "kind": "removed",
+    "scope": "게시판",
+    "updated_at": "2026-03-21T22:34:09",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: ㄴㅇㄹ",
+      "ID: board-f38be81ed56a",
+      "반려자: hiss0723@poliot.co.kr",
+      "사유: -"
+    ]
+  },
+  {
+    "title": "게시판 글 반려",
+    "kind": "removed",
+    "scope": "게시판",
+    "updated_at": "2026-03-21T22:34:11",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: 안녕하세요",
+      "ID: board-ac6ec60252ff",
+      "반려자: hiss0723@poliot.co.kr",
+      "사유: -"
+    ]
   }
 ]

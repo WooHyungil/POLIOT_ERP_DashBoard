@@ -111,6 +111,16 @@
 
   nav.addEventListener("mouseenter", applySubLinkActiveState);
   window.addEventListener("hashchange", applySubLinkActiveState);
+  window.addEventListener("resize", function () {
+    if (window.innerWidth <= 700) {
+      nav.classList.add("is-open");
+      if (toggle) toggle.setAttribute("aria-expanded", "true");
+    } else {
+      nav.classList.remove("is-open");
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+    }
+    applySubLinkActiveState();
+  });
 
   function setGameVisibility(enabled) {
     const on = Boolean(enabled);
@@ -204,4 +214,10 @@
     if (toggle) toggle.setAttribute("aria-expanded", "false");
     applySubLinkActiveState();
   });
+
+  if (window.innerWidth <= 700) {
+    nav.classList.add("is-open");
+    if (toggle) toggle.setAttribute("aria-expanded", "true");
+    applySubLinkActiveState();
+  }
 })();

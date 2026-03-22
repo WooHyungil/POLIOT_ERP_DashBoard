@@ -6,11 +6,13 @@
     "author_email": "hiss0723@poliot.co.kr",
     "content": "집중집중",
     "priority": "High",
-    "status": "pending",
+    "status": "approved",
     "files": [],
     "comments": [],
     "created_at": "2026-03-20T06:51:43",
-    "updated_at": "2026-03-20T06:51:43"
+    "updated_at": "2026-03-20T06:51:43",
+    "reviewed_by": "hiss0723@poliot.co.kr",
+    "reviewed_at": "2026-03-21T13:34:11"
   },
   {
     "id": "board-ba15fc78a62f",
@@ -19,7 +21,7 @@
     "author_email": "hiss0723@poliot.co.kr",
     "content": "ㄴㅇㄹ",
     "priority": "Medium",
-    "status": "withdrawn",
+    "status": "approved",
     "files": [],
     "comments": [],
     "created_at": "2026-03-20T08:52:48",
@@ -34,10 +36,84 @@
     "author_email": "hiss0723@poliot.co.kr",
     "content": "ㄴㅇㄹㄴㅇㄹ",
     "priority": "High",
-    "status": "pending",
+    "status": "approved",
     "files": [],
     "comments": [],
     "created_at": "2026-03-20T08:53:13",
-    "updated_at": "2026-03-20T08:53:13"
+    "updated_at": "2026-03-20T08:53:13",
+    "reviewed_by": "hiss0723@poliot.co.kr",
+    "reviewed_at": "2026-03-21T13:34:09"
+  },
+  {
+    "id": "board-d7c1d4dcc5a3",
+    "title": "Test",
+    "author_name": "우형일",
+    "author_email": "hiss0723@poliot.co.kr",
+    "content": "Test",
+    "priority": "Low",
+    "status": "approved",
+    "files": [],
+    "comments": [],
+    "created_at": "2026-03-21T13:17:23",
+    "updated_at": "2026-03-21T13:17:23",
+    "reviewed_by": "hiss0723@poliot.co.kr",
+    "reviewed_at": "2026-03-21T13:33:23"
+  },
+  {
+    "id": "board-c49c8017a9a4",
+    "title": "Test",
+    "author_name": "우형일",
+    "author_email": "hiss0723@poliot.co.kr",
+    "content": "Test",
+    "priority": "Medium",
+    "status": "approved",
+    "files": [],
+    "comments": [
+      {
+        "id": "cmt-209cd17d67",
+        "author_name": "hiss0723",
+        "author_email": "hiss0723@poliot.co.kr",
+        "content": "ㅗㅓㅏㅣ",
+        "parent_id": "",
+        "created_at": "2026-03-21T14:04:48"
+      },
+      {
+        "id": "cmt-5f036a8080",
+        "author_name": "hiss0723",
+        "author_email": "hiss0723@poliot.co.kr",
+        "content": "ㅗㅓㅏㅣ;",
+        "parent_id": "cmt-209cd17d67",
+        "created_at": "2026-03-21T14:04:53"
+      },
+      {
+        "id": "cmt-226dc9e89c",
+        "author_name": "hiss0723",
+        "author_email": "hiss0723@poliot.co.kr",
+        "content": "ㅓㅘㅣ호ㅓㅏㅣ",
+        "parent_id": "cmt-209cd17d67",
+        "created_at": "2026-03-21T14:04:59"
+      },
+      {
+        "id": "cmt-595c2f311e",
+        "author_name": "hiss0723",
+        "author_email": "hiss0723@poliot.co.kr",
+        "content": "ㅅ료혀ㅗㅑㅓㅏㅣ;'ㅓㅏㅣ;'",
+        "parent_id": "cmt-5f036a8080",
+        "created_at": "2026-03-21T14:05:11"
+      },
+      {
+        "id": "cmt-4a152aa990",
+        "author_name": "hiss0723",
+        "author_email": "hiss0723@poliot.co.kr",
+        "content": "@hiss0723",
+        "parent_id": "",
+        "created_at": "2026-03-21T14:29:25",
+        "mentions": []
+      }
+    ],
+    "created_at": "2026-03-21T13:33:40",
+    "updated_at": "2026-03-21T13:33:40",
+    "reviewed_by": "hiss0723@poliot.co.kr",
+    "reviewed_at": "2026-03-21T13:34:07"
   }
 ]

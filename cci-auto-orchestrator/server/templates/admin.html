@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CCI Admin Panel</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260320f" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260321d" />
   <script src="/static/auto_logout.js"></script>
 </head>
 <body class="has-side-nav">
@@ -83,26 +83,12 @@
             <option value="admin">관리자</option>
           </select>
           <button type="button" class="btn-ghost" id="adminMemberRefreshBtn">새로고침</button>
+          <button type="button" class="btn-primary" id="adminMemberAddBtn"><i class="fas fa-user-plus"></i> 회원 추가</button>
         </div>
 
         <p class="hint" id="adminMemberResultCount">조회 결과 0명</p>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>이메일</th>
-                <th>이름</th>
-                <th>직책/연락처</th>
-                <th>권한</th>
-                <th>승인 상태</th>
-                <th>로그인 상태</th>
-                <th>게임 권한</th>
-                <th>가입일</th>
-                <th>작업</th>
-              </tr>
-            </thead>
-            <tbody id="memberRows"></tbody>
-          </table>
+        <div class="admin-member-cards-container" id="memberRows">
+          <!-- 카드는 JavaScript에서 동적으로 생성됨 -->
         </div>
       </article>
 
@@ -151,23 +137,8 @@
           </div>
         </div>
         <p class="hint">게시글의 승인/반려는 여기서만 처리합니다.</p>
-        <div class="table-wrap" style="margin-top:12px;">
-          <table>
-            <thead>
-              <tr>
-                <th>제목</th>
-                <th>작성자</th>
-                <th>작성일시</th>
-                <th>상태</th>
-                <th>승인</th>
-                <th>반려</th>
-                <th>상세</th>
-              </tr>
-            </thead>
-            <tbody id="adminBoardPostsList">
-              <tr><td colspan="7"><span class="hint"><i class="fas fa-circle-notch fa-spin"></i> 불러오는 중...</span></td></tr>
-            </tbody>
-          </table>
+        <div id="adminBoardPostsList" style="margin-top:12px; display:flex; flex-direction:column; gap:10px;">
+          <p class="hint" style="padding:8px 0;"><i class="fas fa-circle-notch fa-spin"></i> 불러오는 중...</p>
         </div>
       </article>
 
@@ -225,18 +196,18 @@
 
       <article class="card" id="adminAssetDeletedTab">
         <h2>삭제됨</h2>
-        <p class="hint">삭제 승인이 완료된 단말 자산 목록입니다.</p>
+        <p class="hint">일정/단말/게시판 등에서 삭제 완료되거나 삭제 처리된 항목 이력입니다.</p>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>ID</th>
-                <th>구 관리번호</th>
-                <th>NEW 관리 번호</th>
+                <th>구분</th>
+                <th>항목</th>
                 <th>요청자</th>
+                <th>처리자</th>
                 <th>요청일시</th>
-                <th>승인자</th>
-                <th>승인일시</th>
+                <th>처리일시</th>
+                <th>상태</th>
                 <th>작업</th>
               </tr>
             </thead>
@@ -247,18 +218,17 @@
 
       <article class="card" id="adminAssetRejectedTab">
         <h2>반려됨</h2>
-        <p class="hint">삭제 요청이 반려된 단말 자산 목록입니다.</p>
+        <p class="hint">일정/단말/게시판 등에서 반려된 요청 이력입니다.</p>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>ID</th>
-                <th>구 관리번호</th>
-                <th>NEW 관리 번호</th>
+                <th>구분</th>
+                <th>항목</th>
                 <th>요청자</th>
+                <th>처리자</th>
                 <th>요청일시</th>
-                <th>반려자</th>
-                <th>반려일시</th>
+                <th>처리일시</th>
                 <th>반려사유</th>
                 <th>작업</th>
               </tr>
@@ -365,7 +335,58 @@
     </div>
   </section>
 
-  <script src="/static/side_nav.js?v=20260320h"></script>
-  <script src="/static/admin.js?v=20260320h"></script>
+  <section class="modal" id="memberAddModal" hidden>
+    <div class="modal-backdrop" data-close-member-add="1"></div>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="memberAddModalTitle">
+      <div class="modal-head">
+        <h3 id="memberAddModalTitle"><i class="fas fa-user-plus"></i> 회원 추가</h3>
+        <button type="button" class="btn-ghost" data-close-member-add="1">닫기</button>
+      </div>
+      <div class="modal-body">
+        <form id="memberAddForm" class="admin-member-edit-form">
+          <div class="admin-member-edit-grid">
+            <div class="admin-member-edit-field">
+              <label for="memberAddEmail">이메일 <span style="color:#e55">*</span></label>
+              <input type="email" id="memberAddEmail" maxlength="120" placeholder="example@company.com" required />
+            </div>
+            <div class="admin-member-edit-field">
+              <label for="memberAddPassword">비밀번호 <span style="color:#e55">*</span></label>
+              <input type="password" id="memberAddPassword" minlength="8" placeholder="8자 이상" required />
+            </div>
+            <div class="admin-member-edit-field">
+              <label for="memberAddName">이름</label>
+              <input type="text" id="memberAddName" maxlength="60" />
+            </div>
+            <div class="admin-member-edit-field">
+              <label for="memberAddRole">권한</label>
+              <select id="memberAddRole">
+                <option value="user">user</option>
+                <option value="admin">admin</option>
+              </select>
+            </div>
+            <div class="admin-member-edit-field">
+              <label for="memberAddTitle">직책</label>
+              <input type="text" id="memberAddTitle" maxlength="60" />
+            </div>
+            <div class="admin-member-edit-field">
+              <label for="memberAddPhone">연락처</label>
+              <input type="text" id="memberAddPhone" maxlength="40" />
+            </div>
+          </div>
+          <div class="admin-member-edit-flags">
+            <label><input type="checkbox" id="memberAddApproved" /> 승인 완료</label>
+            <label><input type="checkbox" id="memberAddCanLogin" /> 로그인 허용</label>
+          </div>
+          <div class="button-row">
+            <button type="submit" id="memberAddSaveBtn">계정 생성</button>
+            <button type="button" class="btn-ghost" data-close-member-add="1">취소</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <script src="/static/side_nav.js?v=20260321f"></script>
+  <script src="/static/admin.js?v=20260321f"></script>
 </body>
 </html>

@@ -39,6 +39,27 @@ const noticeState = {
   boardItems: [],
   activeFilter: "all",
 };
+const OVERVIEW_FETCH_TIMEOUT_MS = 12000;
+
+async function fetchJson(url, options = {}, timeoutMs = OVERVIEW_FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { credentials: "same-origin", ...options, signal: controller.signal });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(String(data?.detail || `${res.status} ${res.statusText || "request failed"}`).trim());
+    }
+    return data;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("요청 시간이 초과되었습니다.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 function restartCssAnimation(el, className) {
   if (!el) return;
@@ -93,12 +114,7 @@ async function refreshFloatingLogout() {
   const form = document.getElementById("floatingLogoutForm");
   if (!form) return;
   try {
-    const res = await fetch("/api/auth/me", { credentials: "same-origin" });
-    if (!res.ok) {
-      form.hidden = true;
-      return;
-    }
-    const data = await res.json();
+    const data = await fetchJson("/api/auth/me");
     const email = String(data?.user?.email || "").trim().toLowerCase();
     if (email) {
       try {
@@ -226,9 +242,6 @@ function renderNoticeList() {
         : p.priority === 'Medium'
         ? '<span class="notice-board-badge nk-updated"><i class="fas fa-minus-circle"></i> Medium</span>'
         : '<span class="notice-board-badge nk-defect"><i class="fas fa-arrow-circle-down"></i> Low</span>';
-      const statusBadge = p.status && p.status !== 'approved'
-        ? `<span class="notice-working-tag">${p.status === 'pending' ? '승인 대기' : '반려'}</span>`
-        : '';
       const commentBadge = p.comment_count > 0
         ? `<span class="hint" style="font-size:0.75rem;"><i class="fas fa-comment"></i> ${esc(String(p.comment_count))}</span>`
         : '';
@@ -243,7 +256,7 @@ function renderNoticeList() {
             <div class="notice-item-line"></div>
           </div>
           <div class="notice-item-body">
-            <div class="notice-item-top">${priorityBadge} ${statusBadge}</div>
+            <div class="notice-item-top">${priorityBadge}</div>
             <strong class="notice-item-title">${esc(p.title || '-')}</strong>
             <p class="notice-item-meta">${esc(p.author_name || '-')} · ${esc(date)} ${commentBadge}</p>
           </div>
@@ -299,19 +312,20 @@ async function refreshNoticeCard() {
   if (!root) return;
   root.innerHTML = '<div class="notice-loading"><i class="fas fa-circle-notch fa-spin"></i><span>공지사항을 불러오는 중...</span></div>';
   try {
-    const [updatesRes, boardRes] = await Promise.all([
-      fetch("/api/overview/updates"),
-      fetch("/api/board/overview", { credentials: "include" }).catch(function () { return null; }),
+    const [updatesResult, boardResult] = await Promise.allSettled([
+      fetchJson("/api/overview/updates"),
+      fetchJson("/api/board/overview", { credentials: "include" }),
     ]);
-    const data = await updatesRes.json();
+    if (updatesResult.status !== "fulfilled") {
+      throw updatesResult.reason;
+    }
+    const data = updatesResult.value;
     const items = sortOverviewItems(Array.isArray(data?.items) ? data.items : []).slice(0, 40);
     overviewUpdateState.items = items;
     noticeState.items = items;
 
-    // 게시판 글 로드
-    if (boardRes && boardRes.ok) {
-      const boardData = await boardRes.json();
-      noticeState.boardItems = Array.isArray(boardData?.items) ? boardData.items : [];
+    if (boardResult.status === "fulfilled") {
+      noticeState.boardItems = Array.isArray(boardResult.value?.items) ? boardResult.value.items : [];
     } else {
       noticeState.boardItems = [];
     }
@@ -550,22 +564,20 @@ function bindSummarySliderControls() {
 }
 
 async function refreshOverviewQaPies() {
-  try {
-    const recentDays = Number(overviewRecentRangeState.days || 0);
-    const [recentRes, summaryCycleRes] = await Promise.all([
-      fetch(`/api/stats/company-defects/status-summary?days=${encodeURIComponent(String(recentDays))}`),
-      fetch("/api/stats/closing-summary/cycle-counts"),
-    ]);
+  const recentDays = Number(overviewRecentRangeState.days || 0);
+  const [recentResult, summaryResult] = await Promise.allSettled([
+    fetchJson(`/api/stats/company-defects/status-summary?days=${encodeURIComponent(String(recentDays))}`),
+    fetchJson("/api/stats/closing-summary/cycle-counts"),
+  ]);
 
-    const recentData = await recentRes.json();
-    const summaryCycleData = await summaryCycleRes.json();
-    const summaryCycleItems = extractSummaryCyclePieItems(summaryCycleData);
+  const recentLegend = document.getElementById("overviewRecentLegend");
+  const summaryLegend = document.getElementById("overviewSummaryLegend");
+  const recentHint = document.getElementById("overviewRecentRangeHint");
+  const summaryHint = document.getElementById("overviewSummaryCycleHint");
 
+  if (recentResult.status === "fulfilled") {
+    const recentData = recentResult.value;
     renderOverviewDonut("overviewRecentDonut", "overviewRecentLegend", extractRecentPieItems(recentData));
-    renderOverviewDonut("overviewSummaryDonut", "overviewSummaryLegend", summaryCycleItems);
-    renderSummaryCycleChips(summaryCycleItems);
-
-    const recentHint = document.getElementById("overviewRecentRangeHint");
     if (recentHint) {
       const sd = String(recentData?.start_date || "");
       const ed = String(recentData?.end_date || "");
@@ -577,19 +589,21 @@ async function refreshOverviewQaPies() {
           : `최근 ${recentDays}일 Status Top 분포입니다.`;
       }
     }
+  } else if (recentLegend) {
+    recentLegend.innerHTML = `<li class="hint">최근 이슈 차트 조회 실패: ${esc(String(recentResult.reason || ""))}</li>`;
+  }
 
-    const summaryHint = document.getElementById("overviewSummaryCycleHint");
+  if (summaryResult.status === "fulfilled") {
+    const summaryCycleItems = extractSummaryCyclePieItems(summaryResult.value);
+    renderOverviewDonut("overviewSummaryDonut", "overviewSummaryLegend", summaryCycleItems);
+    renderSummaryCycleChips(summaryCycleItems);
     if (summaryHint) {
       summaryHint.textContent = summaryCycleItems.length
         ? `DefectList_Raw 마감 사이클 전체(${summaryCycleItems.map(function (x) { return x.name; }).join(", ")}) 분포입니다.`
         : "DefectList_Raw 마감 사이클 데이터가 없습니다.";
     }
-  } catch (e) {
-    const err = String(e || "");
-    const recentLegend = document.getElementById("overviewRecentLegend");
-    const summaryLegend = document.getElementById("overviewSummaryLegend");
-    if (recentLegend) recentLegend.innerHTML = `<li class="hint">최근 이슈 차트 조회 실패: ${esc(err)}</li>`;
-    if (summaryLegend) summaryLegend.innerHTML = `<li class="hint">Summary 차트 조회 실패: ${esc(err)}</li>`;
+  } else if (summaryLegend) {
+    summaryLegend.innerHTML = `<li class="hint">Summary 차트 조회 실패: ${esc(String(summaryResult.reason || ""))}</li>`;
   }
 }
 
@@ -843,14 +857,11 @@ async function loadShortcutState() {
   } catch {}
 
   try {
-    const res = await fetch("/api/user/shortcut-state", { credentials: "same-origin" });
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        items: withRequiredShortcuts(data?.items || localItems),
-        windows: Array.isArray(data?.windows) ? data.windows : localWindows,
-      };
-    }
+    const data = await fetchJson("/api/user/shortcut-state");
+    return {
+      items: withRequiredShortcuts(data?.items || localItems),
+      windows: Array.isArray(data?.windows) ? data.windows : localWindows,
+    };
   } catch {}
 
   return {
@@ -1304,13 +1315,15 @@ async function initShortcuts() {
 refreshOverviewQaPies();
 refreshNoticeCard();
 refreshFloatingLogout();
-initShortcuts();
+initShortcuts().catch(function () {
+  toast("바로가기 초기화 중 일부 데이터를 불러오지 못했습니다.", "warn");
+});
 bindOverviewCardNavigation();
 bindSummarySliderControls();
 bindOverviewRecentRangeControls();
 bindNoticeTabControls();
-setInterval(refreshOverviewQaPies, 60000);
-setInterval(refreshNoticeCard, 60000);
+setInterval(function () { refreshOverviewQaPies().catch(function () {}); }, 60000);
+setInterval(function () { refreshNoticeCard().catch(function () {}); }, 60000);
 window.addEventListener("beforeunload", function () { saveShortcutItems(true); });
 
 // ── 뷰 전환: 개요 ↔ 바로가기 ──────────────────────────────

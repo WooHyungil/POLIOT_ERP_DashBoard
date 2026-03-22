@@ -15,6 +15,7 @@
   const dsTime  = document.getElementById("dsTime");
   const dsRows  = document.getElementById("dsRows");
   const dsHistoryCount = document.getElementById("dsHistory");
+  const MAX_UPLOAD_SIZE = 25 * 1024 * 1024;
 
   /* ── utils ── */
   function fmt(v) {
@@ -50,10 +51,20 @@
   /* ── 파일 선택 ── */
   function handleFileSelect(file) {
     if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      setStatus("error", ".xlsx 파일만 업로드할 수 있습니다");
+      uploadBtn.disabled = true;
+      return;
+    }
+    if (Number(file.size || 0) > MAX_UPLOAD_SIZE) {
+      setStatus("error", "업로드 파일은 25MB 이하여야 합니다");
+      uploadBtn.disabled = true;
+      return;
+    }
     ddFileNameT.textContent = file.name;
     ddFileName.classList.add("show");
     uploadBtn.disabled = false;
-    setStatus("idle", `"${file.name}" 선택됨 — 버튼을 눌러 업로드하세요`);
+    setStatus("idle", `"${file.name}" 선택됨 (${(file.size / 1024 / 1024).toFixed(2)}MB) — 버튼을 눌러 업로드하세요`);
   }
 
   fileInput?.addEventListener("change", () => {
@@ -95,6 +106,9 @@
       const data = await res.json();
       if (!res.ok || !data?.ok) throw new Error(String(data?.detail || "업로드 실패"));
       setStatus("ok", `✅ 업로드 완료 | 결함 ${Number(data.defect_total_rows || 0).toLocaleString()}건 | 이슈 ${Number(data.raw_issue_total_rows || 0).toLocaleString()}건`);
+      if (fileInput) fileInput.value = "";
+      ddFileName.classList.remove("show");
+      uploadBtn.disabled = true;
       /* 업로드 성공 후 전체 새로고침 */
       await Promise.all([loadStatus(), loadHistory()]);
     } catch (err) {
@@ -184,5 +198,5 @@
   });
 
   /* ── 초기 로드 ── */
-  Promise.all([loadStatus(), loadHistory()]);
+  Promise.allSettled([loadStatus(), loadHistory()]);
 })();

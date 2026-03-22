@@ -3,6 +3,7 @@
   const hint = document.getElementById("fullTcUploadHint");
   const statusBody = document.getElementById("fullTcStatusRows");
   const uploadBtn = document.getElementById("fullTcUploadBtn");
+  const MAX_UPLOAD_SIZE = 25 * 1024 * 1024;
 
   function fmt(v) {
     const text = String(v || "").trim();
@@ -39,6 +40,12 @@
   }
 
   async function uploadFile(file) {
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      throw new Error(".xlsx 파일만 업로드할 수 있습니다.");
+    }
+    if (Number(file.size || 0) > MAX_UPLOAD_SIZE) {
+      throw new Error("업로드 파일은 25MB 이하여야 합니다.");
+    }
     const fd = new FormData();
     fd.append("file", file);
     const res = await fetch("/api/upload/full-tc", {
@@ -64,6 +71,7 @@
     try {
       const data = await uploadFile(file);
       hint.textContent = `업로드 완료 | 시트 ${Number(data.sheet_count || 0)}개`;
+      if (input) input.value = "";
       await loadStatus();
     } catch (err) {
       hint.textContent = `실패: ${String(err?.message || err)}`;
@@ -72,5 +80,7 @@
     }
   });
 
-  loadStatus();
+  loadStatus().catch(function () {
+    hint.textContent = "상태 정보를 불러오지 못했습니다.";
+  });
 })();

@@ -65,7 +65,7 @@ LEGACY_EMPLOYEES_FILE = BASE_DIR.parent / "config" / "core" / "employees.json"
 ASSETS_FILE = BASE_DIR.parent / "config" / "assets.json"
 MANAGE_SCHEDULES_FILE = BASE_DIR.parent / "config" / "manage_schedules.json"
 GAME_SCORES_FILE = BASE_DIR.parent / "config" / "game_scores.json"
-AUTH_LOCK = threading.Lock()
+AUTH_LOCK = threading.RLock()
 
 ADMIN_EMAILS = {
     "sue@poliot.co.kr",
@@ -344,7 +344,11 @@ def _find_user(email: str) -> dict | None:
 def _is_admin_user(user: dict | None) -> bool:
     if not user:
         return False
-    return str(user.get("role", "user")).strip().lower() == "admin"
+    role = str(user.get("role", "user")).strip().lower()
+    if role == "admin":
+        return True
+    email = str(user.get("email", "")).strip().lower()
+    return bool(email and email in ADMIN_EMAILS)
 
 
 def _can_user_login(user: dict | None) -> bool:
@@ -460,7 +464,7 @@ def _require_game_access(request: Request) -> dict:
 
 
 def _is_public_path(path: str) -> bool:
-    if path in {"/favicon.ico", "/auth/login", "/auth/register", "/auth/logout"}:
+    if path in {"/favicon.ico", "/auth/login", "/auth/register", "/auth/logout", "/api/board/urgent"}:
         return True
     for prefix in ("/static", "/reports", "/artifacts", "/uploads", "/exports", "/auth"):
         if path.startswith(prefix):
@@ -2648,6 +2652,43 @@ def admin_asset_delete_requests(request: Request):
             }
         )
 
+    # 게시판 승인 대기 글도 공통 요청 목록으로 합류시킨다.
+    board_posts = _load_json_array(BOARD_POSTS_FILE)
+    for row in board_posts:
+        if str(row.get("status", "pending") or "pending").strip().lower() != "pending":
+            continue
+
+        post_id = str(row.get("id", "") or "").strip()
+        if not post_id:
+            continue
+        requester_id = str(row.get("author_email", "") or "").strip().lower()
+        requester_name = str(row.get("author_name", "") or "").strip() or requester_id or "-"
+        requested_at = str(row.get("created_at", "") or "").strip()
+        priority = str(row.get("priority", "Medium") or "Medium").strip()
+
+        pending.append(
+            {
+                "request_id": f"board::{post_id}",
+                "target_id": post_id,
+                "source_type": "board",
+                "page_name": "게시판",
+                "request_label": "게시글 승인 요청",
+                "requester_name": requester_name,
+                "requester_id": requester_id or "-",
+                "requested_at": requested_at,
+                "detail_lines": [
+                    "요청 구분: 게시글 승인 요청",
+                    "페이지: 게시판",
+                    f"ID: {post_id}",
+                    f"제목: {str(row.get('title', '')).strip() or '-'}",
+                    f"우선순위: {priority}",
+                    f"작성자 이름: {requester_name}",
+                    f"작성자 아이디: {requester_id or '-'}",
+                    f"요청일시: {requested_at or '-'}",
+                ],
+            }
+        )
+
     pending.sort(key=lambda r: str(r.get("requested_at", "")), reverse=True)
     return {"ok": True, "items": pending}
 
@@ -2949,14 +2990,85 @@ def admin_asset_restore_rejected(item_id: str, request: Request):
 
 # ─── 게시판 (Board) ────────────────────────────────────────────────────────────
 BOARD_POSTS_FILE = BASE_DIR.parent / "config" / "board_posts.json"
+BOARD_EMOJIS_FILE = BASE_DIR.parent / "config" / "board_emojis.json"
 BOARD_UPLOAD_DIR = UPLOAD_DIR / "board"
 BOARD_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+BOARD_COMMENT_UPLOAD_DIR = BOARD_UPLOAD_DIR / "comments"
+BOARD_COMMENT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+BOARD_EMOJI_UPLOAD_DIR = BOARD_UPLOAD_DIR / "emojis"
+BOARD_EMOJI_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 BOARD_LOCK = threading.Lock()
 BOARD_MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
+BOARD_COMMENT_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+BOARD_COMMENT_MAX_FILE_COUNT = 5
+BOARD_CUSTOM_EMOJI_MAX_FILE_SIZE = 512 * 1024  # 512 KB
+BOARD_CUSTOM_EMOJI_ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+BOARD_URGENT_CACHE_TTL_SEC = 5.0
+BOARD_URGENT_CACHE_LOCK = threading.Lock()
+BOARD_URGENT_CACHE: dict[str, dict] = {}
+BOARD_UPDATE_SEQ_LOCK = threading.Lock()
+BOARD_UPDATE_SEQ = 1
+BOARD_UPDATE_TS = datetime.utcnow().isoformat(timespec="seconds")
 BOARD_ALLOWED_EXT = {
     ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt",
     ".txt", ".zip", ".png", ".jpg", ".jpeg", ".gif", ".mp4", ".csv",
 }
+
+
+_MENTION_PATTERN = re.compile(r'@([\w가-힣]{1,30})', re.UNICODE)
+
+
+def _extract_mentions(content: str) -> list[str]:
+    """댓글 본문에서 @이름 형태의 멘션 이름 목록을 추출합니다. (중복 제거)"""
+    return list(dict.fromkeys(_MENTION_PATTERN.findall(content)))
+
+
+def _board_touch_update() -> int:
+    global BOARD_UPDATE_SEQ, BOARD_UPDATE_TS
+    with BOARD_UPDATE_SEQ_LOCK:
+        BOARD_UPDATE_SEQ += 1
+        BOARD_UPDATE_TS = datetime.utcnow().isoformat(timespec="seconds")
+        return BOARD_UPDATE_SEQ
+
+
+def _board_update_snapshot() -> tuple[int, str]:
+    with BOARD_UPDATE_SEQ_LOCK:
+        return BOARD_UPDATE_SEQ, BOARD_UPDATE_TS
+
+
+def _get_board_read_post_ids(user_email: str) -> set[str]:
+    target_email = str(user_email or "").strip().lower()
+    if not target_email:
+        return set()
+    user = _find_user(target_email)
+    if not user:
+        return set()
+    raw_ids = user.get("board_read_post_ids") or []
+    return {str(v).strip() for v in raw_ids if str(v).strip()}
+
+
+def _mark_board_post_read(user_email: str, post_id: str) -> None:
+    target_email = str(user_email or "").strip().lower()
+    target_post_id = str(post_id or "").strip()
+    if not target_email or not target_post_id:
+        return
+
+    with AUTH_LOCK:
+        users = _load_users()
+        changed = False
+        for row in users:
+            email = str((row or {}).get("email", "")).strip().lower()
+            if email != target_email:
+                continue
+            ids = [str(v).strip() for v in (row.get("board_read_post_ids") or []) if str(v).strip()]
+            if target_post_id in ids:
+                break
+            ids.insert(0, target_post_id)
+            row["board_read_post_ids"] = ids[:500]
+            changed = True
+            break
+        if changed:
+            _save_users(users)
 
 
 def _board_summary(p: dict) -> dict:
@@ -2975,6 +3087,122 @@ def _board_summary(p: dict) -> dict:
     }
 
 
+def _board_detail_payload(post: dict) -> dict:
+    payload = dict(post or {})
+    payload["id"] = str(payload.get("id", "")).strip()
+    payload["title"] = str(payload.get("title", ""))
+    payload["author_name"] = str(payload.get("author_name", ""))
+    payload["author_email"] = str(payload.get("author_email", "")).strip().lower()
+    payload["content"] = str(payload.get("content", ""))
+    payload["priority"] = str(payload.get("priority", "Medium") or "Medium")
+    payload["status"] = str(payload.get("status", "pending") or "pending")
+    payload["created_at"] = str(payload.get("created_at", "") or "")
+    payload["updated_at"] = str(payload.get("updated_at", "") or "")
+    payload["reviewed_at"] = str(payload.get("reviewed_at", "") or "")
+    payload["reject_reason"] = str(payload.get("reject_reason", "") or "")
+
+    files = payload.get("files")
+    if not isinstance(files, list):
+        files = []
+    payload["files"] = [row for row in files if isinstance(row, dict)]
+
+    comments = payload.get("comments")
+    if not isinstance(comments, list):
+        comments = []
+    normalized_comments: list[dict] = []
+    for row in comments:
+        if not isinstance(row, dict):
+            continue
+        c = dict(row)
+        c["id"] = str(c.get("id", "")).strip()
+        c["author_name"] = str(c.get("author_name", ""))
+        c["author_email"] = str(c.get("author_email", "")).strip().lower()
+        c["content"] = str(c.get("content", ""))
+        c["parent_id"] = str(c.get("parent_id", "") or "").strip()
+        c["created_at"] = str(c.get("created_at", "") or "")
+        c["mentions"] = [m for m in (c.get("mentions") if isinstance(c.get("mentions"), list) else []) if isinstance(m, dict)]
+        c["files"] = [f for f in (c.get("files") if isinstance(c.get("files"), list) else []) if isinstance(f, dict)]
+        c["reactions"] = [r for r in (c.get("reactions") if isinstance(c.get("reactions"), list) else []) if isinstance(r, dict)]
+        normalized_comments.append(c)
+    payload["comments"] = normalized_comments
+    return payload
+
+
+def _board_id_equals(row: dict, post_id: str) -> bool:
+    return str((row or {}).get("id", "")).strip() == str(post_id or "").strip()
+
+
+def _board_priority_order(priority: str) -> int:
+    return {"High": 0, "Medium": 1, "Low": 2}.get(str(priority or "Medium"), 1)
+
+
+def _board_admin_email_set() -> set[str]:
+    admin_emails = {str(x or "").strip().lower() for x in ADMIN_EMAILS if str(x or "").strip()}
+    for user in _load_users():
+        if str(user.get("role", "user")).strip().lower() == "admin":
+            email = str(user.get("email", "")).strip().lower()
+            if email:
+                admin_emails.add(email)
+    return admin_emails
+
+
+def _normalize_admin_authored_board_posts(posts: list[dict]) -> bool:
+    admin_emails = _board_admin_email_set()
+    changed = False
+    now = datetime.utcnow().isoformat(timespec="seconds")
+
+    for post in posts:
+        if not isinstance(post, dict):
+            continue
+        author_email = str(post.get("author_email", "")).strip().lower()
+        if not author_email or author_email not in admin_emails:
+            continue
+
+        status = str(post.get("status", "pending")).strip().lower()
+        if status != "approved":
+            post["status"] = "approved"
+            post["reviewed_by"] = author_email
+            post["reviewed_at"] = str(post.get("reviewed_at", "")).strip() or now
+            post.pop("reject_reason", None)
+            changed = True
+    return changed
+
+
+def _delete_board_comment_tree(comments: list[dict], comment_id: str) -> tuple[list[dict], dict | None]:
+    target_id = str(comment_id or "").strip()
+    if not target_id:
+        return list(comments or []), None
+
+    comment_map: dict[str, dict] = {}
+    children_map: dict[str, list[str]] = {}
+    for item in list(comments or []):
+        if not isinstance(item, dict):
+            continue
+        item_id = str(item.get("id", "")).strip()
+        if not item_id:
+            continue
+        comment_map[item_id] = item
+        parent_id = str(item.get("parent_id", "")).strip()
+        if parent_id:
+            children_map.setdefault(parent_id, []).append(item_id)
+
+    target = comment_map.get(target_id)
+    if not target:
+        return list(comments or []), None
+
+    remove_ids = {target_id}
+    stack = [target_id]
+    while stack:
+        current = stack.pop()
+        for child_id in children_map.get(current, []):
+            if child_id not in remove_ids:
+                remove_ids.add(child_id)
+                stack.append(child_id)
+
+    remaining = [item for item in list(comments or []) if str(item.get("id", "")).strip() not in remove_ids]
+    return remaining, target
+
+
 def _can_view_board_post(post: dict, user: dict | None) -> bool:
     if not user:
         return False
@@ -2990,6 +3218,9 @@ def _can_view_board_post(post: dict, user: dict | None) -> bool:
 
 @app.get("/board", response_class=HTMLResponse)
 def board_page(request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        return RedirectResponse(url="/auth/login?next=/board", status_code=303)
     return templates.TemplateResponse("board.html", {"request": request})
 
 
@@ -2999,6 +3230,9 @@ def board_list(request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="login required")
     posts = _load_json_array(BOARD_POSTS_FILE)
+    if _normalize_admin_authored_board_posts(posts):
+        with BOARD_LOCK:
+            _save_json_array(BOARD_POSTS_FILE, posts)
     is_admin = _is_admin_user(user)
     result = []
     for p in posts:
@@ -3014,14 +3248,29 @@ def board_get_post(post_id: str, request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="login required")
     posts = _load_json_array(BOARD_POSTS_FILE)
-    post = next((p for p in posts if p.get("id") == post_id), None)
+    if _normalize_admin_authored_board_posts(posts):
+        with BOARD_LOCK:
+            _save_json_array(BOARD_POSTS_FILE, posts)
+    post = next((p for p in posts if _board_id_equals(p, post_id)), None)
     if not post:
         raise HTTPException(status_code=404, detail="post not found")
     is_admin = _is_admin_user(user)
     if not _can_view_board_post(post, user):
         raise HTTPException(status_code=403, detail="not approved")
-    return {"ok": True, "post": post, "is_admin": is_admin,
+
+    # 상세 조회 시 해당 게시글을 읽음 처리한다.
+    _mark_board_post_read(str(user.get("email", "")).strip().lower(), str(post.get("id", "")).strip())
+
+    normalized_post = _board_detail_payload(post)
+
+    return {"ok": True, "post": normalized_post, "is_admin": is_admin,
             "current_email": str(user.get("email", "")).strip().lower()}
+
+
+@app.get("/api/board/post")
+def board_get_post_by_query(post_id: str, request: Request):
+    # Fallback endpoint for environments where encoded path params can be unstable.
+    return board_get_post(post_id, request)
 
 
 @app.post("/api/board/posts")
@@ -3036,6 +3285,8 @@ async def board_create_post(
     user = _current_user_from_request(request)
     if not user:
         raise HTTPException(status_code=401, detail="login required")
+    reviewer_email = str(user.get("email", "")).strip().lower()
+    is_admin = _is_admin_user(user) or reviewer_email in _board_admin_email_set()
     priority = priority if priority in ("High", "Medium", "Low") else "Medium"
     post_id = f"board-{uuid.uuid4().hex[:12]}"
     now = datetime.utcnow().isoformat(timespec="seconds")
@@ -3062,25 +3313,21 @@ async def board_create_post(
         "author_email": str(user.get("email", "")).strip().lower(),
         "content": str(content)[:5000].strip(),
         "priority": priority,
-        "status": "pending",
+        "status": "approved" if is_admin else "pending",
         "files": saved_files,
         "comments": [],
         "created_at": now,
         "updated_at": now,
     }
+    if is_admin:
+        post["reviewed_by"] = reviewer_email
+        post["reviewed_at"] = now
 
     with BOARD_LOCK:
         posts = _load_json_array(BOARD_POSTS_FILE)
         posts.append(post)
         _save_json_array(BOARD_POSTS_FILE, posts)
-
-    _append_audit_update(
-        "게시판 글 등록",
-        [f"제목: {post['title']}", f"작성자: {author_name}", f"중요도: {priority}", f"ID: {post_id}"],
-        kind="added",
-        scope="게시판",
-        actor=user,
-    )
+    _board_touch_update()
     return {"ok": True, "post": _board_summary(post)}
 
 
@@ -3105,7 +3352,7 @@ async def board_update_post(post_id: str, request: Request):
 
     with BOARD_LOCK:
         posts = _load_json_array(BOARD_POSTS_FILE)
-        idx = next((i for i, p in enumerate(posts) if p.get("id") == post_id), -1)
+        idx = next((i for i, p in enumerate(posts) if _board_id_equals(p, post_id)), -1)
         if idx < 0:
             raise HTTPException(status_code=404, detail="post not found")
         post = dict(posts[idx])
@@ -3128,14 +3375,7 @@ async def board_update_post(post_id: str, request: Request):
 
         posts[idx] = post
         _save_json_array(BOARD_POSTS_FILE, posts)
-
-    _append_audit_update(
-        "게시판 글 수정",
-        [f"제목: {post.get('title', '')}", f"ID: {post_id}", f"수정자: {user.get('email', '')}"],
-        kind="updated",
-        scope="게시판",
-        actor=user,
-    )
+    _board_touch_update()
     return {"ok": True, "post": _board_summary(post)}
 
 
@@ -3152,7 +3392,7 @@ async def board_withdraw_post(post_id: str, request: Request):
 
     with BOARD_LOCK:
         posts = _load_json_array(BOARD_POSTS_FILE)
-        idx = next((i for i, p in enumerate(posts) if p.get("id") == post_id), -1)
+        idx = next((i for i, p in enumerate(posts) if _board_id_equals(p, post_id)), -1)
         if idx < 0:
             raise HTTPException(status_code=404, detail="post not found")
         post = dict(posts[idx])
@@ -3169,14 +3409,7 @@ async def board_withdraw_post(post_id: str, request: Request):
             post["reject_reason"] = reason
         posts[idx] = post
         _save_json_array(BOARD_POSTS_FILE, posts)
-
-    _append_audit_update(
-        "게시판 요청 철회",
-        [f"제목: {post.get('title', '')}", f"ID: {post_id}", f"요청자: {user.get('email', '')}", f"사유: {reason or '-'}"],
-        kind="updated",
-        scope="게시판",
-        actor=user,
-    )
+    _board_touch_update()
     return {"ok": True, "post": _board_summary(post)}
 
 
@@ -3185,11 +3418,63 @@ async def board_add_comment(post_id: str, request: Request):
     user = _current_user_from_request(request)
     if not user:
         raise HTTPException(status_code=401, detail="login required")
-    payload = await request.json()
-    content = str((payload or {}).get("content", "")).strip()[:1000]
-    parent_id = str((payload or {}).get("parent_id", "")).strip()
-    if not content:
-        raise HTTPException(status_code=400, detail="content required")
+
+    content = ""
+    parent_id = ""
+    upload_files: list[UploadFile] = []
+    ctype = str(request.headers.get("content-type", "")).lower()
+
+    if "multipart/form-data" in ctype:
+        form = await request.form()
+        content = str(form.get("content", "")).strip()[:1000]
+        parent_id = str(form.get("parent_id", "")).strip()
+        raw_files = form.getlist("files") if hasattr(form, "getlist") else []
+        upload_files = [f for f in raw_files if isinstance(f, UploadFile)]
+    else:
+        payload = await request.json()
+        content = str((payload or {}).get("content", "")).strip()[:1000]
+        parent_id = str((payload or {}).get("parent_id", "")).strip()
+
+    if len(upload_files) > BOARD_COMMENT_MAX_FILE_COUNT:
+        raise HTTPException(status_code=400, detail=f"files max {BOARD_COMMENT_MAX_FILE_COUNT}")
+
+    saved_files: list[dict] = []
+    for f in upload_files:
+        if not getattr(f, "filename", ""):
+            continue
+        ext = Path(str(f.filename)).suffix.lower()
+        if ext not in BOARD_ALLOWED_EXT and ext not in {".webp"}:
+            continue
+        b = await f.read()
+        if len(b) > BOARD_COMMENT_MAX_FILE_SIZE:
+            continue
+        safe_name = f"cmt_{post_id}_{uuid.uuid4().hex[:8]}{ext}"
+        dest = BOARD_COMMENT_UPLOAD_DIR / safe_name
+        dest.write_bytes(b)
+        saved_files.append({
+            "original_name": str(f.filename),
+            "path": f"/uploads/board/comments/{safe_name}",
+            "size": len(b),
+            "is_image": ext in {".png", ".jpg", ".jpeg", ".gif", ".webp"},
+        })
+
+    if not content and not saved_files:
+        raise HTTPException(status_code=400, detail="content or files required")
+
+    # @이름 멘션 → 사용자 이메일 매핑
+    raw_mention_names = _extract_mentions(content)
+    mentions: list[dict] = []
+    if raw_mention_names:
+        users_list = _load_users()
+        name_to_email = {
+            str(u.get("name", "") or "").strip(): str(u.get("email", "") or "").strip().lower()
+            for u in users_list
+            if str(u.get("name", "") or "").strip() and str(u.get("email", "") or "").strip()
+        }
+        for name in raw_mention_names:
+            email = name_to_email.get(name, "")
+            if email:
+                mentions.append({"name": name, "email": email})
 
     comment = {
         "id": f"cmt-{uuid.uuid4().hex[:10]}",
@@ -3198,11 +3483,13 @@ async def board_add_comment(post_id: str, request: Request):
         "content": content,
         "parent_id": parent_id or "",
         "created_at": datetime.utcnow().isoformat(timespec="seconds"),
+        "mentions": mentions,
+        "files": saved_files,
     }
 
     with BOARD_LOCK:
         posts = _load_json_array(BOARD_POSTS_FILE)
-        idx = next((i for i, p in enumerate(posts) if p.get("id") == post_id), -1)
+        idx = next((i for i, p in enumerate(posts) if _board_id_equals(p, post_id)), -1)
         if idx < 0:
             raise HTTPException(status_code=404, detail="post not found")
         post = dict(posts[idx])
@@ -3218,7 +3505,129 @@ async def board_add_comment(post_id: str, request: Request):
         posts[idx] = post
         _save_json_array(BOARD_POSTS_FILE, posts)
 
+    _board_touch_update()
     return {"ok": True, "comment": comment}
+
+
+@app.post("/api/board/posts/{post_id}/comments/{comment_id}/reactions")
+async def board_toggle_comment_reaction(post_id: str, comment_id: str, request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+
+    payload = await request.json()
+    emoji = str((payload or {}).get("emoji", "")).strip()
+    if not emoji:
+        raise HTTPException(status_code=400, detail="emoji required")
+
+    # 일반 유니코드 이모지(짧은 문자열) 또는 :custom_name: 토큰 지원
+    if emoji.startswith(":") and emoji.endswith(":") and len(emoji) > 2:
+        custom_name = str(emoji[1:-1]).strip().lower()
+        if not re.fullmatch(r"[a-z0-9_]{2,30}", custom_name):
+            raise HTTPException(status_code=400, detail="invalid custom emoji token")
+        custom_items = _load_json_array(BOARD_EMOJIS_FILE)
+        exists = any(str((row or {}).get("name", "")).strip().lower() == custom_name for row in custom_items)
+        if not exists:
+            raise HTTPException(status_code=404, detail="custom emoji not found")
+    elif len(emoji) > 8:
+        raise HTTPException(status_code=400, detail="emoji too long")
+
+    user_email = str(user.get("email", "")).strip().lower()
+
+    with BOARD_LOCK:
+        posts = _load_json_array(BOARD_POSTS_FILE)
+        idx = next((i for i, p in enumerate(posts) if _board_id_equals(p, post_id)), -1)
+        if idx < 0:
+            raise HTTPException(status_code=404, detail="post not found")
+
+        post = dict(posts[idx])
+        comments = list(post.get("comments") or [])
+        cidx = next((i for i, c in enumerate(comments) if str(c.get("id", "")).strip() == str(comment_id).strip()), -1)
+        if cidx < 0:
+            raise HTTPException(status_code=404, detail="comment not found")
+
+        comment = dict(comments[cidx])
+        reactions = list(comment.get("reactions") or [])
+        ridx = next((i for i, r in enumerate(reactions) if str((r or {}).get("emoji", "")).strip() == emoji), -1)
+
+        active = True
+        if ridx < 0:
+            reactions.append({"emoji": emoji, "users": [user_email]})
+        else:
+            target = dict(reactions[ridx])
+            users = [str(v).strip().lower() for v in (target.get("users") or []) if str(v).strip()]
+            if user_email in users:
+                users = [v for v in users if v != user_email]
+                active = False
+            else:
+                users.append(user_email)
+                active = True
+            if users:
+                target["users"] = users
+                reactions[ridx] = target
+            else:
+                reactions.pop(ridx)
+
+        comment["reactions"] = reactions
+        comments[cidx] = comment
+        post["comments"] = comments
+        post["updated_at"] = datetime.utcnow().isoformat(timespec="seconds")
+        posts[idx] = post
+        _save_json_array(BOARD_POSTS_FILE, posts)
+
+    _board_touch_update()
+    return {"ok": True, "active": active, "emoji": emoji, "reactions": comment.get("reactions") or []}
+
+
+@app.delete("/api/board/posts/{post_id}/comments/{comment_id}")
+def board_delete_comment(post_id: str, comment_id: str, request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+
+    user_email = str(user.get("email", "")).strip().lower()
+    is_admin = _is_admin_user(user)
+
+    with BOARD_LOCK:
+        posts = _load_json_array(BOARD_POSTS_FILE)
+        idx = next((i for i, p in enumerate(posts) if _board_id_equals(p, post_id)), -1)
+        if idx < 0:
+            raise HTTPException(status_code=404, detail="post not found")
+
+        post = dict(posts[idx])
+        comments = list(post.get("comments") or [])
+        target = next((c for c in comments if str(c.get("id", "")).strip() == str(comment_id).strip()), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="comment not found")
+
+        author_email = str(target.get("author_email", "")).strip().lower()
+        if not is_admin and user_email != author_email:
+            raise HTTPException(status_code=403, detail="not allowed")
+
+        remaining, deleted = _delete_board_comment_tree(comments, comment_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="comment not found")
+
+        post["comments"] = remaining
+        post["updated_at"] = datetime.utcnow().isoformat(timespec="seconds")
+        posts[idx] = post
+        _save_json_array(BOARD_POSTS_FILE, posts)
+
+    _board_touch_update()
+
+    if is_admin:
+        _append_audit_update(
+            "게시판 댓글 삭제",
+            [
+                f"게시글: {post.get('title', '')}",
+                f"댓글 작성자: {deleted.get('author_name', '') or deleted.get('author_email', '')}",
+                f"댓글 ID: {comment_id}",
+            ],
+            kind="removed",
+            scope="게시판",
+            actor=user,
+        )
+    return {"ok": True}
 
 
 @app.post("/api/board/posts/{post_id}/approve")
@@ -3226,7 +3635,7 @@ def board_approve_post(post_id: str, request: Request):
     admin = _require_admin(request)
     with BOARD_LOCK:
         posts = _load_json_array(BOARD_POSTS_FILE)
-        idx = next((i for i, p in enumerate(posts) if p.get("id") == post_id), -1)
+        idx = next((i for i, p in enumerate(posts) if _board_id_equals(p, post_id)), -1)
         if idx < 0:
             raise HTTPException(status_code=404, detail="post not found")
         post = dict(posts[idx])
@@ -3236,14 +3645,7 @@ def board_approve_post(post_id: str, request: Request):
         post.pop("reject_reason", None)
         posts[idx] = post
         _save_json_array(BOARD_POSTS_FILE, posts)
-
-    _append_audit_update(
-        "게시판 글 승인",
-        [f"제목: {post.get('title', '')}", f"ID: {post_id}", f"승인자: {admin.get('email', '')}"],
-        kind="updated",
-        scope="게시판",
-        actor=admin,
-    )
+    _board_touch_update()
     return {"ok": True}
 
 
@@ -3254,7 +3656,7 @@ async def board_reject_post(post_id: str, request: Request):
     reason = str((payload or {}).get("reason", "")).strip()[:300]
     with BOARD_LOCK:
         posts = _load_json_array(BOARD_POSTS_FILE)
-        idx = next((i for i, p in enumerate(posts) if p.get("id") == post_id), -1)
+        idx = next((i for i, p in enumerate(posts) if _board_id_equals(p, post_id)), -1)
         if idx < 0:
             raise HTTPException(status_code=404, detail="post not found")
         post = dict(posts[idx])
@@ -3265,15 +3667,7 @@ async def board_reject_post(post_id: str, request: Request):
             post["reject_reason"] = reason
         posts[idx] = post
         _save_json_array(BOARD_POSTS_FILE, posts)
-
-    _append_audit_update(
-        "게시판 글 반려",
-        [f"제목: {post.get('title', '')}", f"ID: {post_id}",
-         f"반려자: {admin.get('email', '')}", f"사유: {reason or '-'}"],
-        kind="removed",
-        scope="게시판",
-        actor=admin,
-    )
+    _board_touch_update()
     return {"ok": True}
 
 
@@ -3286,7 +3680,7 @@ def board_delete_post(post_id: str, request: Request):
     user_email = str(user.get("email", "")).strip().lower()
     with BOARD_LOCK:
         posts = _load_json_array(BOARD_POSTS_FILE)
-        idx = next((i for i, p in enumerate(posts) if p.get("id") == post_id), -1)
+        idx = next((i for i, p in enumerate(posts) if _board_id_equals(p, post_id)), -1)
         if idx < 0:
             raise HTTPException(status_code=404, detail="post not found")
         post = posts[idx]
@@ -3294,23 +3688,260 @@ def board_delete_post(post_id: str, request: Request):
             raise HTTPException(status_code=403, detail="not allowed")
         posts.pop(idx)
         _save_json_array(BOARD_POSTS_FILE, posts)
+    _board_touch_update()
+    if is_admin:
+        _append_audit_update(
+            "게시판 글 삭제",
+            [f"제목: {post.get('title', '')}", f"작성자: {post.get('author_name', '')}", f"ID: {post_id}"],
+            kind="removed",
+            scope="게시판",
+            actor=user,
+        )
     return {"ok": True}
 
 
 @app.get("/api/board/urgent")
 def board_urgent(request: Request):
-    """High priority + approved posts for floating indicator and overview widget."""
+    """Recent approved posts for floating indicator with priority-specific styles."""
+    user = _current_user_from_request(request)
+    user_email = str((user or {}).get("email", "")).strip().lower()
+    cache_key = user_email or "__public__"
+    now_ts = time.time()
+    posts_mtime = 0.0
+    try:
+        posts_mtime = float(BOARD_POSTS_FILE.stat().st_mtime)
+    except Exception:
+        posts_mtime = 0.0
+
+    with BOARD_URGENT_CACHE_LOCK:
+        cached = BOARD_URGENT_CACHE.get(cache_key) or {}
+        if (
+            cached
+            and (now_ts - float(cached.get("ts") or 0.0)) < BOARD_URGENT_CACHE_TTL_SEC
+            and float(cached.get("posts_mtime") or 0.0) == posts_mtime
+        ):
+            return cached.get("data") or {"ok": True, "items": [], "mentions": [], "unread_items": []}
+
+    posts = _load_json_array(BOARD_POSTS_FILE)
+    if _normalize_admin_authored_board_posts(posts):
+        with BOARD_LOCK:
+            _save_json_array(BOARD_POSTS_FILE, posts)
+    if user:
+        urgent = [
+            _board_summary(p)
+            for p in posts
+            if str(p.get("status", "")).strip().lower() == "approved" and _can_view_board_post(p, user)
+        ]
+    else:
+        urgent = [_board_summary(p) for p in posts if str(p.get("status", "")).strip().lower() == "approved"]
+    urgent.sort(
+        key=lambda r: (str(r.get("created_at", "")), -_board_priority_order(r.get("priority", "Medium"))),
+        reverse=True,
+    )
+
+    # 로그인한 사용자에 대해 댓글 멘션 알림 추가 + 미읽은 공지 집계
+    # 폴링 API 부하를 줄이기 위해 최근 게시글 중심으로 스캔한다.
+    mentions_out: list[dict] = []
+    unread_out: list[dict] = []
+    if user:
+        user_email = str(user.get("email", "")).strip().lower()
+        read_post_ids = _get_board_read_post_ids(user_email)
+        approved_posts = [p for p in posts if str(p.get("status", "")).strip().lower() == "approved"]
+        approved_posts.sort(key=lambda p: str(p.get("created_at", "")), reverse=True)
+        scan_posts = approved_posts[:150]
+
+        unread_out = [
+            _board_summary(p)
+            for p in scan_posts
+            if (
+                str(p.get("status", "")).strip().lower() == "approved"
+                and _can_view_board_post(p, user)
+                and str(p.get("id", "")).strip()
+                and str(p.get("id", "")).strip() not in read_post_ids
+            )
+        ]
+        unread_out.sort(
+            key=lambda r: (str(r.get("created_at", "")), -_board_priority_order(r.get("priority", "Medium"))),
+            reverse=True,
+        )
+
+        for post in scan_posts:
+            post_id_str = str(post.get("id", ""))
+            post_title_str = str(post.get("title", ""))
+            for comment in (post.get("comments") or []):
+                for m in (comment.get("mentions") or []):
+                    if str(m.get("email", "")).strip().lower() == user_email:
+                        mentions_out.append({
+                            "comment_id": str(comment.get("id", "")),
+                            "post_id": post_id_str,
+                            "post_title": post_title_str,
+                            "author_name": str(comment.get("author_name", "")),
+                            "content_preview": str(comment.get("content", ""))[:120],
+                            "created_at": str(comment.get("created_at", "")),
+                        })
+        mentions_out.sort(key=lambda m: m.get("created_at", ""), reverse=True)
+
+    result = {"ok": True, "items": urgent[:5], "mentions": mentions_out[:10], "unread_items": unread_out[:10]}
+    with BOARD_URGENT_CACHE_LOCK:
+        BOARD_URGENT_CACHE[cache_key] = {"ts": now_ts, "posts_mtime": posts_mtime, "data": result}
+    return result
+
+
+@app.get("/api/board/members")
+def board_members(request: Request):
+    """Return mentionable user name list for @mention autocomplete in comments."""
     user = _current_user_from_request(request)
     if not user:
-        return {"ok": True, "items": []}
-    posts = _load_json_array(BOARD_POSTS_FILE)
-    urgent = [
-        _board_summary(p)
-        for p in posts
-        if str(p.get("priority", "")) == "High" and _can_view_board_post(p, user)
-    ]
-    urgent.sort(key=lambda r: str(r.get("created_at", "")), reverse=True)
-    return {"ok": True, "items": urgent[:5]}
+        raise HTTPException(status_code=401, detail="login required")
+    users_list = _load_users()
+    result = []
+    for u in users_list:
+        name = str(u.get("name", "") or "").strip()
+        email = str(u.get("email", "") or "").strip().lower()
+        if name and email:
+            result.append({"name": name, "email": email})
+    result.sort(key=lambda x: x["name"])
+    return {"ok": True, "members": result}
+
+
+@app.get("/api/board/updates/since")
+def board_updates_since(request: Request, seq: int = 0):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+    current_seq, current_ts = _board_update_snapshot()
+    return {
+        "ok": True,
+        "changed": int(seq or 0) < int(current_seq),
+        "seq": int(current_seq),
+        "ts": str(current_ts),
+    }
+
+
+@app.get("/api/board/emojis")
+def board_list_custom_emojis(request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+    items = _load_json_array(BOARD_EMOJIS_FILE)
+    user_email = str(user.get("email", "")).strip().lower()
+    is_admin = _is_admin_user(user)
+    normalized = []
+    for row in items:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name", "")).strip().lower()
+        path = str(row.get("path", "")).strip()
+        if not name or not path:
+            continue
+        normalized.append(
+            {
+                "id": str(row.get("id", "")).strip(),
+                "name": name,
+                "path": path,
+                "token": f":{name}:",
+                "created_by": str(row.get("created_by", "")).strip().lower(),
+                "can_delete": is_admin or str(row.get("created_by", "")).strip().lower() == user_email,
+            }
+        )
+    normalized.sort(key=lambda x: x.get("name", ""))
+    return {"ok": True, "items": normalized}
+
+
+@app.post("/api/board/emojis")
+async def board_create_custom_emoji(
+    request: Request,
+    name: str = Form(...),
+    file: UploadFile = File(...),
+):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+
+    normalized_name = re.sub(r"[^a-z0-9_]", "", str(name or "").strip().lower())
+    if len(normalized_name) < 2 or len(normalized_name) > 30:
+        raise HTTPException(status_code=400, detail="emoji name must be 2-30 chars (a-z0-9_)")
+
+    filename = str(getattr(file, "filename", "") or "").strip()
+    ext = Path(filename).suffix.lower()
+    if ext not in BOARD_CUSTOM_EMOJI_ALLOWED_EXT:
+        raise HTTPException(status_code=400, detail="emoji image format not allowed")
+
+    b = await file.read()
+    if not b:
+        raise HTTPException(status_code=400, detail="emoji file required")
+    if len(b) > BOARD_CUSTOM_EMOJI_MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="emoji file too large (max 512KB)")
+
+    with BOARD_LOCK:
+        items = _load_json_array(BOARD_EMOJIS_FILE)
+        for row in items:
+            if str((row or {}).get("name", "")).strip().lower() == normalized_name:
+                raise HTTPException(status_code=409, detail="emoji name already exists")
+
+        emoji_id = f"emo-{uuid.uuid4().hex[:10]}"
+        safe_name = f"{emoji_id}{ext}"
+        dest = BOARD_EMOJI_UPLOAD_DIR / safe_name
+        dest.write_bytes(b)
+        row = {
+            "id": emoji_id,
+            "name": normalized_name,
+            "path": f"/uploads/board/emojis/{safe_name}",
+            "created_at": datetime.utcnow().isoformat(timespec="seconds"),
+            "created_by": str(user.get("email", "")).strip().lower(),
+        }
+        items.append(row)
+        _save_json_array(BOARD_EMOJIS_FILE, items)
+    _board_touch_update()
+
+    return {
+        "ok": True,
+        "item": {
+            "id": emoji_id,
+            "name": normalized_name,
+            "path": row["path"],
+            "token": f":{normalized_name}:",
+            "created_by": str(user.get("email", "")).strip().lower(),
+            "can_delete": True,
+        },
+    }
+
+
+@app.delete("/api/board/emojis/{emoji_id}")
+def board_delete_custom_emoji(emoji_id: str, request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+
+    user_email = str(user.get("email", "")).strip().lower()
+    is_admin = _is_admin_user(user)
+
+    with BOARD_LOCK:
+        items = _load_json_array(BOARD_EMOJIS_FILE)
+        idx = next((i for i, row in enumerate(items) if str((row or {}).get("id", "")).strip() == str(emoji_id).strip()), -1)
+        if idx < 0:
+            raise HTTPException(status_code=404, detail="emoji not found")
+
+        target = dict(items[idx])
+        created_by = str(target.get("created_by", "")).strip().lower()
+        if not is_admin and created_by != user_email:
+            raise HTTPException(status_code=403, detail="not allowed")
+
+        path = str(target.get("path", "")).strip()
+        items.pop(idx)
+        _save_json_array(BOARD_EMOJIS_FILE, items)
+    _board_touch_update()
+
+    # 이모지 파일 정리
+    if path.startswith("/uploads/board/emojis/"):
+        name = path.split("/uploads/board/emojis/")[-1].strip()
+        if name:
+            try:
+                (BOARD_EMOJI_UPLOAD_DIR / name).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    return {"ok": True}
 
 
 @app.get("/api/board/overview")
@@ -3320,6 +3951,9 @@ def board_overview(request: Request):
     if not user:
         return {"ok": True, "items": []}
     posts = _load_json_array(BOARD_POSTS_FILE)
+    if _normalize_admin_authored_board_posts(posts):
+        with BOARD_LOCK:
+            _save_json_array(BOARD_POSTS_FILE, posts)
     visible = [_board_summary(p) for p in posts if _can_view_board_post(p, user)]
     visible.sort(key=lambda r: (
         {"High": 0, "Medium": 1, "Low": 2}.get(r.get("priority", "Low"), 2),
@@ -3745,9 +4379,9 @@ def _record_defectlist_refresh_update(stats: dict) -> None:
         ]
         _append_manual_overview_update(
             {
-                "title": "DefectList_Raw 최신화",
+                "title": "DefectList 최신화",
                 "kind": "updated",
-                "scope": "Data",
+                "scope": "DefectList",
                 "updated_at": updated_at,
                 "details": details,
             }

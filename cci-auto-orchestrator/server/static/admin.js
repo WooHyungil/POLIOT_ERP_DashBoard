@@ -23,16 +23,46 @@ function esc(value) {
 	const decisionApplyBtn = document.getElementById("decisionApplyBtn");
 	const decisionWithdrawSelectedBtn = document.getElementById("decisionWithdrawSelectedBtn");
 	const adminMainGrid = document.getElementById("adminMainGrid");
+	const adminMemberSearchInput = document.getElementById("adminMemberSearchInput");
+	const adminMemberStatusFilter = document.getElementById("adminMemberStatusFilter");
+	const adminMemberRefreshBtn = document.getElementById("adminMemberRefreshBtn");
+	const adminMemberResultCount = document.getElementById("adminMemberResultCount");
+	const adminMemberAddBtn = document.getElementById("adminMemberAddBtn");
+	const memberEditModal = document.getElementById("memberEditModal");
+	const memberEditForm = document.getElementById("memberEditForm");
+	const memberEditEmail = document.getElementById("memberEditEmail");
+	const memberEditName = document.getElementById("memberEditName");
+	const memberEditRole = document.getElementById("memberEditRole");
+	const memberEditTitle = document.getElementById("memberEditTitle");
+	const memberEditPhone = document.getElementById("memberEditPhone");
+	const memberEditBirth = document.getElementById("memberEditBirth");
+	const memberEditAddress = document.getElementById("memberEditAddress");
+	const memberEditApproved = document.getElementById("memberEditApproved");
+	const memberEditCanLogin = document.getElementById("memberEditCanLogin");
+	const memberEditGameAccess = document.getElementById("memberEditGameAccess");
+	const memberPasswordForm = document.getElementById("memberPasswordForm");
+	const memberPasswordInput = document.getElementById("memberPasswordInput");
+	const memberAddModal = document.getElementById("memberAddModal");
+	const memberAddForm = document.getElementById("memberAddForm");
+	const memberAddEmail = document.getElementById("memberAddEmail");
+	const memberAddName = document.getElementById("memberAddName");
+	const memberAddRole = document.getElementById("memberAddRole");
+	const memberAddTitle = document.getElementById("memberAddTitle");
+	const memberAddPhone = document.getElementById("memberAddPhone");
+	const memberAddPassword = document.getElementById("memberAddPassword");
+	const memberAddApproved = document.getElementById("memberAddApproved");
+	const memberAddCanLogin = document.getElementById("memberAddCanLogin");
 	if (!memberBody) return;
 	const activityLogBody = document.getElementById("activityLogRows");
 	const requestDetailModal = document.getElementById("requestDetailModal");
 	const requestDetailTitle = document.getElementById("requestDetailTitle");
 	const requestDetailList = document.getElementById("requestDetailList");
-	const ADMIN_SECTION_IDS = ["adminIssueTab", "adminPeopleTab", "adminAssetDecisionTab", "adminAssetApprovalTab", "adminActivityLogTab", "adminAssetDeletedTab", "adminAssetRejectedTab"];
+	const ADMIN_SECTION_IDS = ["adminIssueTab", "adminPeopleTab", "adminAssetDecisionTab", "adminAssetApprovalTab", "adminBoardApprovalTab", "adminActivityLogTab", "adminAssetDeletedTab", "adminAssetRejectedTab"];
 	let pendingDeleteRequests = [];
 	let activityLogItems = [];
 	let preferredDecisionId = "";
 	let canManageGameAccess = false;
+	let allMembers = [];
 
 	const CORE_ADMINS = new Set(["sue@poliot.co.kr", "hiss0723@poliot.co.kr"]);
 
@@ -82,39 +112,181 @@ function esc(value) {
 		document.body.classList.add("modal-open");
 	}
 
+	function applyMemberFilters(items) {
+		const keyword = String(adminMemberSearchInput?.value || "").trim().toLowerCase();
+		const status = String(adminMemberStatusFilter?.value || "all").trim().toLowerCase();
+		return (items || []).filter((x) => {
+			const role = String(x.role || "user").toLowerCase();
+			const approved = Boolean(x.approved);
+			const canLogin = Boolean(x.can_login);
+			const haystack = [
+				String(x.name || ""),
+				String(x.email || ""),
+				String(x.title || ""),
+				String(x.phone || ""),
+			]
+				.join(" ")
+				.toLowerCase();
+
+			if (keyword && !haystack.includes(keyword)) return false;
+			if (status === "pending" && approved) return false;
+			if (status === "approved" && !approved) return false;
+			if (status === "blocked" && canLogin) return false;
+			if (status === "admin" && role !== "admin") return false;
+			return true;
+		});
+	}
+
+	function updateMemberResultCount(visibleCount, totalCount) {
+		if (!adminMemberResultCount) return;
+		adminMemberResultCount.textContent = `조회 결과 ${visibleCount}명 / 전체 ${totalCount}명`;
+	}
+
 	function renderMembers(items) {
-		memberBody.innerHTML = items
+		const visibleItems = applyMemberFilters(items);
+		updateMemberResultCount(visibleItems.length, items.length);
+
+		if (!visibleItems.length) {
+			memberBody.innerHTML = '<div class="admin-member-empty">조건에 맞는 계정이 없습니다.</div>';
+			setDetailSummary(items);
+			return;
+		}
+
+		memberBody.innerHTML = visibleItems
 			.map((x) => {
 				const email = String(x.email || "").toLowerCase();
 				const isCoreAdmin = CORE_ADMINS.has(email);
 				const approved = Boolean(x.approved);
 				const canLogin = Boolean(x.can_login);
 				const gameAccess = Boolean(x.game_access);
-				const canSeeGameControl = canManageGameAccess && email !== "hiss0723@poliot.co.kr" && String(x.role || "").toLowerCase() !== "admin";
+				const isAdminRole = String(x.role || "").toLowerCase() === "admin";
+				const canToggleGame = canManageGameAccess && email !== "hiss0723@poliot.co.kr" && !isAdminRole;
+				const gameButtonTitle = !canManageGameAccess
+					? "게임 권한은 hiss0723 계정만 변경할 수 있습니다"
+					: (isAdminRole ? "관리자 계정의 게임 권한은 변경할 수 없습니다" : (email === "hiss0723@poliot.co.kr" ? "관리자 본인 계정은 변경할 수 없습니다" : "게임 권한 변경"));
 				const titlePhone = [String(x.title || "").trim(), String(x.phone || "").trim()].filter(Boolean).join(" / ") || "-";
 				const createdAt = formatDisplayDateTime(x.created_at || "");
+				const role = String(x.role || "user").toLowerCase();
+				const roleKr = role === "admin" ? "관리자" : "사용자";
+				const approvedStatus = approved ? "승인완료" : "승인대기";
+				const loginStatus = canLogin ? "허용" : "차단";
+				const gameStatus = gameAccess ? "허용" : "차단";
+				const safeName = String(x.name || "이름없음");
+				const avatarText = safeName ? safeName.charAt(0).toUpperCase() : "?";
+				
 				return `
-					<tr>
-						<td>${esc(email || "-")}</td>
-						<td>${esc(x.name || "-")}</td>
-						<td>${esc(titlePhone)}</td>
-						<td>${esc(x.role || "user")}</td>
-						<td>${approved ? "승인" : "대기"}</td>
-						<td>${canLogin ? "허용" : "차단"}</td>
-						<td>${gameAccess ? "허용" : "차단"}</td>
-						<td>${esc(createdAt)}</td>
-						<td>
-							<button type="button" data-approve-member="${esc(email)}" ${approved ? "disabled" : ""}>승인</button>
-							<button type="button" class="btn-secondary" data-toggle-login-member="${esc(email)}" data-next-login="${canLogin ? "0" : "1"}" ${isCoreAdmin ? "disabled" : ""}>${canLogin ? "로그인 차단" : "로그인 허용"}</button>
-							${canSeeGameControl ? `<button type="button" class="btn-secondary" data-toggle-game-member="${esc(email)}" data-next-game="${gameAccess ? "0" : "1"}">어떠한 승인</button>` : ""}
-							<button type="button" class="btn-ghost" data-del-member="${esc(email)}" ${isCoreAdmin ? "disabled" : ""}>삭제</button>
-						</td>
-					</tr>
+					<div class="admin-member-card" data-member-email="${esc(email)}">
+						<div class="admin-member-card-header">
+							<div class="admin-member-card-main">
+								<div class="admin-member-card-avatar">
+									${esc(avatarText)}
+								</div>
+								<div class="admin-member-card-info">
+									<h3 class="admin-member-card-name">${esc(safeName)}</h3>
+									<p class="admin-member-card-email">${esc(email)}</p>
+									<p class="admin-member-card-title">${esc(titlePhone)}</p>
+								</div>
+							</div>
+							<div class="admin-member-card-badges">
+								<span class="admin-member-status-badge is-${role}">${esc(roleKr)}</span>
+								<span class="admin-member-status-badge is-${approved ? "approved" : "pending"}">${esc(approvedStatus)}</span>
+							</div>
+						</div>
+
+						<div class="admin-member-meta-grid">
+							<div class="admin-member-meta-item"><span>로그인</span><strong>${esc(loginStatus)}</strong></div>
+							<div class="admin-member-meta-item"><span>게임 권한</span><strong>${esc(gameStatus)}</strong></div>
+							<div class="admin-member-meta-item"><span>가입일</span><strong>${esc(createdAt)}</strong></div>
+						</div>
+						
+						<div class="admin-member-card-actions">
+							<button type="button" class="btn-warning" data-edit-member="${esc(email)}" title="회원 정보 수정">
+								<i class="fas fa-edit"></i> 수정
+							</button>
+							${!approved ? `<button type="button" class="btn-primary" data-approve-member="${esc(email)}" title="회원 승인">
+								<i class="fas fa-check"></i> 승인
+							</button>` : ""}
+							<button type="button" class="btn-secondary" data-toggle-login-member="${esc(email)}" data-next-login="${canLogin ? "0" : "1"}" ${isCoreAdmin ? "disabled" : ""} title="${canLogin ? "로그인 차단" : "로그인 허용"}">
+								<i class="fas fa-${canLogin ? "ban" : "check"}"></i> 로그인 ${canLogin ? "차단" : "허용"}
+							</button>
+							<button type="button" class="btn-secondary" data-toggle-game-member="${esc(email)}" data-next-game="${gameAccess ? "0" : "1"}" ${canToggleGame ? "" : "disabled"} title="${esc(gameButtonTitle)}">
+								<i class="fas fa-gamepad"></i> 게임 ${gameAccess ? "차단" : "허용"}
+							</button>
+							<button type="button" class="btn-ghost" data-del-member="${esc(email)}" ${isCoreAdmin ? "disabled" : ""} title="사용자 삭제">
+								<i class="fas fa-trash"></i> 삭제
+							</button>
+						</div>
+					</div>
 				`;
 			})
 			.join("");
 
 		setDetailSummary(items);
+	}
+
+	function bindMemberToolbarEvents() {
+		adminMemberSearchInput?.addEventListener("input", () => {
+			renderMembers(allMembers);
+		});
+		adminMemberStatusFilter?.addEventListener("change", () => {
+			renderMembers(allMembers);
+		});
+		adminMemberRefreshBtn?.addEventListener("click", () => {
+			refreshMembers();
+		});
+	}
+
+	// ── 회원 수정 모달 ───────────────────────────────────────────────
+	function openMemberEditModal(memberData) {
+		if (!memberEditModal) return;
+		const email = String(memberData.email || "").toLowerCase();
+		const isCoreAdmin = CORE_ADMINS.has(email);
+		const isAdminRole = String(memberData.role || "").toLowerCase() === "admin";
+		if (memberEditEmail) memberEditEmail.value = email;
+		if (memberEditName) memberEditName.value = String(memberData.name || "");
+		if (memberEditRole) {
+			memberEditRole.value = String(memberData.role || "user");
+			memberEditRole.disabled = isCoreAdmin;
+		}
+		if (memberEditTitle) memberEditTitle.value = String(memberData.title || "");
+		if (memberEditPhone) memberEditPhone.value = String(memberData.phone || "");
+		if (memberEditBirth) memberEditBirth.value = String(memberData.birth || "");
+		if (memberEditAddress) memberEditAddress.value = String(memberData.address || "");
+		if (memberEditApproved) {
+			memberEditApproved.checked = Boolean(memberData.approved);
+			memberEditApproved.disabled = isCoreAdmin;
+		}
+		if (memberEditCanLogin) {
+			memberEditCanLogin.checked = Boolean(memberData.can_login);
+			memberEditCanLogin.disabled = isCoreAdmin;
+		}
+		if (memberEditGameAccess) {
+			memberEditGameAccess.checked = Boolean(memberData.game_access);
+			memberEditGameAccess.disabled = !canManageGameAccess || email === "hiss0723@poliot.co.kr" || isAdminRole;
+		}
+		if (memberPasswordInput) memberPasswordInput.value = "";
+		memberEditModal.hidden = false;
+		document.body.classList.add("modal-open");
+	}
+
+	function closeMemberEditModal() {
+		if (!memberEditModal) return;
+		memberEditModal.hidden = true;
+		document.body.classList.remove("modal-open");
+	}
+
+	// ── 회원 추가 모달 ───────────────────────────────────────────────
+	function openMemberAddModal() {
+		if (!memberAddModal) return;
+		if (memberAddForm) memberAddForm.reset();
+		memberAddModal.hidden = false;
+		document.body.classList.add("modal-open");
+	}
+
+	function closeMemberAddModal() {
+		if (!memberAddModal) return;
+		memberAddModal.hidden = true;
+		document.body.classList.remove("modal-open");
 	}
 
 	async function requestJson(url, options) {
@@ -142,9 +314,11 @@ function esc(value) {
 			canManageGameAccess = Boolean(data.can_manage_game_access);
 			const items = Array.isArray(data.items) ? data.items : [];
 			items.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
-			renderMembers(items);
+			allMembers = items;
+			renderMembers(allMembers);
 		} catch (error) {
-			memberBody.innerHTML = `<tr><td colspan="9">${esc(error?.message || "사용자 목록을 불러오지 못했습니다.")}</td></tr>`;
+			memberBody.innerHTML = `<div class="admin-member-empty is-error">${esc(error?.message || "사용자 목록을 불러오지 못했습니다.")}</div>`;
+			updateMemberResultCount(0, 0);
 			if (memberDetailBody) {
 				memberDetailBody.innerHTML = `<tr><td>상태</td><td>${esc(error?.message || "통계를 불러오지 못했습니다.")}</td></tr>`;
 			}
@@ -161,8 +335,8 @@ function esc(value) {
 			.map((x) => {
 				const requestId = String(x.request_id || "");
 				const sourceType = String(x.source_type || "");
-				const canDecide = sourceType === "asset-delete" || sourceType === "schedule";
-				const canWithdraw = sourceType === "asset-delete" || sourceType === "schedule";
+				const canDecide = sourceType === "asset-delete" || sourceType === "schedule" || sourceType === "board";
+				const canWithdraw = sourceType === "asset-delete" || sourceType === "schedule" || sourceType === "board";
 				return `
 					<tr>
 						<td>${esc(x.page_name || "-")}</td>
@@ -228,7 +402,7 @@ function esc(value) {
 	function getActionableRequests(items) {
 		return (items || []).filter((x) => {
 			const sourceType = String(x?.source_type || "");
-			return sourceType === "asset-delete" || sourceType === "schedule";
+			return sourceType === "asset-delete" || sourceType === "schedule" || sourceType === "board";
 		});
 	}
 
@@ -268,6 +442,13 @@ function esc(value) {
 			});
 			return;
 		}
+		if (sourceType === "board") {
+			await requestJson(`/api/board/posts/${encodeURIComponent(withdrawId)}/withdraw`, {
+				method: "POST",
+				body: JSON.stringify({ reason: "관리자 요청취소 처리" }),
+			});
+			return;
+		}
 		throw new Error("지원하지 않는 요청 유형입니다.");
 	}
 
@@ -283,8 +464,8 @@ function esc(value) {
 				const requestId = String(x.request_id || "");
 				const isPreferred = preferredDecisionId && preferredDecisionId === requestId;
 				const sourceType = String(x.source_type || "");
-				const canDecide = sourceType === "asset-delete" || sourceType === "schedule";
-				const canWithdraw = sourceType === "asset-delete" || sourceType === "schedule";
+				const canDecide = sourceType === "asset-delete" || sourceType === "schedule" || sourceType === "board";
+				const canWithdraw = sourceType === "asset-delete" || sourceType === "schedule" || sourceType === "board";
 				return `
 					<tr data-decision-row-id="${esc(requestId)}">
 						<td><input type="checkbox" class="decision-row-check" data-id="${esc(requestId)}" ${isPreferred ? "checked" : ""} ${canDecide ? "" : "disabled"} /></td>
@@ -309,28 +490,31 @@ function esc(value) {
 		}
 		assetDeletedBody.innerHTML = items
 			.map((x) => {
-				const id = String(x.id || "");
-				const reqStatus = String(x.delete_request_status || "none").toLowerCase();
-				const isCancelled = reqStatus === "cancelled";
-				const reviewer = isCancelled ? String(x.delete_cancelled_by || "") : String(x.delete_reviewed_by || "");
-				const reviewedAt = isCancelled ? String(x.delete_cancelled_at || "") : String(x.delete_reviewed_at || "");
+				const sourceType = String(x.source_type || "asset");
+				const targetId = String(x.target_id || "");
+				const requestedBy = String(x.requested_by || "-");
+				const reviewedBy = String(x.reviewed_by || "-");
+				const requestedAt = String(x.requested_at || "");
+				const reviewedAt = String(x.reviewed_at || "");
+				const stateText = String(x.state_text || "삭제완료");
+				const titleText = String(x.title_text || "-");
+				let actionHtml = "<span class=\"hint\">-</span>";
+				if (sourceType === "asset") {
+					actionHtml = `
+						<button type="button" class="btn-secondary" data-restore-deleted-asset="${esc(targetId)}">복구</button>
+						<button type="button" class="btn-ghost" data-cancel-asset-approval="${esc(targetId)}">승인취소</button>
+					`;
+				}
 				return `
 					<tr>
-						<td>${esc(id || "-")}</td>
-						<td>${esc(x["구 관리번호"] || "-")}</td>
-						<td>${esc(x["NEW 관리 번호"] || "-")}</td>
-						<td>${esc(x.delete_requested_by || "-")}</td>
-						<td>${esc(formatDisplayDateTime(x.delete_requested_at || ""))}</td>
-						<td>${esc(reviewer || "-")}</td>
-						<td>${esc(formatDisplayDateTime(reviewedAt || ""))}</td>
-						<td>
-							${
-								isCancelled
-									? '<span class="asset-status-badge status-rejected">취소요청</span>'
-									: `<button type="button" class="btn-secondary" data-restore-deleted-asset="${esc(id)}">복구</button>
-									   <button type="button" class="btn-ghost" data-cancel-asset-approval="${esc(id)}">승인취소</button>`
-							}
-						</td>
+						<td><span class="scope-badge">${esc(x.scope_name || "-")}</span></td>
+						<td>${esc(titleText)}</td>
+						<td>${esc(requestedBy)}</td>
+						<td>${esc(reviewedBy)}</td>
+						<td>${esc(formatDisplayDateTime(requestedAt))}</td>
+						<td>${esc(formatDisplayDateTime(reviewedAt))}</td>
+						<td><span class="asset-status-badge status-approved">${esc(stateText)}</span></td>
+						<td>${actionHtml}</td>
 					</tr>
 				`;
 			})
@@ -340,9 +524,43 @@ function esc(value) {
 	async function refreshAssetDeletedItems() {
 		if (!assetDeletedBody) return;
 		try {
-			const data = await requestJson("/api/admin/assets/deleted-items", { method: "GET" });
-			const items = Array.isArray(data.items) ? data.items : [];
-			renderAssetDeletedItems(items);
+			const [assetData, activityData] = await Promise.all([
+				requestJson("/api/admin/assets/deleted-items", { method: "GET" }),
+				requestJson("/api/admin/activity-log?limit=300&include_all=1", { method: "GET" }),
+			]);
+			const assetItems = Array.isArray(assetData.items) ? assetData.items : [];
+			const activityItems = Array.isArray(activityData.items) ? activityData.items : [];
+			const mappedAssets = assetItems.map((x) => {
+				const reqStatus = String(x.delete_request_status || "none").toLowerCase();
+				const isCancelled = reqStatus === "cancelled";
+				return {
+					source_type: "asset",
+					scope_name: "단말관리",
+					target_id: String(x.id || ""),
+					title_text: [String(x["구 관리번호"] || "").trim(), String(x["NEW 관리 번호"] || "").trim()].filter(Boolean).join(" / ") || String(x.id || "-"),
+					requested_by: String(x.delete_requested_by || "-"),
+					reviewed_by: isCancelled ? String(x.delete_cancelled_by || "-") : String(x.delete_reviewed_by || "-"),
+					requested_at: String(x.delete_requested_at || ""),
+					reviewed_at: isCancelled ? String(x.delete_cancelled_at || "") : String(x.delete_reviewed_at || ""),
+					state_text: isCancelled ? "승인취소" : "삭제승인",
+				};
+			});
+			const mappedRemovedLogs = activityItems
+				.filter((x) => String(x.kind || "").toLowerCase() === "removed")
+				.map((x) => ({
+					source_type: "activity",
+					scope_name: String(x.scope || "기타"),
+					target_id: "",
+					title_text: String(x.title || "삭제 이력"),
+					requested_by: String(x.actor || "-"),
+					reviewed_by: String(x.actor || "-"),
+					requested_at: String(x.updated_at || ""),
+					reviewed_at: String(x.updated_at || ""),
+					state_text: "삭제처리",
+				}));
+			const merged = mappedAssets.concat(mappedRemovedLogs);
+			merged.sort((a, b) => String(b.reviewed_at || b.requested_at || "").localeCompare(String(a.reviewed_at || a.requested_at || "")));
+			renderAssetDeletedItems(merged);
 		} catch (error) {
 			assetDeletedBody.innerHTML = `<tr><td colspan="8">${esc(error?.message || "삭제된 목록을 불러오지 못했습니다.")}</td></tr>`;
 		}
@@ -351,23 +569,31 @@ function esc(value) {
 	function renderAssetRejectedItems(items) {
 		if (!assetRejectedBody) return;
 		if (!items.length) {
-			assetRejectedBody.innerHTML = '<tr><td colspan="9">반려된 항목이 없습니다.</td></tr>';
+			assetRejectedBody.innerHTML = '<tr><td colspan="8">반려된 항목이 없습니다.</td></tr>';
 			return;
 		}
 		assetRejectedBody.innerHTML = items
 			.map((x) => {
-				const id = String(x.id || "");
+				const sourceType = String(x.source_type || "");
+				const targetId = String(x.target_id || "");
+				let actionHtml = "<span class=\"hint\">-</span>";
+				if (sourceType === "asset") {
+					actionHtml = `<button type="button" class="btn-secondary" data-restore-rejected-asset="${esc(targetId)}">복구</button>`;
+				} else if (sourceType === "board") {
+					actionHtml = `<a href="/board#${esc(targetId)}" class="btn-secondary" style="display:inline-flex;align-items:center;">게시글 보기</a>`;
+				} else if (sourceType === "schedule") {
+					actionHtml = '<a href="/manage#manageScheduleTab" class="btn-secondary" style="display:inline-flex;align-items:center;">일정 보기</a>';
+				}
 				return `
 					<tr>
-						<td>${esc(id || "-")}</td>
-						<td>${esc(x["구 관리번호"] || "-")}</td>
-						<td>${esc(x["NEW 관리 번호"] || "-")}</td>
-						<td>${esc(x.delete_requested_by || "-")}</td>
-						<td>${esc(formatDisplayDateTime(x.delete_requested_at || ""))}</td>
-						<td>${esc(x.delete_reviewed_by || "-")}</td>
-						<td>${esc(formatDisplayDateTime(x.delete_reviewed_at || ""))}</td>
-						<td>${esc(x.delete_reject_reason || "-")}</td>
-						<td><button type="button" class="btn-secondary" data-restore-rejected-asset="${esc(id)}">복구</button></td>
+						<td><span class="scope-badge">${esc(x.scope_name || "-")}</span></td>
+						<td>${esc(x.title_text || "-")}</td>
+						<td>${esc(x.requested_by || "-")}</td>
+						<td>${esc(x.reviewed_by || "-")}</td>
+						<td>${esc(formatDisplayDateTime(x.requested_at || ""))}</td>
+						<td>${esc(formatDisplayDateTime(x.reviewed_at || ""))}</td>
+						<td>${esc(x.reject_reason || "-")}</td>
+						<td>${actionHtml}</td>
 					</tr>
 				`;
 			})
@@ -377,11 +603,53 @@ function esc(value) {
 	async function refreshAssetRejectedItems() {
 		if (!assetRejectedBody) return;
 		try {
-			const data = await requestJson("/api/admin/assets/rejected-items", { method: "GET" });
-			const items = Array.isArray(data.items) ? data.items : [];
-			renderAssetRejectedItems(items);
+			const [assetData, scheduleData, boardData] = await Promise.all([
+				requestJson("/api/admin/assets/rejected-items", { method: "GET" }),
+				requestJson("/api/manage/schedules", { method: "GET" }),
+				requestJson("/api/board/posts", { method: "GET" }),
+			]);
+			const assetItems = (Array.isArray(assetData.items) ? assetData.items : []).map((x) => ({
+				source_type: "asset",
+				scope_name: "단말관리",
+				target_id: String(x.id || ""),
+				title_text: [String(x["구 관리번호"] || "").trim(), String(x["NEW 관리 번호"] || "").trim()].filter(Boolean).join(" / ") || String(x.id || "-"),
+				requested_by: String(x.delete_requested_by || "-"),
+				reviewed_by: String(x.delete_reviewed_by || "-"),
+				requested_at: String(x.delete_requested_at || ""),
+				reviewed_at: String(x.delete_reviewed_at || ""),
+				reject_reason: String(x.delete_reject_reason || "-"),
+			}));
+			const scheduleItems = (Array.isArray(scheduleData.items) ? scheduleData.items : [])
+				.filter((x) => String(x.approval_status || "").toLowerCase() === "rejected")
+				.map((x) => ({
+					source_type: "schedule",
+					scope_name: "일정관리",
+					target_id: String(x.id || ""),
+					title_text: String(x.title || "-") || "-",
+					requested_by: String(x.author_name || x.author_email || "-"),
+					reviewed_by: String(x.approved_by || "-"),
+					requested_at: String(x.requested_at || x.created_at || ""),
+					reviewed_at: String(x.approved_at || ""),
+					reject_reason: String(x.reject_reason || "-"),
+				}));
+			const boardItems = (Array.isArray(boardData.items) ? boardData.items : [])
+				.filter((x) => String(x.status || "").toLowerCase() === "rejected")
+				.map((x) => ({
+					source_type: "board",
+					scope_name: "게시판",
+					target_id: String(x.id || ""),
+					title_text: String(x.title || "-") || "-",
+					requested_by: String(x.author_name || x.author_email || "-"),
+					reviewed_by: String(x.reviewed_by || "-"),
+					requested_at: String(x.created_at || ""),
+					reviewed_at: String(x.reviewed_at || ""),
+					reject_reason: String(x.reject_reason || "-"),
+				}));
+			const merged = assetItems.concat(scheduleItems, boardItems);
+			merged.sort((a, b) => String(b.reviewed_at || b.requested_at || "").localeCompare(String(a.reviewed_at || a.requested_at || "")));
+			renderAssetRejectedItems(merged);
 		} catch (error) {
-			assetRejectedBody.innerHTML = `<tr><td colspan="9">${esc(error?.message || "반려된 목록을 불러오지 못했습니다.")}</td></tr>`;
+			assetRejectedBody.innerHTML = `<tr><td colspan="8">${esc(error?.message || "반려된 목록을 불러오지 못했습니다.")}</td></tr>`;
 		}
 	}
 
@@ -398,12 +666,14 @@ function esc(value) {
 			adminMainGrid?.classList.remove("admin-single-mode");
 			return;
 		}
-		const activeId = ADMIN_SECTION_IDS.includes(requestedId) ? requestedId : "adminIssueTab";
+		const normalizedId = requestedId === "adminBoardApprovalTab" ? "adminAssetApprovalTab" : requestedId;
+		const activeId = ADMIN_SECTION_IDS.includes(requestedId) ? normalizedId : "adminIssueTab";
 		for (const id of ADMIN_SECTION_IDS) {
-			const section = document.getElementById(id);
+			const sectionId = id === "adminBoardApprovalTab" ? "adminAssetApprovalTab" : id;
+			const section = document.getElementById(sectionId);
 			if (section) {
-				section.hidden = id !== activeId;
-				section.style.gridColumn = id === activeId ? "1 / -1" : "";
+				section.hidden = sectionId !== activeId;
+				section.style.gridColumn = sectionId === activeId ? "1 / -1" : "";
 			}
 		}
 		adminMainGrid?.classList.add("admin-single-mode");
@@ -412,6 +682,14 @@ function esc(value) {
 	memberBody.addEventListener("click", async (event) => {
 		const target = event.target;
 		if (!(target instanceof HTMLElement)) return;
+
+		const editEmail = target.closest("[data-edit-member]")?.getAttribute("data-edit-member") || target.getAttribute("data-edit-member");
+		if (editEmail) {
+			const memberData = allMembers.find((m) => String(m.email || "").toLowerCase() === editEmail);
+			if (memberData) openMemberEditModal(memberData);
+			else window.alert("회원 정보를 찾을 수 없습니다.");
+			return;
+		}
 
 		const approveEmail = target.getAttribute("data-approve-member");
 		const toggleEmail = target.getAttribute("data-toggle-login-member");
@@ -459,6 +737,107 @@ function esc(value) {
 			}
 		} catch (error) {
 			window.alert(error?.message || "요청 처리 중 오류가 발생했습니다.");
+		}
+	});
+
+	// ── 수정 모달 이벤트 ─────────────────────────────────────────────
+	document.querySelectorAll("[data-close-member-edit]").forEach((el) => {
+		el.addEventListener("click", closeMemberEditModal);
+	});
+
+	memberEditForm?.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		const email = String(memberEditEmail?.value || "").trim().toLowerCase();
+		if (!email) return;
+		const isCoreAdmin = CORE_ADMINS.has(email);
+		const saveBtn = document.getElementById("memberEditSaveBtn");
+		if (saveBtn) saveBtn.disabled = true;
+		try {
+			const payload = {
+				name: String(memberEditName?.value || "").trim(),
+				title: String(memberEditTitle?.value || "").trim(),
+				phone: String(memberEditPhone?.value || "").trim(),
+				birth: String(memberEditBirth?.value || "").trim(),
+				address: String(memberEditAddress?.value || "").trim(),
+			};
+			if (!isCoreAdmin) {
+				payload.role = String(memberEditRole?.value || "user");
+				payload.approved = Boolean(memberEditApproved?.checked);
+				payload.can_login = Boolean(memberEditCanLogin?.checked);
+			}
+			if (canManageGameAccess && memberEditGameAccess && !memberEditGameAccess.disabled) {
+				payload.game_access = Boolean(memberEditGameAccess.checked);
+			}
+			await requestJson(`/api/admin/users/${encodeURIComponent(email)}`, {
+				method: "PUT",
+				body: JSON.stringify(payload),
+			});
+			closeMemberEditModal();
+			await refreshMembers();
+		} catch (error) {
+			window.alert(error?.message || "저장 중 오류가 발생했습니다.");
+		} finally {
+			if (saveBtn) saveBtn.disabled = false;
+		}
+	});
+
+	memberPasswordForm?.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		const email = String(memberEditEmail?.value || "").trim().toLowerCase();
+		const password = String(memberPasswordInput?.value || "").trim();
+		if (!email || !password) return;
+		const saveBtn = document.getElementById("memberPasswordSaveBtn");
+		if (saveBtn) saveBtn.disabled = true;
+		try {
+			await requestJson(`/api/admin/users/${encodeURIComponent(email)}`, {
+				method: "PUT",
+				body: JSON.stringify({ password }),
+			});
+			if (memberPasswordInput) memberPasswordInput.value = "";
+			window.alert("비밀번호가 변경되었습니다.");
+		} catch (error) {
+			window.alert(error?.message || "비밀번호 변경 중 오류가 발생했습니다.");
+		} finally {
+			if (saveBtn) saveBtn.disabled = false;
+		}
+	});
+
+	// ── 추가 모달 이벤트 ─────────────────────────────────────────────
+	adminMemberAddBtn?.addEventListener("click", openMemberAddModal);
+
+	document.querySelectorAll("[data-close-member-add]").forEach((el) => {
+		el.addEventListener("click", closeMemberAddModal);
+	});
+
+	memberAddForm?.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		const email = String(memberAddEmail?.value || "").trim().toLowerCase();
+		const password = String(memberAddPassword?.value || "").trim();
+		if (!email || !password) return;
+		const saveBtn = document.getElementById("memberAddSaveBtn");
+		if (saveBtn) saveBtn.disabled = true;
+		try {
+			const payload = {
+				email,
+				password,
+				name: String(memberAddName?.value || "").trim(),
+				role: String(memberAddRole?.value || "user"),
+				title: String(memberAddTitle?.value || "").trim(),
+				phone: String(memberAddPhone?.value || "").trim(),
+				approved: Boolean(memberAddApproved?.checked),
+				can_login: Boolean(memberAddCanLogin?.checked),
+			};
+			await requestJson("/api/admin/users", {
+				method: "POST",
+				body: JSON.stringify(payload),
+			});
+			closeMemberAddModal();
+			await refreshMembers();
+			window.alert(`${email} 계정이 생성되었습니다.`);
+		} catch (error) {
+			window.alert(error?.message || "계정 생성 중 오류가 발생했습니다.");
+		} finally {
+			if (saveBtn) saveBtn.disabled = false;
 		}
 	});
 
@@ -652,12 +1031,28 @@ function esc(value) {
 					});
 					continue;
 				}
+				if (sourceType === "board") {
+					if (decisionType === "approve") {
+						await requestJson(`/api/board/posts/${encodeURIComponent(id)}/approve`, {
+							method: "POST",
+							body: JSON.stringify({}),
+						});
+						continue;
+					}
+					await requestJson(`/api/board/posts/${encodeURIComponent(id)}/reject`, {
+						method: "POST",
+						body: JSON.stringify({ reason }),
+					});
+					continue;
+				}
 				throw new Error("지원하지 않는 요청 유형입니다.");
 			}
 			await refreshAssetDeleteRequests();
 			await refreshAssetDeletedItems();
 			await refreshAssetRejectedItems();
 			await refreshActivityLog();
+			window.location.hash = decisionType === "approve" ? "#adminAssetDeletedTab" : "#adminAssetRejectedTab";
+			applyAdminHashMode();
 			if (decisionBulkRejectReasonInput) decisionBulkRejectReasonInput.value = "";
 			preferredDecisionId = "";
 			renderDecisionQueue(pendingDeleteRequests);
@@ -762,6 +1157,7 @@ function esc(value) {
 
 	window.addEventListener("hashchange", applyAdminHashMode);
 	applyAdminHashMode();
+	bindMemberToolbarEvents();
 	refreshMembers();
 	refreshAssetDeleteRequests();
 	refreshAssetDeletedItems();
@@ -789,9 +1185,9 @@ function esc(value) {
 		if (!container) return;
 		container.innerHTML = '<p class="hint"><i class="fas fa-circle-notch fa-spin"></i> 불러오는 중...</p>';
 		try {
-			const r = await fetch('/api/board/posts', { credentials: 'include' });
-			const data = await r.json();
+			const data = await requestJson('/api/board/posts', { method: 'GET', credentials: 'include' });
 			let items = data.items || [];
+			const boardItemMap = new Map(items.map((p) => [String(p.id || ''), p]));
 			if (boardAdminFilter === 'pending') {
 				items = items.filter(p => p.status === 'pending');
 			}
@@ -823,6 +1219,8 @@ function esc(value) {
 					<div class="board-admin-post-actions">
 						${p.status !== 'approved' ? `<button type="button" class="btn-approve board-admin-approve-btn" data-id="${escBoard(p.id)}" style="padding:6px 12px;font-size:0.8rem;"><i class="fas fa-check"></i> 승인</button>` : ''}
 						${p.status !== 'rejected' ? `<button type="button" class="btn-reject board-admin-reject-btn" data-id="${escBoard(p.id)}" style="padding:6px 12px;font-size:0.8rem;"><i class="fas fa-times"></i> 반려</button>` : ''}
+						<button type="button" class="btn-warning board-admin-edit-btn" data-id="${escBoard(p.id)}" style="padding:6px 12px;font-size:0.8rem;"><i class="fas fa-pen"></i> 수정</button>
+						<button type="button" class="btn-ghost board-admin-delete-btn" data-id="${escBoard(p.id)}" style="padding:6px 12px;font-size:0.8rem;"><i class="fas fa-trash"></i> 삭제</button>
 						<a href="/board#${escBoard(p.id)}" target="_blank" style="padding:6px 12px;font-size:0.8rem;border:1px solid #c7d5eb;border-radius:7px;color:#334155;text-decoration:none;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-external-link-alt"></i> 보기</a>
 					</div>
 				</div>`;
@@ -834,8 +1232,10 @@ function esc(value) {
 					const id = btn.dataset.id;
 					btn.disabled = true;
 					try {
-						await fetch(`/api/board/posts/${encodeURIComponent(id)}/approve`, { method: 'POST', credentials: 'include' });
+						await requestJson(`/api/board/posts/${encodeURIComponent(id)}/approve`, { method: 'POST', credentials: 'include', body: JSON.stringify({}) });
 						await refreshAdminBoardPosts();
+						await refreshAssetRejectedItems();
+						await refreshActivityLog();
 					} catch (e) { alert('승인 실패: ' + e.message); btn.disabled = false; }
 				});
 			});
@@ -848,14 +1248,73 @@ function esc(value) {
 					if (reason === null) return;
 					btn.disabled = true;
 					try {
-						await fetch(`/api/board/posts/${encodeURIComponent(id)}/reject`, {
+						await requestJson(`/api/board/posts/${encodeURIComponent(id)}/reject`, {
 							method: 'POST',
 							credentials: 'include',
-							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({ reason }),
 						});
 						await refreshAdminBoardPosts();
+						await refreshAssetRejectedItems();
+						await refreshActivityLog();
 					} catch (e) { alert('반려 실패: ' + e.message); btn.disabled = false; }
+				});
+			});
+
+			container.querySelectorAll('.board-admin-edit-btn').forEach(btn => {
+				btn.addEventListener('click', async () => {
+					const id = String(btn.dataset.id || '');
+					const post = boardItemMap.get(id);
+					if (!post) {
+						window.alert('게시글 정보를 찾지 못했습니다. 새로고침 후 다시 시도해 주세요.');
+						return;
+					}
+					const nextTitle = window.prompt('제목을 입력하세요.', String(post.title || ''));
+					if (nextTitle === null) return;
+					const nextContent = window.prompt('내용을 입력하세요.', String(post.content || ''));
+					if (nextContent === null) return;
+					const nextPriorityRaw = window.prompt('우선순위(High, Medium, Low)', String(post.priority || 'Medium'));
+					if (nextPriorityRaw === null) return;
+					const normalizedPriority = String(nextPriorityRaw || 'Medium').trim();
+					const nextPriority = ['High', 'Medium', 'Low'].includes(normalizedPriority) ? normalizedPriority : 'Medium';
+					btn.disabled = true;
+					try {
+						await requestJson(`/api/board/posts/${encodeURIComponent(id)}`, {
+							method: 'PUT',
+							credentials: 'include',
+							body: JSON.stringify({
+								title: String(nextTitle).trim(),
+								author_name: String(post.author_name || ''),
+								content: String(nextContent).trim(),
+								priority: nextPriority,
+							}),
+						});
+						await refreshAdminBoardPosts();
+						await refreshActivityLog();
+					} catch (e) {
+						window.alert('수정 실패: ' + (e.message || '오류가 발생했습니다.'));
+						btn.disabled = false;
+					}
+				});
+			});
+
+			container.querySelectorAll('.board-admin-delete-btn').forEach(btn => {
+				btn.addEventListener('click', async () => {
+					const id = String(btn.dataset.id || '');
+					const ok = window.confirm('이 게시글을 삭제하시겠습니까?');
+					if (!ok) return;
+					btn.disabled = true;
+					try {
+						await requestJson(`/api/board/posts/${encodeURIComponent(id)}`, {
+							method: 'DELETE',
+							credentials: 'include',
+						});
+						await refreshAdminBoardPosts();
+						await refreshActivityLog();
+						await refreshAssetDeletedItems();
+					} catch (e) {
+						window.alert('삭제 실패: ' + (e.message || '오류가 발생했습니다.'));
+						btn.disabled = false;
+					}
 				});
 			});
 		} catch (e) {
@@ -875,5 +1334,7 @@ function esc(value) {
 	document.getElementById('adminBoardRefreshBtn')?.addEventListener('click', refreshAdminBoardPosts);
 
 	refreshAdminBoardPosts();
-	setInterval(refreshAdminBoardPosts, 60000);
+	setInterval(() => {
+		refreshAdminBoardPosts().catch(() => {});
+	}, 60000);
 })();

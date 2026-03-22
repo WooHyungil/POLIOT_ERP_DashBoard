@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>게시판 – CCI</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260320l" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260321d" />
   <script src="/static/auto_logout.js"></script>
 </head>
 <body class="has-side-nav">
@@ -23,7 +23,7 @@
           <div>
             <p class="eyebrow">팀 커뮤니케이션</p>
             <h1>게시판</h1>
-            <p class="meta-text">팀원들과 공유하고 싶은 내용을 게시하세요. 관리자 승인 후 공개됩니다.</p>
+            <p class="meta-text">팀원들과 공유하고 싶은 내용을 게시하세요. 일반 사용자의 글은 관리자 승인 후 공개됩니다.</p>
           </div>
         </div>
         <nav class="topnav">
@@ -127,7 +127,15 @@
                 <button type="button" id="commentReplyCancelBtn" class="btn-ghost" style="padding:2px 8px;">대댓글 취소</button>
               </div>
               <textarea id="commentInput" rows="3" placeholder="댓글을 입력하세요...  (Ctrl+Enter 로 전송)" maxlength="1000"></textarea>
+              <div class="board-comment-upload-row" id="commentDropZone">
+                <label for="commentFiles" class="btn-ghost" style="cursor:pointer;">📎 파일/이미지</label>
+                <input type="file" id="commentFiles" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.zip,.csv" style="display:none;" />
+                <small class="hint">댓글 파일 최대 5개, 파일당 10MB</small>
+              </div>
+              <div id="commentFilePreview" class="board-file-preview-list"></div>
               <div class="board-comment-form-actions">
+                <button type="button" id="commentEmojiBtn" class="btn-ghost" title="이모지">😀 이모지</button>
+                <div id="commentEmojiPicker" hidden></div>
                 <span id="commentCharCount" class="board-char-count">0 / 1000</span>
                 <button type="submit" id="commentSubmitBtn" class="board-comment-submit"><i class="fas fa-paper-plane"></i> 댓글 등록</button>
               </div>
@@ -195,7 +203,7 @@
 
             <div class="board-form-notice">
               <i class="fas fa-info-circle"></i>
-              게시글은 관리자 승인 후 게시판에 공개됩니다. High 중요도 글은 승인 후 모든 페이지의 긴급 알림 영역에 표시됩니다.
+              게시글은 관리자 승인 후 게시판에 공개됩니다. 승인된 글은 중요도에 따라 하단 알림 색상으로 표시됩니다.
             </div>
 
             <div class="board-form-actions">
@@ -212,8 +220,12 @@
 
   <div id="toastStack" class="toast-stack"></div>
   <div id="boardUrgentFloat" class="board-urgent-float" hidden></div>
+  <div id="boardImageLightbox" hidden style="position:fixed;inset:0;background:rgba(15,23,42,.78);z-index:12000;display:flex;align-items:center;justify-content:center;padding:20px;">
+    <button type="button" id="boardImageLightboxClose" style="position:absolute;top:18px;right:18px;border:none;background:#111827;color:#fff;border-radius:999px;width:36px;height:36px;cursor:pointer;font-size:18px;">✕</button>
+    <img id="boardImageLightboxImg" src="" alt="preview" style="max-width:92vw;max-height:88vh;border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.45);" />
+  </div>
 
-  <script src="/static/side_nav.js?v=20260319c"></script>
-  <script src="/static/board.js?v=20260320d"></script>
+  <script src="/static/side_nav.js?v=20260321f"></script>
+  <script src="/static/board.js?v=20260322l"></script>
 </body>
 </html>

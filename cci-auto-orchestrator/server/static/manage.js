@@ -14,6 +14,21 @@ let schedules = [];
 let currentUser = null;
 let scheduleViewMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
+async function requestJson(url, options = {}) {
+  const res = await fetch(url, { credentials: "same-origin", ...options });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(String(data?.detail || res.statusText || "요청 처리 중 오류가 발생했습니다.").trim());
+  }
+  return data;
+}
+
+function setAssetTableMessage(message, isError = false) {
+  const body = document.getElementById("assetRows");
+  if (!body) return;
+  body.innerHTML = `<tr><td colspan="40" style="padding:16px;text-align:center;color:${isError ? "#b91c1c" : "#475569"};">${esc(message)}</td></tr>`;
+}
+
 const SCHEDULE_TYPE_META = {
   vacation: { label: "휴가", className: "vacation" },
   annual_leave: { label: "연차", className: "annual_leave" },
@@ -456,28 +471,27 @@ function renderScheduleAll() {
 }
 
 async function refreshCurrentUser() {
-  const res = await fetch(`/api/auth/me?_ts=${Date.now()}`, { cache: "no-store" });
-  if (!res.ok) {
+  try {
+    const data = await requestJson(`/api/auth/me?_ts=${Date.now()}`, { cache: "no-store" });
+    currentUser = data?.user || null;
+  } catch {
     currentUser = null;
-    return;
   }
-  const data = await res.json();
-  currentUser = data?.user || null;
 }
 
 async function refreshSchedules() {
-  const res = await fetch(`/api/manage/schedules?_ts=${Date.now()}`, { cache: "no-store" });
-  if (!res.ok) {
+  try {
+    const data = await requestJson(`/api/manage/schedules?_ts=${Date.now()}`, { cache: "no-store" });
+    schedules = Array.isArray(data.items) ? data.items.map((row) => ({
+      ...row,
+      type: normalizeScheduleType(row?.type),
+      approval_status: normalizeApprovalStatus(row?.approval_status),
+    })) : [];
+  } catch {
     schedules = [];
     renderScheduleAll();
     return;
   }
-  const data = await res.json();
-  schedules = Array.isArray(data.items) ? data.items.map((row) => ({
-    ...row,
-    type: normalizeScheduleType(row?.type),
-    approval_status: normalizeApprovalStatus(row?.approval_status),
-  })) : [];
   renderScheduleAll();
 }
 
@@ -709,11 +723,19 @@ async function refreshEmployees() {
 }
 
 async function refreshAssets() {
-  const res = await fetch(`/api/admin/assets?_ts=${Date.now()}`, { cache: "no-store" });
-  const data = await res.json();
-  assets = Array.isArray(data.items) ? data.items : [];
-  renderAssets();
-  filterTableRows();
+  try {
+    const data = await requestJson(`/api/admin/assets?_ts=${Date.now()}`, { cache: "no-store" });
+    assets = Array.isArray(data.items) ? data.items : [];
+    if (!assets.length) {
+      setAssetTableMessage("등록된 자산이 없습니다.");
+      return;
+    }
+    renderAssets();
+    filterTableRows();
+  } catch (error) {
+    assets = [];
+    setAssetTableMessage(error?.message || "자산 목록을 불러오지 못했습니다.", true);
+  }
 }
 
 async function maybeMoveToAdminDecisionPage() {
@@ -984,8 +1006,9 @@ async function saveAsset(ev) {
 
   const method = id ? "PUT" : "POST";
   const url = id ? `/api/admin/assets/${encodeURIComponent(id)}` : "/api/admin/assets";
-  await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  await requestJson(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   resetAssetForm();
+  closeAssetModal();
   await refreshAssets();
 }
 
