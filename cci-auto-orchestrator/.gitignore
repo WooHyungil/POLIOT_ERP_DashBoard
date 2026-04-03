@@ -49,3 +49,11 @@ Thumbs.db
 # Editor backups
 *.bak
 
+# Generated snapshots and local secrets
+config/history/
+config/core/session_secret.key
+
+# Nested repository metadata should never be tracked
+server/static/dokdo-public/.git
+server/static/webteam/.git
+
