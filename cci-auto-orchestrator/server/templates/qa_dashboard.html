@@ -6,9 +6,9 @@
   <title>CCI QA Dashboard</title>
   <!-- FontAwesome CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260330b" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260404m" />
 </head>
-<body class="has-side-nav">
+<body class="has-side-nav qa-dashboard-page">
   {% include "components/side_nav.html" %}
   <main class="container">
     <header class="topbar topbar-brand">
@@ -34,80 +34,11 @@
       </nav>
     </header>
 
-    <section class="card card-guidance qa-erp-toolbar" aria-label="QA 빠른 작업">
-      <div class="qa-erp-toolbar-title">QA 작업 툴바</div>
-      <div class="button-row">
-        <button id="defectSheetRefreshBtn" type="button" class="btn-secondary">DefectList_Raw 최신화</button>
-      </div>
-      <p id="defectSheetSyncHint" class="hint">DefectList_Raw 최신화 버튼으로 시트 변경분을 즉시 반영할 수 있습니다.</p>
-    </section>
-
-    <section class="card qa-mid-menu" aria-label="QA 중메뉴">
-      <div class="qa-mid-menu-head">
-        <h2>QA 중메뉴</h2>
-        <p class="hint">필요한 영역으로 바로 이동하거나 단일 모드로 집중해서 확인할 수 있습니다.</p>
-      </div>
-      <div class="qa-mid-menu-links">
-        <a class="navlink" href="/qa">전체 보기</a>
-        <a class="navlink" data-qa-target-hash="#closingSummarySection" href="/qa#closingSummarySection">Summary</a>
-        <a class="navlink" data-qa-target-hash="#regularReleaseSection" href="/qa#regularReleaseSection">정기배포 현황</a>
-        <a class="navlink" data-qa-target-hash="#recentIssueChartSection" href="/qa#recentIssueChartSection">최근 이슈 통계</a>
-        <a class="navlink" href="/qa/full-tc">Full_TC 관리</a>
-      </div>
-    </section>
-
-    <section class="grid grid-wide" id="qaOverviewSection">
-      <article class="card card-guidance" style="grid-column: 1 / -1;">
-        <h2>QA 빠른 메뉴</h2>
-        <p class="hint">핵심 중메뉴를 목적별로 구성했습니다. 데이터 확인, 관리 이동, 개요 복귀를 빠르게 수행하세요.</p>
-        <div class="qa-shortcut-grid">
-          <a class="qa-shortcut-card" data-qa-target-hash="#closingSummarySection" href="/qa#closingSummarySection">
-            <span class="qa-shortcut-icon"><i class="fas fa-chart-pie"></i></span>
-            <strong>Summary</strong>
-            <small>마감 통계와 상세 티켓 분석</small>
-          </a>
-          <a class="qa-shortcut-card" data-qa-target-hash="#regularReleaseSection" href="/qa#regularReleaseSection">
-            <span class="qa-shortcut-icon"><i class="fas fa-rocket"></i></span>
-            <strong>정기배포 현황</strong>
-            <small>버전별/일자별 배포 이슈 추적</small>
-          </a>
-          <a class="qa-shortcut-card" data-qa-target-hash="#recentIssueChartSection" href="/qa#recentIssueChartSection">
-            <span class="qa-shortcut-icon"><i class="fas fa-chart-line"></i></span>
-            <strong>최근 이슈 통계</strong>
-            <small>상태/그룹/지역 기반 필터 분석</small>
-          </a>
-          <a class="qa-shortcut-card" href="/qa/full-tc">
-            <span class="qa-shortcut-icon"><i class="fas fa-table-cells-large"></i></span>
-            <strong>Full_TC 관리</strong>
-            <small>시트별 N 결과와 LABEL 통계를 한 번에 확인</small>
-          </a>
-          <a class="qa-shortcut-card" href="/admin#adminPeopleTab" data-requires-admin="true">
-            <span class="qa-shortcut-icon"><i class="fas fa-user-shield"></i></span>
-            <strong>관리자 페이지</strong>
-            <small>인원/승인/운영 이력 관리</small>
-          </a>
-          <a class="qa-shortcut-card" href="/">
-            <span class="qa-shortcut-icon"><i class="fas fa-house"></i></span>
-            <strong>개요로 이동</strong>
-            <small>통합 현황 보드로 복귀</small>
-          </a>
-        </div>
-      </article>
-      <article class="card card-status" style="grid-column: 1 / -1;">
-        <h2>품질 통계</h2>
-        <div id="qualityStats" class="stats-grid"></div>
-      </article>
-      <article class="card card-status" style="grid-column: 1 / -1;">
-        <h2>역할별 빠른 상태 카드</h2>
-        <p class="hint">로그인 권한에 맞춘 핵심 작업 상태를 카드로 제공합니다.</p>
-        <div id="qaPersonaCards" class="qa-persona-cards"></div>
-      </article>
-    </section>
-
     <section class="grid grid-wide" id="recentIssueChartSection">
       <article class="card card-table" style="grid-column: 1 / -1;">
         <div class="qa-section-head">
           <h2>최근 이슈 통계 차트</h2>
+          <button id="recentIssueRefreshBtn" type="button" class="btn-secondary btn-sm"><i class="fa fa-rotate-right"></i> 새로고침</button>
           <div class="qa-filter-tools">
             <div class="qa-filter-item">
               <label>시작</label>
@@ -130,20 +61,22 @@
 
         <div class="qa-region-filter-wrap">
           <h3>Region 필터</h3>
-          <div id="regionFilterContainer" class="button-row qa-region-filter-row"></div>
+          <div id="regionFilterContainer" class="qa-region-filter-row"></div>
         </div>
 
-        <h3>티켓 상태 현황</h3>
-        <div class="button-row status-filter-row" id="recentStatusToolbar">
-          <button type="button" class="btn-ghost recent-status-btn" data-status="Open">Open</button>
-          <button type="button" class="btn-ghost recent-status-btn" data-status="Resolved">Resolved</button>
-          <button type="button" class="btn-ghost recent-status-btn" data-status="In Progress">In Progress</button>
-          <button type="button" class="btn-ghost recent-status-btn" data-status="Reopened">Reopened</button>
-          <button type="button" class="btn-ghost recent-status-btn" data-status="Pending">Pending</button>
-          <span class="filter-sep">|</span>
-          <button type="button" class="btn-ghost recent-group-btn" data-group="KOA">KOA</button>
-          <button type="button" class="btn-ghost recent-group-btn" data-group="HOA">HOA</button>
-          <button type="button" class="btn-ghost recent-group-btn" data-group="GOA">GOA</button>
+        <div class="qa-chip-section-head">
+          <span class="qa-chip-section-label"><i class="fa fa-circle-dot" style="color:#94a3b8;font-size:.75em;"></i>&nbsp;티켓 상태 현황</span>
+        </div>
+        <div class="status-filter-row qa-chip-row" id="recentStatusToolbar">
+          <button type="button" class="recent-status-btn" data-status="Open">Open</button>
+          <button type="button" class="recent-status-btn" data-status="Resolved">Resolved</button>
+          <button type="button" class="recent-status-btn" data-status="In Progress">In Progress</button>
+          <button type="button" class="recent-status-btn" data-status="Reopened">Reopened</button>
+          <button type="button" class="recent-status-btn" data-status="Pending">Pending</button>
+          <span class="filter-sep"></span>
+          <button type="button" class="recent-group-btn" data-group="KOA">KOA</button>
+          <button type="button" class="recent-group-btn" data-group="HOA">HOA</button>
+          <button type="button" class="recent-group-btn" data-group="GOA">GOA</button>
         </div>
         <div id="recentActiveFilters" class="qa-active-filters"></div>
         <p id="recentStatusHint" class="hint"></p>
@@ -212,7 +145,10 @@
 
     <section class="grid" id="closingSummarySection">
       <article class="card card-table" style="grid-column: 1 / -1;">
-        <h2>Summary</h2>
+        <div class="button-row" style="justify-content: space-between; align-items:center; margin-bottom: 8px;">
+          <h2 style="margin:0;">Summary</h2>
+          <button id="closingSummaryRefreshBtn" type="button" class="btn-secondary btn-sm"><i class="fa fa-rotate-right"></i> 새로고침</button>
+        </div>
         <div id="closingSummaryTabs" class="button-row"></div>
         <div id="closingSummaryCards" class="stats-grid" style="margin-top:10px;"></div>
         <p id="closingSummaryHint" class="hint"></p>
@@ -222,16 +158,19 @@
             <tbody id="closingSummaryBody"></tbody>
           </table>
         </div>
-        <div class="button-row status-filter-row" id="closingSummaryDetailToolbar" style="margin-top:10px;">
-          <button type="button" class="btn-ghost closing-status-btn" data-status="Open">Open</button>
-          <button type="button" class="btn-ghost closing-status-btn" data-status="Resolved">Resolved</button>
-          <button type="button" class="btn-ghost closing-status-btn" data-status="In Progress">In Progress</button>
-          <button type="button" class="btn-ghost closing-status-btn" data-status="Reopened">Reopened</button>
-          <button type="button" class="btn-ghost closing-status-btn" data-status="Pending">Pending</button>
-          <span class="filter-sep">|</span>
-          <button type="button" class="btn-ghost closing-group-btn" data-group="KOA">KOA</button>
-          <button type="button" class="btn-ghost closing-group-btn" data-group="HOA">HOA</button>
-          <button type="button" class="btn-ghost closing-group-btn" data-group="GOA">GOA</button>
+        <div class="qa-chip-section-head" style="margin-top:16px;">
+          <span class="qa-chip-section-label"><i class="fa fa-circle-dot" style="color:#94a3b8;font-size:.75em;"></i>&nbsp;상태 / 그룹 필터</span>
+        </div>
+        <div class="status-filter-row qa-chip-row" id="closingSummaryDetailToolbar">
+          <button type="button" class="closing-status-btn" data-status="Open">Open</button>
+          <button type="button" class="closing-status-btn" data-status="Resolved">Resolved</button>
+          <button type="button" class="closing-status-btn" data-status="In Progress">In Progress</button>
+          <button type="button" class="closing-status-btn" data-status="Reopened">Reopened</button>
+          <button type="button" class="closing-status-btn" data-status="Pending">Pending</button>
+          <span class="filter-sep"></span>
+          <button type="button" class="closing-group-btn" data-group="KOA">KOA</button>
+          <button type="button" class="closing-group-btn" data-group="HOA">HOA</button>
+          <button type="button" class="closing-group-btn" data-group="GOA">GOA</button>
         </div>
         <p id="closingSummaryDetailHint" class="hint" style="margin-top:10px;"></p>
         <div class="table-wrap" style="margin-top:10px;">
@@ -257,6 +196,6 @@
   </main>
   <div id="toastStack" class="toast-stack"></div>
   <script src="/static/side_nav.js?v=20260330a"></script>
-  <script src="/static/qa_dashboard.js?v=20260330b"></script>
+  <script src="/static/qa_dashboard.js?v=20260404a"></script>
 </body>
 </html>

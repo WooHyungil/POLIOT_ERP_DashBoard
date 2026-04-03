@@ -2289,5 +2289,29 @@
       "대상: aj7592@poliot.co.kr",
       "role: user -> admin"
     ]
+  },
+  {
+    "title": "DefectList_Raw 최신화",
+    "kind": "updated",
+    "scope": "Data",
+    "updated_at": "2026-04-03T23:39:44",
+    "details": [
+      "시트: DefectList_Raw",
+      "범위: B5:R",
+      "반영 시각: 2026-04-03T23:39:44",
+      "이슈 건수: 0"
+    ]
+  },
+  {
+    "title": "DefectList_Raw 최신화",
+    "kind": "updated",
+    "scope": "Data",
+    "updated_at": "2026-04-03T23:45:54",
+    "details": [
+      "시트: DefectList_Raw",
+      "범위: B5:R",
+      "반영 시각: 2026-04-03T23:45:54",
+      "이슈 건수: 0"
+    ]
   }
 ]

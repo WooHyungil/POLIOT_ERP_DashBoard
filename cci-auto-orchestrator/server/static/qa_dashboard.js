@@ -23,6 +23,29 @@ let currentClosingStatus = "";
 let currentClosingGroups = [];
 let qaIsAdmin = false;
 
+async function fetchJsonOrThrow(url, options, label) {
+  const opts = Object.assign({ credentials: "same-origin" }, options || {});
+  const res = await fetch(url, opts);
+  if (res.status === 401 || res.status === 403) {
+    throw new Error("로그인이 만료되었습니다. 다시 로그인해 주세요.");
+  }
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const data = await res.json();
+      detail = String(data?.detail || data?.message || "").trim();
+    } catch {
+      try {
+        detail = String(await res.text()).trim();
+      } catch {
+        detail = "";
+      }
+    }
+    throw new Error(`${label || "요청"} 실패 (${res.status})${detail ? `: ${detail}` : ""}`);
+  }
+  return await res.json();
+}
+
 async function applyQaRoleGuard() {
   try {
     const res = await fetch("/api/auth/me", { credentials: "same-origin" });
@@ -180,11 +203,10 @@ function saveDateFilterToStorage() {
 function applyQaHashMode() {
   const hash = window.location.hash || "";
   const body = document.body;
-  const overview = document.getElementById("qaOverviewSection");
   const recent = document.getElementById("recentIssueChartSection");
   const regular = document.getElementById("regularReleaseSection");
   const closing = document.getElementById("closingSummarySection");
-  if (!overview || !recent || !regular || !closing) return;
+  if (!recent || !regular || !closing) return;
 
   const quickLinks = Array.from(document.querySelectorAll("[data-qa-target-hash]"));
   for (const link of quickLinks) {
@@ -197,7 +219,6 @@ function applyQaHashMode() {
   }
 
   if (hash === "#recentIssueChartSection") {
-    overview.hidden = false;
     recent.hidden = false;
     regular.hidden = true;
     closing.hidden = true;
@@ -205,7 +226,6 @@ function applyQaHashMode() {
     return;
   }
   if (hash === "#regularReleaseSection") {
-    overview.hidden = false;
     recent.hidden = true;
     regular.hidden = false;
     closing.hidden = true;
@@ -213,7 +233,6 @@ function applyQaHashMode() {
     return;
   }
   if (hash === "#closingSummarySection") {
-    overview.hidden = false;
     recent.hidden = true;
     regular.hidden = true;
     closing.hidden = false;
@@ -221,10 +240,9 @@ function applyQaHashMode() {
     return;
   }
 
-  overview.hidden = false;
-  recent.hidden = true;
-  regular.hidden = true;
-  closing.hidden = true;
+  recent.hidden = false;
+  regular.hidden = false;
+  closing.hidden = false;
   if (body) body.classList.add("qa-mode-all");
 }
 
@@ -347,8 +365,7 @@ async function refreshClosingSummaryDetails(force, filter) {
   if (f.phase) qs.set("phase", String(f.phase));
   if (f.group) qs.set("group", String(f.group));
   if (f.severity) qs.set("severity", String(f.severity));
-  const res = await fetch(`/api/stats/closing-summary/detail?${qs.toString()}`);
-  const data = await res.json();
+  const data = await fetchJsonOrThrow(`/api/stats/closing-summary/detail?${qs.toString()}`, {}, "Summary 상세");
   currentClosingDetailFilter = {
     cycle: String(data?.cycle || f.cycle || "").trim(),
     phase: String(data?.phase || f.phase || "").trim(),
@@ -451,8 +468,7 @@ async function refreshClosingSummary(force, cycle) {
   const qs = new URLSearchParams();
   if (force) qs.set("force", "true");
   if (selected) qs.set("cycle", selected);
-  const res = await fetch(`/api/stats/closing-summary?${qs.toString()}`);
-  const data = await res.json();
+  const data = await fetchJsonOrThrow(`/api/stats/closing-summary?${qs.toString()}`, {}, "Summary");
 
   const cycles = Array.isArray(data?.cycles) ? data.cycles : [];
   currentClosingCycle = String(data?.selected_cycle || selected || "").trim();
@@ -678,8 +694,7 @@ function exportMemberSearchTable() {
 
 async function refreshIssueStats(force) {
   const qs = force ? "?force=true" : "";
-  const res = await fetch(`/api/stats/defects${qs}`);
-  const data = await res.json();
+  const data = await fetchJsonOrThrow(`/api/stats/defects${qs}`, {}, "최근 이슈 통계");
   renderIssueChart(data);
 }
 
@@ -695,8 +710,7 @@ async function refreshDefectSheetNow(opts) {
     btn.innerText = "최신화 중...";
   }
   try {
-    const res = await fetch("/api/stats/defects/refresh", { method: "POST" });
-    const data = await res.json();
+    const data = await fetchJsonOrThrow("/api/stats/defects/refresh", { method: "POST" }, "DefectList 최신화");
     const jobs = [
       refreshQa(),
       refreshIssueStats(true),
@@ -1238,18 +1252,15 @@ async function refreshRegularReleaseDetails(version, date, force, fullTcOnly) {
 
 async function refreshRegularRelease(force) {
   const qs = force ? "?force=true" : "";
-  const res = await fetch(`/api/stats/regular-release${qs}`);
-  const data = await res.json();
+  const data = await fetchJsonOrThrow(`/api/stats/regular-release${qs}`, {}, "정기배포");
   renderRegularRelease(data);
 }
 
 async function refreshQa() {
-  const [dashboardResp, validateResp] = await Promise.all([
-    fetch("/api/dashboard"),
-    fetch("/api/devices/validate"),
+  const [dashboard, validate] = await Promise.all([
+    fetchJsonOrThrow("/api/dashboard", {}, "실행 요약"),
+    fetchJsonOrThrow("/api/devices/validate", {}, "단말 검증"),
   ]);
-  const dashboard = await dashboardResp.json();
-  const validate = await validateResp.json();
 
   const summary = document.getElementById("summary");
   const systemStats = document.getElementById("systemStats");
@@ -1430,21 +1441,15 @@ async function bootstrapQaDashboard() {
   applyQaHashMode();
   window.addEventListener("hashchange", applyQaHashMode);
 
-  refreshQa();
-  if (qaIsAdmin) {
-    refreshIssueStats(false).catch((e) => toast(`최근 이슈 통계 조회 실패: ${String(e)}`, "error"));
-  }
+  refreshIssueStats(false).catch((e) => toast(`최근 이슈 통계 조회 실패: ${String(e)}`, "error"));
   refreshRecentStatusIssues("Open", [], false, [], "", "").catch((e) => toast(`상태 조회 실패: ${String(e)}`, "error"));
   refreshRegularRelease(false).catch((e) => toast(`정기배포 조회 실패: ${String(e)}`, "error"));
   refreshClosingSummary(false, "").catch((e) => toast(`마감 통계 조회 실패: ${String(e)}`, "error"));
   refreshClosingSummaryDetails(false, { cycle: "", phase: "", group: "", severity: "" }).catch((e) => toast(`Summary 상세 조회 실패: ${String(e)}`, "error"));
 
-  setInterval(refreshQa, 3000);
-  if (qaIsAdmin) {
-    setInterval(function () {
-      refreshIssueStats(false).catch(function () {});
-    }, 15000);
-  }
+  setInterval(function () {
+    refreshIssueStats(false).catch(function () {});
+  }, 30000);
   setInterval(function () {
     refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], false, currentRecentRegions || [], currentRecentStartDate || "", currentRecentEndDate || "").catch(function () {});
   }, 20000);
@@ -1486,6 +1491,16 @@ document.getElementById("recentPresetAllBtn")?.addEventListener("click", functio
 });
 
 document.getElementById("recentClearFiltersBtn")?.addEventListener("click", clearRecentFilters);
+document.getElementById("recentIssueRefreshBtn")?.addEventListener("click", function () {
+  refreshIssueStats(true).catch((e) => toast(`최근 이슈 통계 조회 실패: ${String(e)}`, "error"));
+  refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], true, currentRecentRegions || [], currentRecentStartDate || "", currentRecentEndDate || "")
+    .catch((e) => toast(`상태 조회 실패: ${String(e)}`, "error"));
+});
+document.getElementById("closingSummaryRefreshBtn")?.addEventListener("click", function () {
+  refreshClosingSummary(true, currentClosingCycle || "").catch((e) => toast(`마감 통계 조회 실패: ${String(e)}`, "error"));
+  refreshClosingSummaryDetails(true, currentClosingDetailFilter || { cycle: currentClosingCycle || "", phase: "", group: "", severity: "" })
+    .catch((e) => toast(`Summary 상세 조회 실패: ${String(e)}`, "error"));
+});
 // ===== 공용 테이블 컬럼 필터 시스템 =====
 // recentStatusTable, regularReleaseDetailTable, closingSummaryDetailTable 에 적용
 

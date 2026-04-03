@@ -5482,7 +5482,7 @@ def _load_git_worktree_updates() -> list[dict]:
 def _build_auto_refresh_update(force: bool = False) -> dict:
     defect = _get_cached_google_defect_stats(force=bool(force))
     company = _get_cached_company_defect_stats(force=bool(force))
-    regular = _build_regular_release_stats(company.get("issues", []))
+    regular = _build_regular_release_stats(company.get("all_issues", []) or company.get("issues", []))
     return {
         "source": "system",
         "title": "데이터 최신화 상태",
@@ -6313,11 +6313,54 @@ def _cell_text_from_tuple(row: tuple, col_index_1_based: int) -> str:
     if idx >= len(row):
         return ""
     value = row[idx]
+    if hasattr(value, "value"):
+        value = value.value
     return "" if value is None else str(value).strip()
 
 
+def _cell_obj_from_tuple(row: tuple, col_index_1_based: int):
+    idx = int(col_index_1_based) - 1
+    if idx < 0 or idx >= len(row):
+        return None
+    value = row[idx]
+    if hasattr(value, "value") and hasattr(value, "font"):
+        return value
+    return None
+
+
+def _is_red_color(color) -> bool:
+    if color is None:
+        return False
+    rgb = str(getattr(color, "rgb", "") or "").upper().strip()
+    if rgb:
+        rgb = rgb[-6:]
+        # 빨간 계열(R 높은 값, G/B 낮은 값)로 간주
+        if re.fullmatch(r"[0-9A-F]{6}", rgb):
+            r = int(rgb[0:2], 16)
+            g = int(rgb[2:4], 16)
+            b = int(rgb[4:6], 16)
+            return r >= 180 and g <= 90 and b <= 90
+    return False
+
+
+def _is_red_font_cell(cell) -> bool:
+    if cell is None:
+        return False
+    font = getattr(cell, "font", None)
+    color = getattr(font, "color", None)
+    return _is_red_color(color)
+
+
+def _result_text_from_tuple(row: tuple, col_index_1_based: int) -> str:
+    # 사용자 규칙: 브랜드 결과 셀 텍스트가 빨간색이면 공란 취급
+    cell_obj = _cell_obj_from_tuple(row, col_index_1_based)
+    if _is_red_font_cell(cell_obj):
+        return ""
+    return _cell_text_from_tuple(row, col_index_1_based)
+
+
 def _is_n_result(value: str) -> bool:
-    return str(value or "").strip().upper() == "N"
+    return _normalize_full_tc_result(value) == "fail"
 
 
 def _normalize_full_tc_result(value: str) -> str:
@@ -6334,6 +6377,23 @@ def _normalize_full_tc_result(value: str) -> str:
     if compact in {"NA", "N/A", "NOTAPPLICABLE"}:
         return "na"
     return "other"
+
+
+def _derive_full_tc_base_result(*values: str) -> str:
+    # N열(기본 결과) 규칙:
+    # 하나라도 FAIL/F/N 이면 FAIL
+    # 아니면 PASS/P/OK가 있으면 PASS
+    # 아니면 N/T, 아니면 N/A, 그 외는 '-'
+    buckets = [_normalize_full_tc_result(v) for v in values]
+    if any(b == "fail" for b in buckets):
+        return "FAIL"
+    if any(b == "pass" for b in buckets):
+        return "PASS"
+    if any(b == "nt" for b in buckets):
+        return "N/T"
+    if any(b == "na" for b in buckets):
+        return "N/A"
+    return "-"
 
 
 def _is_closed_defect_status(status: str) -> bool:
@@ -6503,7 +6563,7 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
             component_label_set: set[str] = set()
             component_row_count = 0
 
-            for row_idx, row in enumerate(ws.iter_rows(min_row=start_row, values_only=True), start=start_row):
+            for row_idx, row in enumerate(ws.iter_rows(min_row=start_row, values_only=False), start=start_row):
                 tc_id = _cell_text_from_tuple(row, 2)
                 category = _cell_text_from_tuple(row, 3)
                 depth1 = _cell_text_from_tuple(row, 4)
@@ -6515,16 +6575,31 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
                 pre_condition = _cell_text_from_tuple(row, 10)
                 tc_procedure = _cell_text_from_tuple(row, 12)
                 expected_result = _cell_text_from_tuple(row, 13)
-                base_result = _cell_text_from_tuple(row, 14)
-                koa_result = _cell_text_from_tuple(row, 15)
+                base_result_raw = _cell_text_from_tuple(row, 14)
+                koa_result = _result_text_from_tuple(row, 15)
                 koa_android = _cell_text_from_tuple(row, 16)
                 koa_ios = _cell_text_from_tuple(row, 17)
-                hoa_result = _cell_text_from_tuple(row, 18)
+                hoa_result = _result_text_from_tuple(row, 18)
                 hoa_android = _cell_text_from_tuple(row, 19)
                 hoa_ios = _cell_text_from_tuple(row, 20)
-                goa_result = _cell_text_from_tuple(row, 21)
+                goa_result = _result_text_from_tuple(row, 21)
                 goa_android = _cell_text_from_tuple(row, 22)
                 goa_ios = _cell_text_from_tuple(row, 23)
+                base_result = _derive_full_tc_base_result(
+                    # 사용자 규칙 예시: COUNTIF(P:W)
+                    # -> 16~23열 값을 우선 사용해 N열을 계산
+                    koa_android,
+                    koa_ios,
+                    hoa_result,
+                    hoa_android,
+                    hoa_ios,
+                    goa_result,
+                    goa_android,
+                    goa_ios,
+                )
+                if base_result == "-" and base_result_raw:
+                    # P:W가 비어 있고 N열 원본 값이 존재하는 파일 호환
+                    base_result = base_result_raw
                 closed_jira_no = _cell_text_from_tuple(row, 24)
                 jira_no = _cell_text_from_tuple(row, 25)
                 nt_na_reason = _cell_text_from_tuple(row, 26)
@@ -8193,7 +8268,7 @@ def _get_cached_raw_defect_issue_stats(force: bool = False) -> dict:
         "source_type": source_type,
         "uploaded_at": uploaded_at,
         "sheet": GOOGLE_DEFECT_SHEET_NAME,
-        "range": GOOGLE_TEAM_DEFECT_RANGE,
+        "range": GOOGLE_RAW_STATUS_RANGE,
         "updated_at": "",
         "total_rows": 0,
         "issues": [],
@@ -8429,6 +8504,28 @@ def _build_regular_release_stats(issue_rows: list[dict]) -> dict:
             }
         )
 
+    # 엄격 조건(EU + 정기배포 태그)에서 데이터가 0건이면,
+    # DefectList_Raw 전체 행이 보이도록 완화 집계를 적용한다.
+    if not release_rows:
+        for row in issue_rows:
+            region_text = str(row.get("region", "")).strip() or "기타"
+            release_tags = _extract_release_tags_from_i_column(str(row.get("components", "")))
+            if not release_tags:
+                release_tags = ["기타"]
+            created = _extract_created_date(str(row.get("created", "")))
+            created_text = created.isoformat() if created else "-"
+            labels_text = str(row.get("labels", "")).strip().lower()
+            full_tc = "전수평가tc" in labels_text
+            release_rows.append(
+                {
+                    "region": region_text,
+                    "reporter": str(row.get("reporter", "")).strip() or "미지정",
+                    "created": created_text,
+                    "versions": release_tags,
+                    "full_tc": full_tc,
+                }
+            )
+
     version_counter = Counter()
     for r in release_rows:
         for v in r["versions"]:
@@ -8524,16 +8621,29 @@ def _extract_closing_cycles(*values: str) -> list[str]:
     return out
 
 
+def _closing_group_from_issue_row(row: dict) -> str:
+    text_pool = " ".join(
+        [
+            str(row.get("brand", "") or ""),
+            str(row.get("components", "") or ""),
+            str(row.get("labels", "") or ""),
+            str(row.get("reporter", "") or ""),
+            str(row.get("summary", "") or ""),
+        ]
+    ).upper()
+    for g in ["KOA", "HOA", "GOA"]:
+        if g in text_pool:
+            return g
+    return "기타"
+
+
 def _build_closing_summary_stats(issue_rows: list[dict], selected_cycle: str = "") -> dict:
     wanted_cycle = str(selected_cycle or "").strip()
-    groups = ["KOA", "HOA", "GOA"]
+    groups = ["KOA", "HOA", "GOA", "기타"]
 
     # Build tab candidates first from DefectList_Raw derived rows.
     cycle_counter = Counter()
     for row in issue_rows:
-        brand_text = str(row.get("brand", "")).upper()
-        if not any(g in brand_text for g in groups):
-            continue
         cycles = _extract_closing_cycles(
             str(row.get("fix_versions", "")),
             str(row.get("affects_versions", "")),
@@ -8579,8 +8689,7 @@ def _build_closing_summary_stats(issue_rows: list[dict], selected_cycle: str = "
         remaining_counter = Counter()
 
         for row in issue_rows:
-            brand_text = str(row.get("brand", "")).upper()
-            if group not in brand_text:
+            if _closing_group_from_issue_row(row) != group:
                 continue
             cycles = _extract_closing_cycles(
                 str(row.get("fix_versions", "")),
@@ -8746,7 +8855,7 @@ def refresh_defect_stats_now():
     company = _get_cached_company_defect_stats(force=True)
     raw_issues = _get_cached_raw_defect_issue_stats(force=True)
     header_rows, defectlist_rows = _get_cached_defectlist_rows(force=True)
-    regular = _build_regular_release_stats(company.get("issues", []))
+    regular = _build_regular_release_stats(company.get("all_issues", []) or company.get("issues", []))
     return {
         "ok": True,
         "detail": "defectlist_raw_refreshed",
@@ -8856,7 +8965,7 @@ def company_defect_by_status(status: str, groups: str = "", regions: str = "", f
     def _norm(v: str) -> str:
         return re.sub(r"\s+", " ", str(v or "").strip().lower())
 
-    data = _get_cached_company_defect_stats(force=bool(force))
+    data = _get_cached_raw_defect_issue_stats(force=bool(force))
     filtered = _filter_issue_rows_by_date(data.get("issues", []), start_date=start_date, end_date=end_date)
     wanted = _norm(target)
     group_list = [str(x or "").strip().upper() for x in str(groups or "").split(",") if str(x or "").strip()]
@@ -8875,6 +8984,17 @@ def company_defect_by_status(status: str, groups: str = "", regions: str = "", f
             if not any(g in brand_text for g in group_set):
                 continue
         rows.append(x)
+
+    # brand 값이 비어 group 필터가 모두 탈락하는 경우를 위해,
+    # 결과가 0건이면 group 조건을 제거해 Raw 원본 행을 우선 노출한다.
+    if not rows and group_set:
+        for x in filtered:
+            if _norm(str(x.get("status", ""))) != wanted:
+                continue
+            region_text = str(x.get("region", "")).upper()
+            if region_set and not any(r in region_text for r in region_set):
+                continue
+            rows.append(x)
     return {
         "ok": True,
         "status": target,
@@ -8939,7 +9059,7 @@ def company_defect_status_summary(days: int = 30, force: bool = False):
 
 @app.get("/api/stats/closing-summary/cycle-counts")
 def closing_summary_cycle_counts(force: bool = False):
-    data = _get_cached_company_defect_stats(force=bool(force))
+    data = _get_cached_raw_defect_issue_stats(force=bool(force))
     rows = data.get("issues", [])
 
     cycle_counter = Counter()
@@ -8968,8 +9088,7 @@ def closing_summary_cycle_counts(force: bool = False):
 
 @app.get("/api/stats/regular-release")
 def regular_release_stats(force: bool = False):
-    # Use shared cache by default to keep page interactions responsive.
-    data = _get_cached_company_defect_stats(force=bool(force))
+    data = _get_cached_raw_defect_issue_stats(force=bool(force))
     return _build_regular_release_stats(data.get("issues", []))
 
 
@@ -8977,9 +9096,10 @@ def regular_release_stats(force: bool = False):
 def regular_release_detail(version: str = "", date: str = "", full_tc_only: bool = False, force: bool = False):
     target_version = str(version or "").strip()
     target_date = str(date or "").strip()
-    data = _get_cached_company_defect_stats(force=bool(force))
+    data = _get_cached_raw_defect_issue_stats(force=bool(force))
     rows = []
-    for x in data.get("issues", []):
+    source_rows = data.get("issues", [])
+    for x in source_rows:
         region_text = str(x.get("region", "")).upper()
         if "EU" not in region_text:
             continue
@@ -8997,6 +9117,25 @@ def regular_release_detail(version: str = "", date: str = "", full_tc_only: bool
             continue
         rows.append(x)
 
+    # 엄격 조건에서 0건이면 완화 기준(전체 행)으로 재시도한다.
+    if not rows:
+        for x in source_rows:
+            tags = _extract_release_tags_from_i_column(str(x.get("components", "")))
+            if target_version:
+                if target_version == "기타":
+                    if tags:
+                        continue
+                elif target_version not in tags:
+                    continue
+            created = _extract_created_date(str(x.get("created", "")))
+            created_text = created.isoformat() if created else "-"
+            if target_date and created_text != target_date:
+                continue
+            labels_text = str(x.get("labels", "")).strip().lower()
+            if bool(full_tc_only) and "전수평가tc" not in labels_text:
+                continue
+            rows.append(x)
+
     return {
         "ok": True,
         "version": target_version,
@@ -9010,7 +9149,7 @@ def regular_release_detail(version: str = "", date: str = "", full_tc_only: bool
 
 @app.get("/api/stats/closing-summary")
 def closing_summary_stats(cycle: str = "", force: bool = False):
-    data = _get_cached_company_defect_stats(force=bool(force))
+    data = _get_cached_raw_defect_issue_stats(force=bool(force))
     return _build_closing_summary_stats(data.get("issues", []), selected_cycle=cycle)
 
 
@@ -9039,15 +9178,13 @@ def closing_summary_detail(
             return p
         return ""
 
-    data = _get_cached_company_defect_stats(force=bool(force))
+    data = _get_cached_raw_defect_issue_stats(force=bool(force))
     out_rows = []
-    for row in data.get("issues", []):
-        brand_text = str(row.get("brand", "")).upper()
-        if selected_group and selected_group not in brand_text:
+    source_rows = data.get("issues", [])
+    for row in source_rows:
+        row_group = _closing_group_from_issue_row(row)
+        if selected_group and selected_group != row_group:
             continue
-        if selected_group == "":
-            if not any(g in brand_text for g in ["KOA", "HOA", "GOA"]):
-                continue
 
         cycles = _extract_closing_cycles(
             str(row.get("fix_versions", "")),

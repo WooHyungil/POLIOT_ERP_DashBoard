@@ -436,6 +436,7 @@ const S = {
   bridgePerfTimer: null,
   lastBridgeAutoHealAt: 0,
   tab: "summary",
+  summaryView: "brand",
   component: "all",
   activeLabel: "",
   groupQuery: "",
@@ -459,7 +460,15 @@ const S = {
   pageDefectAllColumns: 1,
   pageDefectMatch: 1,
   pageDefectViolation: 1,
+  pageBrandDrill: 1,
+  pageCategoryDrill: 1,
   detailFocusKey: "",
+  brandDrill: null,
+  brandDrillViolationOnly: false,
+  categoryDrill: null,
+  labelBrandDrill: null,   // { label, brand }
+  labelRowDrill: null,     // { label, brand, component }
+  labelRowDrillPage: 1,
   defectFilterCache: {
     main: { key: "", source: null, rows: [] },
     violation: { key: "", source: null, rows: [] }
@@ -520,6 +529,8 @@ function paginateRows(rows, page) {
 
 function pageStateKey(target) {
   if (target === "detail") return "pageDetail";
+  if (target === "brand_drill") return "pageBrandDrill";
+  if (target === "category_drill") return "pageCategoryDrill";
   if (target === "defect_missing") return "pageDefectMissing";
   if (target === "defect_missing_tc") return "pageDefectMissingTc";
   if (target === "defect_all_columns") return "pageDefectAllColumns";
@@ -534,6 +545,14 @@ function updatePage(target, nextPage) {
   S[key] = Math.max(1, Number(nextPage || 1));
   if (target === "detail") {
     renderDetailTable();
+    return;
+  }
+  if (target === "brand_drill") {
+    renderBrandDrillRows();
+    return;
+  }
+  if (target === "category_drill") {
+    renderCategoryDrillRows();
     return;
   }
   if (target === "defect_missing") {
@@ -581,6 +600,8 @@ function renderPagination(elId, target, pageInfo) {
 
 function resetMainPagination() {
   S.pageDetail = 1;
+  S.pageBrandDrill = 1;
+  S.pageCategoryDrill = 1;
 }
 
 function resetDefectPagination() {
@@ -994,6 +1015,231 @@ function aggregateCategoryRows(rows) {
   return Object.keys(map).map(function (key) { return map[key]; });
 }
 
+function renderCategoryOutlineTable(aggregated, query) {
+  const hint = document.getElementById("qaFullTcCategoryOutlineHint");
+  const body = document.getElementById("qaFullTcCategoryOutlineBody");
+  if (!body) return;
+
+  const list = Array.isArray(aggregated) ? aggregated : [];
+  if (!list.length) {
+    if (hint) hint.textContent = "";
+    body.innerHTML = '<tr><td colspan="5" class="hint">카테고리 데이터가 없습니다.</td></tr>';
+    return;
+  }
+
+  const componentMap = new Map();
+  list.forEach(function (item) {
+    const componentName = String(item.component || "-");
+    const depth1Name = String(item.depth1 || "(대분류 없음)");
+    const depth2Name = String(item.depth2 || "(중분류 없음)");
+    const depth3Name = String(item.depth3 || "(소분류 없음)");
+    const count = Number(item.count || 0);
+
+    let component = componentMap.get(componentName);
+    if (!component) {
+      component = { name: componentName, total: 0, leafCount: 0, depth1List: [], depth1Map: new Map() };
+      componentMap.set(componentName, component);
+    }
+    component.total += count;
+
+    let depth1 = component.depth1Map.get(depth1Name);
+    if (!depth1) {
+      depth1 = { name: depth1Name, total: 0, leafCount: 0, depth2List: [], depth2Map: new Map() };
+      component.depth1Map.set(depth1Name, depth1);
+      component.depth1List.push(depth1);
+    }
+    depth1.total += count;
+
+    let depth2 = depth1.depth2Map.get(depth2Name);
+    if (!depth2) {
+      depth2 = { name: depth2Name, total: 0, leafCount: 0, depth3List: [], depth3Map: new Map() };
+      depth1.depth2Map.set(depth2Name, depth2);
+      depth1.depth2List.push(depth2);
+    }
+    depth2.total += count;
+
+    let depth3 = depth2.depth3Map.get(depth3Name);
+    if (!depth3) {
+      depth3 = { name: depth3Name, count: 0 };
+      depth2.depth3Map.set(depth3Name, depth3);
+      depth2.depth3List.push(depth3);
+    }
+    depth3.count += count;
+  });
+
+  const components = Array.from(componentMap.values());
+  components.forEach(function (component) {
+    component.leafCount = 0;
+    component.depth1List.forEach(function (depth1) {
+      depth1.leafCount = 0;
+      depth1.depth2List.forEach(function (depth2) {
+        depth2.leafCount = Math.max(1, depth2.depth3List.length);
+        depth1.leafCount += depth2.leafCount;
+      });
+      component.leafCount += depth1.leafCount;
+    });
+  });
+
+  const totalLeaf = list.reduce(function (sum, row) { return sum + Number(row.count || 0); }, 0);
+  if (hint) {
+    hint.textContent = "컴포넌트 " + formatNumber(components.length) + "개 · 소분류 " + formatNumber(list.length) + "개 · TC " + formatNumber(totalLeaf) + "건";
+  }
+
+  const rows = [];
+  components.forEach(function (component) {
+    component.depth1List.forEach(function (depth1, d1Idx) {
+      depth1.depth2List.forEach(function (depth2, d2Idx) {
+        depth2.depth3List.forEach(function (depth3, d3Idx) {
+          const cells = [];
+          if (d1Idx === 0 && d2Idx === 0 && d3Idx === 0) {
+            cells.push(
+              '<td rowspan="' + component.leafCount + '">' +
+                '<div class="ftc-cat-outline-cell is-component"><strong>' + markQueryText(component.name, query) + '</strong><span>TC ' + formatNumber(component.total) + '</span></div>' +
+              '</td>'
+            );
+          }
+          if (d2Idx === 0 && d3Idx === 0) {
+            const selectedDepth1 = !!(S.categoryDrill &&
+              S.categoryDrill.level === "depth1" &&
+              S.categoryDrill.component === component.name &&
+              S.categoryDrill.depth1 === depth1.name);
+            cells.push(
+              '<td rowspan="' + depth1.leafCount + '">' +
+                '<div class="ftc-cat-outline-cell is-depth1"><strong>' + markQueryText(depth1.name, query) + '</strong>' +
+                '<button type="button" class="ftc-cat-count-btn ftc-cat-inline-btn' + (selectedDepth1 ? ' active' : '') + '"' +
+                  ' data-level="depth1"' +
+                  ' data-component="' + esc(component.name) + '"' +
+                  ' data-depth1="' + esc(depth1.name) + '">' + formatNumber(depth1.total) + '</button></div>' +
+              '</td>'
+            );
+          }
+          if (d3Idx === 0) {
+            const selectedDepth2 = !!(S.categoryDrill &&
+              S.categoryDrill.level === "depth2" &&
+              S.categoryDrill.component === component.name &&
+              S.categoryDrill.depth1 === depth1.name &&
+              S.categoryDrill.depth2 === depth2.name);
+            cells.push(
+              '<td rowspan="' + depth2.leafCount + '">' +
+                '<div class="ftc-cat-outline-cell is-depth2"><strong>' + markQueryText(depth2.name, query) + '</strong>' +
+                '<button type="button" class="ftc-cat-count-btn ftc-cat-inline-btn' + (selectedDepth2 ? ' active' : '') + '"' +
+                  ' data-level="depth2"' +
+                  ' data-component="' + esc(component.name) + '"' +
+                  ' data-depth1="' + esc(depth1.name) + '"' +
+                  ' data-depth2="' + esc(depth2.name) + '">' + formatNumber(depth2.total) + '</button></div>' +
+              '</td>'
+            );
+          }
+          cells.push('<td><div class="ftc-cat-outline-cell is-depth3"><strong>' + markQueryText(depth3.name, query) + '</strong></div></td>');
+          const selected = !!(S.categoryDrill &&
+            S.categoryDrill.level === "depth3" &&
+            S.categoryDrill.component === component.name &&
+            S.categoryDrill.depth1 === depth1.name &&
+            S.categoryDrill.depth2 === depth2.name &&
+            S.categoryDrill.depth3 === depth3.name);
+          cells.push('<td><button type="button" class="ftc-cat-count-btn' + (selected ? ' active' : '') + '"' +
+            ' data-level="depth3"' +
+            ' data-component="' + esc(component.name) + '"' +
+            ' data-depth1="' + esc(depth1.name) + '"' +
+            ' data-depth2="' + esc(depth2.name) + '"' +
+            ' data-depth3="' + esc(depth3.name) + '">' + formatNumber(depth3.count) + '</button></td>');
+          rows.push('<tr>' + cells.join("") + '</tr>');
+        });
+      });
+    });
+  });
+  body.innerHTML = rows.join("");
+}
+
+function buildCategoryDrillRows() {
+  if (!S.categoryDrill) return [];
+  const selected = S.categoryDrill;
+  const rows = filterDetail(S.data && S.data.detail_rows ? S.data.detail_rows : []);
+  return rows.filter(function (row) {
+    const component = String(row.component || "-");
+    const depth1 = String(row.depth1 || "(대분류 없음)");
+    const depth2 = String(row.depth2 || "(중분류 없음)");
+    const depth3 = String(row.depth3 || "(소분류 없음)");
+    if (component !== selected.component) return false;
+    if (selected.level === "depth1") {
+      return depth1 === selected.depth1;
+    }
+    if (selected.level === "depth2") {
+      return depth1 === selected.depth1 && depth2 === selected.depth2;
+    }
+    return depth1 === selected.depth1 && depth2 === selected.depth2 && depth3 === selected.depth3;
+  });
+}
+
+function renderCategoryDrillRows() {
+  const wrap = document.getElementById("qaFullTcCategoryDrillWrap");
+  const hint = document.getElementById("qaFullTcCategoryDrillHint");
+  const body = document.getElementById("qaFullTcCategoryDrillBody");
+  if (!wrap || !body) return;
+
+  if (!S.categoryDrill) {
+    wrap.hidden = true;
+    body.innerHTML = "";
+    renderPagination("qaFullTcCategoryDrillPagination", "category_drill", { total: 0 });
+    return;
+  }
+
+  const rows = buildCategoryDrillRows();
+  const pageInfo = paginateRows(rows, S.pageCategoryDrill);
+  S.pageCategoryDrill = pageInfo.page;
+  wrap.hidden = false;
+
+  if (hint) {
+    const scope = S.categoryDrill.level === "depth1"
+      ? (S.categoryDrill.component + " · " + S.categoryDrill.depth1)
+      : S.categoryDrill.level === "depth2"
+        ? (S.categoryDrill.component + " · " + S.categoryDrill.depth1 + " · " + S.categoryDrill.depth2)
+        : (S.categoryDrill.component + " · " + S.categoryDrill.depth1 + " · " + S.categoryDrill.depth2 + " · " + S.categoryDrill.depth3);
+    hint.textContent = scope +
+      " | " + rows.length + "건" + (rows.length ? " | " + pageInfo.start + "~" + pageInfo.end + " 표시" : "");
+  }
+
+  if (!pageInfo.rows.length) {
+    body.innerHTML = '<tr><td colspan="28" class="hint">조회 결과 없음</td></tr>';
+    renderPagination("qaFullTcCategoryDrillPagination", "category_drill", pageInfo);
+    return;
+  }
+
+  body.innerHTML = pageInfo.rows.map(function (row) {
+    return '<tr>' +
+      '<td>' + esc(row.component || "-") + '</td>' +
+      '<td>' + esc(row.tc_id || "-") + '</td>' +
+      '<td>' + esc(row.sheet_row || "-") + '</td>' +
+      '<td>' + esc(row.category || "-") + '</td>' +
+      '<td>' + esc(row.depth1 || "-") + '</td>' +
+      '<td>' + esc(row.depth2 || "-") + '</td>' +
+      '<td>' + esc(row.depth3 || "-") + '</td>' +
+      '<td>' + esc(row.direction || "-") + '</td>' +
+      '<td>' + esc(row.brand || "-") + '</td>' +
+      '<td>' + esc(row.priority || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.pre_condition || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.tc_procedure || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.expected_result || "-") + '</td>' +
+      '<td>' + chip(row.base_result) + '</td>' +
+      '<td>' + chip(row.koa_result) + '</td>' +
+      '<td>' + chip(row.koa_android) + '</td>' +
+      '<td>' + chip(row.koa_ios) + '</td>' +
+      '<td>' + chip(row.hoa_result) + '</td>' +
+      '<td>' + chip(row.hoa_android) + '</td>' +
+      '<td>' + chip(row.hoa_ios) + '</td>' +
+      '<td>' + chip(row.goa_result) + '</td>' +
+      '<td>' + chip(row.goa_android) + '</td>' +
+      '<td>' + chip(row.goa_ios) + '</td>' +
+      '<td>' + esc(row.closed_jira_no || "-") + '</td>' +
+      '<td>' + esc(row.jira_no || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.nt_na_reason || "-") + '</td>' +
+      '<td>' + esc(row.nt_na_filter || "-") + '</td>' +
+      '<td class="ftc-label-cell">' + esc(row.label || "-") + '</td>' +
+      '</tr>';
+  }).join("");
+  renderPagination("qaFullTcCategoryDrillPagination", "category_drill", pageInfo);
+}
+
 function buildLabelProgressMap(detailRows) {
   const map = {};
   (detailRows || []).forEach(function (row) {
@@ -1233,6 +1479,452 @@ function renderResultPack(counter) {
     '</div>';
 }
 
+function ratioText(done, total) {
+  const safeTotal = Number(total || 0);
+  const safeDone = Number(done || 0);
+  const pct = safeTotal > 0 ? (safeDone / safeTotal) * 100 : 0;
+  return {
+    pct: pct,
+    text: pct.toFixed(1) + "%",
+  };
+}
+
+function renderSummaryProgressDeck() {
+  const hint = document.getElementById("qaFullTcProgressHint");
+  const deck = document.getElementById("qaFullTcProgressDeck");
+  if (!deck) return;
+
+  const detailRows = filterDetail(S.data && S.data.detail_rows ? S.data.detail_rows : []);
+  const brandRows = (S.data && S.data.brand_rows ? S.data.brand_rows : []).filter(function (row) {
+    if (S.component !== "all") {
+      const components = String(row.components || "").split(/\s*,\s*/).filter(Boolean);
+      if (!components.includes(S.component)) return false;
+    }
+    return true;
+  });
+
+  const compMap = {};
+  detailRows.forEach(function (row) {
+    const component = String(row.component || "-");
+    if (!compMap[component]) {
+      compMap[component] = { total: 0, done: 0, fail: 0, pass: 0 };
+    }
+    const target = compMap[component];
+    target.total += 9;
+    [
+      row.koa_result, row.koa_android, row.koa_ios,
+      row.hoa_result, row.hoa_android, row.hoa_ios,
+      row.goa_result, row.goa_android, row.goa_ios,
+    ].forEach(function (value) {
+      const bucket = normalizeResultBucket(value);
+      if (bucket === "empty") return;
+      target.done += 1;
+      if (bucket === "fail") target.fail += 1;
+      if (bucket === "pass") target.pass += 1;
+    });
+  });
+
+  const componentItems = Object.keys(compMap).map(function (name) {
+    const item = compMap[name];
+    const ratio = ratioText(item.done, item.total);
+    return {
+      name: name,
+      total: item.total,
+      done: item.done,
+      fail: item.fail,
+      pass: item.pass,
+      pct: ratio.pct,
+      pctText: ratio.text,
+    };
+  }).sort(function (a, b) {
+    if (b.pct !== a.pct) return b.pct - a.pct;
+    return String(a.name).localeCompare(String(b.name));
+  });
+
+  const brandItems = brandRows.map(function (row) {
+    const total = Number(row.cell_count || 0);
+    const done = Number(row.fail_count || 0) + Number(row.pass_count || 0) + Number(row.nt_count || 0) + Number(row.na_count || 0) + Number(row.other_count || 0);
+    const ratio = ratioText(done, total);
+    return {
+      name: String(row.brand || "-"),
+      total: total,
+      done: done,
+      fail: Number(row.fail_count || 0),
+      pass: Number(row.pass_count || 0),
+      pct: ratio.pct,
+      pctText: ratio.text,
+    };
+  }).sort(function (a, b) {
+    if (b.pct !== a.pct) return b.pct - a.pct;
+    return String(a.name).localeCompare(String(b.name));
+  });
+
+  if (hint) {
+    hint.textContent = "브랜드 " + brandItems.length + "개 · 컴포넌트 " + componentItems.length + "개";
+  }
+
+  if (!brandItems.length && !componentItems.length) {
+    deck.innerHTML = '<p class="hint" style="padding:16px 0;">진행률 데이터를 표시할 수 없습니다.</p>';
+    return;
+  }
+
+  const brandHtml = brandItems.slice(0, 8).map(function (item) {
+    return '<div class="ftc-progress-item">' +
+      '<div class="ftc-progress-head"><strong>' + esc(item.name) + '</strong><span>' + esc(item.pctText) + '</span></div>' +
+      '<div class="ftc-progress-track"><div class="ftc-progress-fill" style="width:' + Math.max(0, Math.min(100, item.pct)).toFixed(1) + '%"></div></div>' +
+      '<div class="ftc-progress-meta">진행 ' + formatNumber(item.done) + ' / ' + formatNumber(item.total) + ' · PASS ' + formatNumber(item.pass) + ' · FAIL ' + formatNumber(item.fail) + '</div>' +
+      '</div>';
+  }).join("");
+
+  const componentHtml = componentItems.slice(0, 10).map(function (item) {
+    return '<div class="ftc-progress-item">' +
+      '<div class="ftc-progress-head"><strong>' + esc(item.name) + '</strong><span>' + esc(item.pctText) + '</span></div>' +
+      '<div class="ftc-progress-track"><div class="ftc-progress-fill is-component" style="width:' + Math.max(0, Math.min(100, item.pct)).toFixed(1) + '%"></div></div>' +
+      '<div class="ftc-progress-meta">진행 ' + formatNumber(item.done) + ' / ' + formatNumber(item.total) + ' · PASS ' + formatNumber(item.pass) + ' · FAIL ' + formatNumber(item.fail) + '</div>' +
+      '</div>';
+  }).join("");
+
+  deck.innerHTML = '<div class="ftc-progress-col"><h3>브랜드별 Full_TC 진행률</h3>' + brandHtml + '</div>' +
+    '<div class="ftc-progress-col"><h3>컴포넌트별 Full_TC 진행률</h3>' + componentHtml + '</div>';
+}
+
+const ALL_RESULT_FIELDS = [
+  "koa_result", "koa_android", "koa_ios",
+  "hoa_result", "hoa_android", "hoa_ios",
+  "goa_result", "goa_android", "goa_ios",
+];
+
+const BRAND_FIELD_SPECS = [
+  { key: "all", label: "통합", fields: ALL_RESULT_FIELDS },
+  { key: "koa", label: "KOA", fields: ["koa_result", "koa_android", "koa_ios"] },
+  { key: "hoa", label: "HOA", fields: ["hoa_result", "hoa_android", "hoa_ios"] },
+  { key: "goa", label: "GOA", fields: ["goa_result", "goa_android", "goa_ios"] },
+];
+
+function newBrandCounter() {
+  return { pass: 0, fail: 0, nt: 0, na: 0, empty: 0, total: 0 };
+}
+
+function addBrandBucket(counter, value) {
+  const bucket = normalizeResultBucket(value);
+  counter.total += 1;
+  if (bucket === "pass") counter.pass += 1;
+  else if (bucket === "fail") counter.fail += 1;
+  else if (bucket === "nt") counter.nt += 1;
+  else if (bucket === "na") counter.na += 1;
+  else counter.empty += 1;
+}
+
+function rowBucketByFields(row, fields) {
+  const buckets = (fields || []).map(function (field) {
+    return normalizeResultBucket(row && row[field]);
+  });
+  if (buckets.includes("fail")) return "fail";
+  if (buckets.includes("pass")) return "pass";
+  if (buckets.includes("nt")) return "nt";
+  if (buckets.includes("na")) return "na";
+  return "empty";
+}
+
+function calcRateText(numerator, denominator) {
+  const den = Number(denominator || 0);
+  const num = Number(numerator || 0);
+  const pct = den > 0 ? (num / den) * 100 : 0;
+  return pct.toFixed(1) + "%";
+}
+
+function rateToneByPercent(pct) {
+  const value = Number(pct || 0);
+  if (value >= 70) return "high";
+  if (value >= 45) return "mid";
+  return "low";
+}
+
+function rateGaugeMarkup(percent, tone, label) {
+  const safe = Math.max(0, Math.min(100, Number(percent || 0)));
+  const text = (label || "Rate") + " " + safe.toFixed(1) + "%";
+  return '<span class="ftc-line-gauge-wrap is-rate-' + esc(tone || "mid") + '">' +
+    '<span class="ftc-line-gauge"><i class="is-rate-' + esc(tone || "mid") + '" style="width:' + safe.toFixed(1) + '%"></i></span>' +
+    '<span class="ftc-line-gauge-text">' + esc(text) + '</span>' +
+  '</span>';
+}
+
+function rateCellMarkup(percent, tone) {
+  const safe = Math.max(0, Math.min(100, Number(percent || 0)));
+  return '<span class="ftc-rate-cell">' +
+    '<span class="ftc-rate-pill is-rate-' + esc(tone || "mid") + '">' + safe.toFixed(1) + '%</span>' +
+    '<span class="ftc-rate-cell-gauge"><i class="is-rate-' + esc(tone || "mid") + '" style="width:' + safe.toFixed(1) + '%"></i></span>' +
+  '</span>';
+}
+
+function buildBrandStatusSummaryRows() {
+  const query = String(S.query || "").trim().toLowerCase();
+  const rows = filterDetail(S.data && S.data.detail_rows ? S.data.detail_rows : []).filter(function (row) {
+    if (query) {
+      const text = [row.component, row.category, row.depth1, row.depth2, row.depth3]
+        .map(function (value) { return String(value || "").toLowerCase(); })
+        .join(" ");
+      if (!text.includes(query)) return false;
+    }
+    return true;
+  });
+
+  const byBrand = {};
+  BRAND_FIELD_SPECS.forEach(function (spec) {
+    byBrand[spec.key] = {
+      key: spec.key,
+      label: spec.label,
+      total: newBrandCounter(),
+      components: {},
+    };
+  });
+
+  rows.forEach(function (row) {
+    const component = String(row.component || "-");
+    BRAND_FIELD_SPECS.forEach(function (spec) {
+      const brandObj = byBrand[spec.key];
+      if (!brandObj.components[component]) {
+        brandObj.components[component] = newBrandCounter();
+      }
+      const bucket = rowBucketByFields(row, spec.fields);
+      brandObj.total.total += 1;
+      brandObj.components[component].total += 1;
+      if (bucket === "pass") {
+        brandObj.total.pass += 1;
+        brandObj.components[component].pass += 1;
+      } else if (bucket === "fail") {
+        brandObj.total.fail += 1;
+        brandObj.components[component].fail += 1;
+      } else if (bucket === "nt") {
+        brandObj.total.nt += 1;
+        brandObj.components[component].nt += 1;
+      } else if (bucket === "na") {
+        brandObj.total.na += 1;
+        brandObj.components[component].na += 1;
+      } else {
+        brandObj.total.empty += 1;
+        brandObj.components[component].empty += 1;
+      }
+    });
+  });
+
+  return BRAND_FIELD_SPECS.map(function (spec) {
+    const brandObj = byBrand[spec.key];
+    const componentRows = Object.keys(brandObj.components).map(function (name) {
+      const c = brandObj.components[name];
+      return {
+        brand: spec.label,
+        rowType: "component",
+        name: name,
+        total: c.total,
+        pass: c.pass,
+        fail: c.fail,
+        na: c.na,
+        nt: c.nt,
+        empty: c.empty,
+      };
+    }).filter(function (item) {
+      if (!item.total) return false;
+      if (S.nOnly && item.fail <= 0) return false;
+      return true;
+    }).sort(function (a, b) {
+      if (b.fail !== a.fail) return b.fail - a.fail;
+      return String(a.name).localeCompare(String(b.name));
+    });
+
+    const visibleTotal = componentRows.reduce(function (acc, item) {
+      acc.total += item.total;
+      acc.pass += item.pass;
+      acc.fail += item.fail;
+      acc.na += item.na;
+      acc.nt += item.nt;
+      acc.empty += item.empty;
+      return acc;
+    }, { total: 0, pass: 0, fail: 0, na: 0, nt: 0, empty: 0 });
+
+    const totalRow = {
+      brand: spec.label,
+      rowType: "total",
+      name: spec.label + " Total",
+      total: visibleTotal.total,
+      pass: visibleTotal.pass,
+      fail: visibleTotal.fail,
+      na: visibleTotal.na,
+      nt: visibleTotal.nt,
+      empty: visibleTotal.empty,
+    };
+
+    return {
+      key: spec.key,
+      label: spec.label,
+      totalRow: totalRow,
+      componentRows: componentRows,
+    };
+  });
+}
+
+function countButton(value, bucket, context) {
+  const isActive = !!(S.brandDrill &&
+    S.brandDrill.brandKey === context.brandKey &&
+    S.brandDrill.rowName === context.rowName &&
+    S.brandDrill.bucket === bucket);
+  const tone = bucket === "fail" ? "danger" : bucket === "pass" ? "ok" : bucket === "empty" ? "empty" : "warn";
+  return '<button type="button" class="ftc-brand-count-btn is-' + tone + (isActive ? ' active' : '') + '"' +
+    ' data-brand-key="' + esc(context.brandKey) + '"' +
+    ' data-row-name="' + esc(context.rowName) + '"' +
+    ' data-bucket="' + esc(bucket) + '">' + formatNumber(value) + '</button>';
+}
+
+function resolveBrandSpec(brandKey) {
+  for (let i = 0; i < BRAND_FIELD_SPECS.length; i += 1) {
+    if (BRAND_FIELD_SPECS[i].key === brandKey) return BRAND_FIELD_SPECS[i];
+  }
+  return BRAND_FIELD_SPECS[0];
+}
+
+function buildBrandDrillRows() {
+  if (!S.brandDrill) return [];
+  const selection = S.brandDrill;
+  const spec = resolveBrandSpec(selection.brandKey);
+  const source = filterDetail(S.data && S.data.detail_rows ? S.data.detail_rows : []);
+  return source.filter(function (row) {
+    if (selection.rowName !== "__TOTAL__" && String(row.component || "") !== selection.rowName) {
+      return false;
+    }
+    return rowBucketByFields(row, spec.fields) === selection.bucket;
+  });
+}
+
+function hasJiraNoValue(row) {
+  const raw = String((row && row.jira_no) || "").trim();
+  return !!raw && raw !== "-";
+}
+
+function isBrandDrillViolationAvailable() {
+  if (!S.brandDrill) return false;
+  return S.brandDrill.bucket === "pass" || S.brandDrill.bucket === "fail";
+}
+
+function isBrandDrillViolationRow(row, bucket) {
+  if (bucket === "pass") {
+    return hasJiraNoValue(row);
+  }
+  if (bucket === "fail") {
+    return !hasJiraNoValue(row);
+  }
+  return false;
+}
+
+function renderBrandDrillRows() {
+  const wrap = document.getElementById("qaFullTcBrandDrillWrap");
+  const hint = document.getElementById("qaFullTcBrandDrillHint");
+  const body = document.getElementById("qaFullTcBrandDrillBody");
+  const violationBtn = document.getElementById("qaFullTcBrandViolationBtn");
+  if (!wrap || !body) return;
+  if (!S.brandDrill) {
+    wrap.hidden = true;
+    body.innerHTML = "";
+    S.brandDrillViolationOnly = false;
+    if (violationBtn) {
+      violationBtn.hidden = true;
+      violationBtn.classList.remove("active");
+    }
+    renderPagination("qaFullTcBrandDrillPagination", "brand_drill", { total: 0 });
+    return;
+  }
+
+  const bucketLabelMap = {
+    pass: "PASS",
+    fail: "FAIL",
+    na: "N/A",
+    nt: "N/T",
+    empty: "공란",
+  };
+  const allRows = buildBrandDrillRows();
+  const violationAvailable = isBrandDrillViolationAvailable();
+  const violationRows = violationAvailable
+    ? allRows.filter(function (row) { return isBrandDrillViolationRow(row, S.brandDrill.bucket); })
+    : [];
+  const rows = (violationAvailable && S.brandDrillViolationOnly) ? violationRows : allRows;
+  const pageInfo = paginateRows(rows, S.pageBrandDrill);
+  S.pageBrandDrill = pageInfo.page;
+  wrap.hidden = false;
+  if (violationBtn) {
+    if (violationAvailable) {
+      violationBtn.hidden = false;
+      violationBtn.classList.toggle("active", !!S.brandDrillViolationOnly);
+      violationBtn.textContent = "위반 " + formatNumber(violationRows.length);
+    } else {
+      violationBtn.hidden = true;
+      violationBtn.classList.remove("active");
+    }
+  }
+  if (hint) {
+    const scope = S.brandDrill.rowName === "__TOTAL__" ? "전체 컴포넌트" : S.brandDrill.rowName;
+    hint.textContent = S.brandDrill.brandLabel + " · " + scope + " · " + (bucketLabelMap[S.brandDrill.bucket] || S.brandDrill.bucket) +
+      " | " + rows.length + "건" + (violationAvailable ? " (위반 " + violationRows.length + "건)" : "") +
+      (rows.length ? " | " + pageInfo.start + "~" + pageInfo.end + " 표시" : "");
+  }
+
+  if (!pageInfo.rows.length) {
+    body.innerHTML = '<tr><td colspan="28" class="hint">조회 결과 없음</td></tr>';
+    renderPagination("qaFullTcBrandDrillPagination", "brand_drill", pageInfo);
+    return;
+  }
+
+  body.innerHTML = pageInfo.rows.map(function (row) {
+    return '<tr>' +
+      '<td>' + esc(row.component || "-") + '</td>' +
+      '<td>' + esc(row.tc_id || "-") + '</td>' +
+      '<td>' + esc(row.sheet_row || "-") + '</td>' +
+      '<td>' + esc(row.category || "-") + '</td>' +
+      '<td>' + esc(row.depth1 || "-") + '</td>' +
+      '<td>' + esc(row.depth2 || "-") + '</td>' +
+      '<td>' + esc(row.depth3 || "-") + '</td>' +
+      '<td>' + esc(row.direction || "-") + '</td>' +
+      '<td>' + esc(row.brand || "-") + '</td>' +
+      '<td>' + esc(row.priority || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.pre_condition || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.tc_procedure || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.expected_result || "-") + '</td>' +
+      '<td>' + chip(row.base_result) + '</td>' +
+      '<td>' + chip(row.koa_result) + '</td>' +
+      '<td>' + chip(row.koa_android) + '</td>' +
+      '<td>' + chip(row.koa_ios) + '</td>' +
+      '<td>' + chip(row.hoa_result) + '</td>' +
+      '<td>' + chip(row.hoa_android) + '</td>' +
+      '<td>' + chip(row.hoa_ios) + '</td>' +
+      '<td>' + chip(row.goa_result) + '</td>' +
+      '<td>' + chip(row.goa_android) + '</td>' +
+      '<td>' + chip(row.goa_ios) + '</td>' +
+      '<td>' + esc(row.closed_jira_no || "-") + '</td>' +
+      '<td>' + esc(row.jira_no || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.nt_na_reason || "-") + '</td>' +
+      '<td>' + esc(row.nt_na_filter || "-") + '</td>' +
+      '<td class="ftc-label-cell">' + esc(row.label || "-") + '</td>' +
+    '</tr>';
+  }).join("");
+  renderPagination("qaFullTcBrandDrillPagination", "brand_drill", pageInfo);
+}
+
+function switchSummaryView(view) {
+  const allowed = { matrix: true, brand: true, category: true };
+  const next = allowed[view] ? view : "matrix";
+  S.summaryView = next;
+
+  document.querySelectorAll(".ftc-summary-view-tab").forEach(function (button) {
+    const active = button.dataset.summaryView === next;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+
+  ["matrix", "brand", "category"].forEach(function (name) {
+    const block = document.getElementById("summary-block-" + name);
+    if (!block) return;
+    block.classList.toggle("ftc-panel-hidden", name !== next);
+  });
+}
+
 function renderComponentResultTable() {
   const hint = document.getElementById("qaFullTcComponentResultHint");
   const body = document.getElementById("qaFullTcComponentResultBody");
@@ -1301,55 +1993,164 @@ function renderComponentToc() {
   const components = (S.data && S.data.components ? S.data.components : []).filter(function (item) {
     return item && item.matched_sheet;
   });
-  if (hint) hint.textContent = components.length + "개 컴포넌트";
+  if (hint) hint.textContent = "전체 + " + components.length + "개 컴포넌트";
+  function buildTocCard(componentKey, title, metaText, sheetName, counts, isAll) {
+    const fail = Number((counts && counts.result_fail_count) || 0);
+    const pass = Number((counts && counts.result_pass_count) || 0);
+    const nt = Number((counts && counts.result_nt_count) || 0);
+    const na = Number((counts && counts.result_na_count) || 0);
+    const other = Number((counts && counts.result_other_count) || 0);
+    const total = fail + pass + nt + na + other;
+    const executed = fail + pass + nt + na;
+    const runPct = total > 0 ? ((executed / total) * 100) : 0;
+    const tone = rateToneByPercent(runPct);
+    return '<button class="ftc-toc-item is-rate-' + esc(tone) + (S.component === componentKey ? ' active' : '') + (isAll ? ' is-all' : '') + '" data-component="' + esc(componentKey) + '">' +
+      '<div class="ftc-toc-top">' +
+        '<span class="ftc-toc-title">' + esc(title) + '</span>' +
+        '<span class="ftc-toc-sheet">' + esc(sheetName || "ALL") + '</span>' +
+      '</div>' +
+      '<div class="ftc-toc-meta">' + esc(metaText) + '</div>' +
+      '<div class="ftc-toc-kpis">' +
+        '<span class="kpi-fail">F ' + formatNumber(fail) + '</span>' +
+        '<span class="kpi-pass">P ' + formatNumber(pass) + '</span>' +
+        '<span class="kpi-nt">NT ' + formatNumber(nt) + '</span>' +
+        '<span class="kpi-na">NA ' + formatNumber(na) + '</span>' +
+      '</div>' +
+      '<div class="ftc-toc-progress">' + rateGaugeMarkup(runPct, tone, "Run") + '</div>' +
+    '</button>';
+  }
+
   if (!components.length) {
-    el.innerHTML = '<p class="hint">컴포넌트 목차 데이터가 없습니다.</p>';
+    el.innerHTML = buildTocCard("all", "전체", "컴포넌트 데이터 없음", "ALL", {}, true);
     return;
   }
-  el.innerHTML = components.map(function (item) {
+
+  const totalCounts = components.reduce(function (acc, item) {
+    const counts = item.counts || {};
+    acc.result_fail_count += Number(counts.result_fail_count || 0);
+    acc.result_pass_count += Number(counts.result_pass_count || 0);
+    acc.result_nt_count += Number(counts.result_nt_count || 0);
+    acc.result_na_count += Number(counts.result_na_count || 0);
+    acc.result_other_count += Number(counts.result_other_count || 0);
+    acc.row_count += Number(item.row_count || 0);
+    return acc;
+  }, {
+    result_fail_count: 0,
+    result_pass_count: 0,
+    result_nt_count: 0,
+    result_na_count: 0,
+    result_other_count: 0,
+    row_count: 0,
+  });
+
+  const allButton = buildTocCard(
+    "all",
+    "전체",
+    "모든 컴포넌트 · " + formatNumber(totalCounts.row_count) + "행",
+    "ALL",
+    totalCounts,
+    true
+  );
+
+  el.innerHTML = allButton + components.map(function (item) {
     const counts = item.counts || {};
     const rowCount = Number(item.row_count || 0);
     const failCount = Number(counts.result_fail_count || 0);
-    return '<button class="ftc-toc-item' + (S.component === item.component ? ' active' : '') + '" data-component="' + esc(item.component || "") + '">' +
-      '<span class="ftc-toc-title">' + esc(item.component || "-") + '</span>' +
-      '<span class="ftc-toc-meta">' + formatNumber(rowCount) + '행 · FAIL ' + formatNumber(failCount) + '</span>' +
-      '</button>';
+    return buildTocCard(
+      String(item.component || ""),
+      String(item.component || "-"),
+      formatNumber(rowCount) + "행 · FAIL " + formatNumber(failCount),
+      String(item.sheet_name || "-"),
+      counts,
+      false
+    );
   }).join("");
 }
 
 function renderBrandTable() {
   const hint = document.getElementById("qaFullTcBrandHint");
   const body = document.getElementById("qaFullTcBrandBody");
+  const overview = document.getElementById("qaFullTcBrandOverview");
   if (!body) return;
-  const query = S.query.trim().toLowerCase();
-  const rows = (S.data && S.data.brand_rows ? S.data.brand_rows : []).filter(function (row) {
-    if (S.component !== "all") {
-      const components = String(row.components || "").split(/\s*,\s*/).filter(Boolean);
-      if (!components.includes(S.component)) return false;
+  const groups = buildBrandStatusSummaryRows();
+  if (hint) {
+    const compCount = groups.reduce(function (acc, group) { return acc + group.componentRows.length; }, 0);
+    hint.textContent = "브랜드 " + groups.length + "개 · 컴포넌트 " + compCount + "개";
+  }
+
+  if (overview) {
+    overview.innerHTML = groups.map(function (group) {
+      const t = group.totalRow;
+      const executed = t.pass + t.fail + t.nt + t.na;
+      const runRate = calcRateText(executed, t.total);
+      const passRate = calcRateText(t.pass, t.pass + t.fail);
+      const runPct = t.total > 0 ? Math.max(0, Math.min(100, (executed / t.total) * 100)) : 0;
+      const passPct = (t.pass + t.fail) > 0 ? Math.max(0, Math.min(100, (t.pass / (t.pass + t.fail)) * 100)) : 0;
+      const tone = rateToneByPercent(runPct);
+      const passTone = rateToneByPercent(passPct);
+      return '<article class="ftc-brand-overview-card is-' + esc(group.key) + ' is-rate-' + esc(tone) + '">' +
+        '<div class="ftc-brand-overview-top"><h3>' + esc(group.label) + '</h3><span class="ftc-brand-overview-badge">' + esc(group.label) + '</span></div>' +
+        '<div class="ftc-brand-overview-meta">브랜드 전체 · Run ' + esc(runRate) + '</div>' +
+        '<div class="ftc-brand-overview-metrics">' +
+          '<span class="is-pass">PASS ' + formatNumber(t.pass) + '</span>' +
+          '<span class="is-fail">FAIL ' + formatNumber(t.fail) + '</span>' +
+          '<span class="is-nt">N/T ' + formatNumber(t.nt) + '</span>' +
+          '<span class="is-na">N/A ' + formatNumber(t.na) + '</span>' +
+          '<span class="is-empty">공란 ' + formatNumber(t.empty) + '</span>' +
+        '</div>' +
+        '<div class="ftc-brand-overview-progress">' + rateGaugeMarkup(runPct, tone, "Run") + '</div>' +
+        '<footer><span>Total ' + formatNumber(t.total) + '</span>' + rateGaugeMarkup(passPct, passTone, "Pass") + '</footer>' +
+      '</article>';
+    }).join("");
+  }
+
+  const tableRows = [];
+  groups.forEach(function (group) {
+    const showTotalRow = S.component === "all";
+    const allRows = showTotalRow ? [group.totalRow].concat(group.componentRows) : group.componentRows.slice();
+    if (!allRows.length) {
+      return;
     }
-    if (query && !(String(row.brand || "") + " " + String(row.components || "")).toLowerCase().includes(query)) return false;
-    if (S.nOnly && !(Number(row.fail_count || 0) > 0)) return false;
-    return true;
+    const rowspan = allRows.length;
+    allRows.forEach(function (row, idx) {
+      const executed = row.pass + row.fail + row.nt + row.na;
+      const runRate = calcRateText(executed, row.total);
+      const passRate = calcRateText(row.pass, row.pass + row.fail);
+      const runPct = row.total > 0 ? (executed / row.total) * 100 : 0;
+      const passPct = (row.pass + row.fail) > 0 ? (row.pass / (row.pass + row.fail)) * 100 : 0;
+      const runTone = rateToneByPercent(runPct);
+      const passTone = rateToneByPercent(passPct);
+      const trClass = row.rowType === "total" ? "ftc-brand-total-row" : "";
+      const rowNameKey = row.rowType === "total" ? "__TOTAL__" : String(row.name || "");
+      const ctx = {
+        brandKey: group.key,
+        rowName: rowNameKey,
+      };
+      const brandCell = idx === 0
+        ? '<td rowspan="' + rowspan + '" class="ftc-brand-sticky"><strong>' + esc(group.label) + '</strong></td>'
+        : "";
+      tableRows.push('<tr class="' + trClass + '">' +
+        brandCell +
+        '<td><strong>' + esc(row.name) + '</strong></td>' +
+        '<td>' + countChip(row.total) + '</td>' +
+        '<td>' + countButton(row.pass, "pass", ctx) + '</td>' +
+        '<td>' + countButton(row.fail, "fail", ctx) + '</td>' +
+        '<td>' + countButton(row.na, "na", ctx) + '</td>' +
+        '<td>' + countButton(row.nt, "nt", ctx) + '</td>' +
+        '<td>' + countButton(row.empty, "empty", ctx) + '</td>' +
+        '<td>' + rateCellMarkup(runPct, runTone) + '</td>' +
+        '<td>' + rateCellMarkup(passPct, passTone) + '</td>' +
+      '</tr>');
+    });
   });
-  if (hint) hint.textContent = rows.length + "개 브랜드";
-  if (!rows.length) {
+
+  if (!tableRows.length) {
     body.innerHTML = '<tr><td colspan="10" class="hint">조회 결과 없음</td></tr>';
+    renderBrandDrillRows();
     return;
   }
-  body.innerHTML = rows.map(function (row) {
-    return '<tr>' +
-      '<td><strong>' + esc(row.brand || "-") + '</strong></td>' +
-      '<td>' + countChip(row.row_count) + '</td>' +
-      '<td>' + countChip(row.cell_count) + '</td>' +
-      '<td>' + countChip(row.fail_count, "danger") + '</td>' +
-      '<td>' + countChip(row.pass_count, "ok") + '</td>' +
-      '<td>' + countChip(row.nt_count, "warn") + '</td>' +
-      '<td>' + countChip(row.na_count, "warn") + '</td>' +
-      '<td>' + countChip(row.other_count) + '</td>' +
-      '<td><span class="ftc-rate-pill">' + esc(String(row.fail_rate || 0)) + '%</span></td>' +
-      '<td class="ftc-label-cell">' + esc(row.components || "-") + '</td>' +
-      '</tr>';
-  }).join("");
+  body.innerHTML = tableRows.join("");
+  renderBrandDrillRows();
 }
 
 function renderBrandCategoryTable() {
@@ -1439,12 +2240,10 @@ function renderGroupTable() {
 
 function renderCategoryTree() {
   const hint = document.getElementById("qaFullTcGroupHint");
-  const body = document.getElementById("qaFullTcCategoryBody");
   const cardsEl = document.getElementById("qaFullTcCategoryComponentCards");
   const statsEl = document.getElementById("qaFullTcCategoryStats");
   const top100Btn = document.getElementById("qaFullTcCategoryTop100");
   const showAllBtn = document.getElementById("qaFullTcCategoryShowAll");
-  if (!body) return;
   const rows = filterDetail(S.data && S.data.detail_rows ? S.data.detail_rows : []);
   const query = String(S.groupQuery || "").trim().toLowerCase();
   const aggregated = aggregateCategoryRows(rows).filter(function (item) {
@@ -1452,6 +2251,26 @@ function renderCategoryTree() {
     const text = [item.component, item.depth1, item.depth2, item.depth3].join(" ").toLowerCase();
     return text.includes(query);
   });
+
+  if (S.categoryDrill) {
+    const exists = aggregated.some(function (item) {
+      const component = String(item.component || "-");
+      const depth1 = String(item.depth1 || "(대분류 없음)");
+      const depth2 = String(item.depth2 || "(중분류 없음)");
+      const depth3 = String(item.depth3 || "(소분류 없음)");
+      if (S.categoryDrill.level === "depth1") {
+        return component === S.categoryDrill.component && depth1 === S.categoryDrill.depth1;
+      }
+      if (S.categoryDrill.level === "depth2") {
+        return component === S.categoryDrill.component && depth1 === S.categoryDrill.depth1 && depth2 === S.categoryDrill.depth2;
+      }
+      return component === S.categoryDrill.component && depth1 === S.categoryDrill.depth1 && depth2 === S.categoryDrill.depth2 && depth3 === S.categoryDrill.depth3;
+    });
+    if (!exists) {
+      S.categoryDrill = null;
+      S.pageCategoryDrill = 1;
+    }
+  }
 
   const componentTotalMap = {};
   aggregated.forEach(function (item) {
@@ -1502,47 +2321,25 @@ function renderCategoryTree() {
   }
 
   if (!aggregated.length) {
-    body.innerHTML = '<tr><td colspan="7" class="hint">검색 결과가 없습니다.</td></tr>';
+    renderCategoryOutlineTable([], query);
+    renderCategoryDrillRows();
     return;
   }
 
-  aggregated.sort(function (a, b) {
-    if (Number(b.count || 0) !== Number(a.count || 0)) return Number(b.count || 0) - Number(a.count || 0);
-    if (String(a.component) !== String(b.component)) return String(a.component).localeCompare(String(b.component));
-    if (String(a.depth1) !== String(b.depth1)) return String(a.depth1).localeCompare(String(b.depth1));
-    if (String(a.depth2) !== String(b.depth2)) return String(a.depth2).localeCompare(String(b.depth2));
-    return String(a.depth3).localeCompare(String(b.depth3));
-  });
-
-  const limited = S.groupLimit > 0 ? aggregated.slice(0, S.groupLimit) : aggregated;
-  body.innerHTML = limited.map(function (row, index) {
-    const count = Number(row.count || 0);
-    const ratio = totalRows > 0 ? Math.max(2, Math.round((count / totalRows) * 100)) : 0;
-    const normalized = maxCount > 0 ? Math.max(4, Math.round((count / maxCount) * 100)) : 0;
-    return '<tr>' +
-      '<td><span class="ftc-cat-rank">' + (index + 1) + '</span></td>' +
-      '<td><strong>' + markQueryText(row.component, query) + '</strong></td>' +
-      '<td>' + markQueryText(row.depth1, query) + '</td>' +
-      '<td>' + markQueryText(row.depth2, query) + '</td>' +
-      '<td>' + markQueryText(row.depth3, query) + '</td>' +
-      '<td><span class="ftc-cat-count-pill">' + formatNumber(count) + '</span></td>' +
-      '<td><div class="ftc-cat-row-bar"><i style="width:' + normalized + '%"></i><span>' + ratio + '%</span></div></td>' +
-      '</tr>';
-  }).join("");
+  renderCategoryOutlineTable(aggregated, query);
+  renderCategoryDrillRows();
 }
 
 function renderLabelTable() {
   const hint = document.getElementById("qaFullTcLabelHint");
   const body = document.getElementById("qaFullTcLabelBody");
   const statsEl = document.getElementById("qaFullTcLabelStats");
-  const topCardsEl = document.getElementById("qaFullTcLabelTopCards");
   const top100Btn = document.getElementById("qaFullTcLabelTop100");
   const showAllBtn = document.getElementById("qaFullTcLabelShowAll");
   if (!body) return;
   const query = String(S.labelQuery || S.query || "").trim().toLowerCase();
   const rows = (S.data && S.data.label_rows ? S.data.label_rows : []).filter(function (row) {
     if (query && !String(row.label || "").toLowerCase().includes(query)) return false;
-    if (S.nOnly && !((row.base_n || 0) + (row.koa_n || 0) + (row.hoa_n || 0) + (row.goa_n || 0))) return false;
     return true;
   });
   rows.sort(function (a, b) {
@@ -1550,36 +2347,23 @@ function renderLabelTable() {
     return String(a.label || "").localeCompare(String(b.label || ""));
   });
 
-  const totalTc = rows.reduce(function (sum, row) { return sum + Number(row.count || 0); }, 0);
+  const totalTc = rows.reduce(function (sum, r) { return sum + Number(r.count || 0); }, 0);
   const labelProgressMap = buildLabelProgressMap(S.data && S.data.detail_rows ? S.data.detail_rows : []);
-  const totalTask = rows.reduce(function (sum, row) { return sum + Number(row.task_count || row.count || 0); }, 0);
-  const totalIssueN = rows.reduce(function (sum, row) {
-    return sum + Number(row.base_n || 0) + Number(row.koa_n || 0) + Number(row.hoa_n || 0) + Number(row.goa_n || 0);
-  }, 0);
-  const totalJira = rows.reduce(function (sum, row) { return sum + Number(row.jira_count || 0); }, 0);
-  const totalClosed = rows.reduce(function (sum, row) { return sum + Number(row.closed_jira_count || 0); }, 0);
 
   if (hint) hint.textContent = formatNumber(rows.length) + "개 LABEL | TC " + formatNumber(totalTc) + "건";
   if (statsEl) {
+    const totalTask = rows.reduce(function (sum, r) { return sum + Number(r.task_count || r.count || 0); }, 0);
+    const totalIssueN = rows.reduce(function (sum, r) {
+      return sum + Number(r.base_n || 0) + Number(r.koa_n || 0) + Number(r.hoa_n || 0) + Number(r.goa_n || 0);
+    }, 0);
+    const totalJira = rows.reduce(function (sum, r) { return sum + Number(r.jira_count || 0); }, 0);
+    const totalClosed = rows.reduce(function (sum, r) { return sum + Number(r.closed_jira_count || 0); }, 0);
     statsEl.innerHTML =
       '<div class="ftc-cat-stat"><span>LABEL 수</span><strong>' + formatNumber(rows.length) + '</strong></div>' +
       '<div class="ftc-cat-stat"><span>TC 합계</span><strong>' + formatNumber(totalTc) + '</strong></div>' +
       '<div class="ftc-cat-stat"><span>Task 합계</span><strong>' + formatNumber(totalTask) + '</strong></div>' +
       '<div class="ftc-cat-stat"><span>N 합계</span><strong>' + formatNumber(totalIssueN) + '</strong></div>' +
       '<div class="ftc-cat-stat is-total"><span>지라 / Closed</span><strong>' + formatNumber(totalJira) + ' / ' + formatNumber(totalClosed) + '</strong></div>';
-  }
-
-  if (topCardsEl) {
-    topCardsEl.innerHTML = rows.slice(0, 8).map(function (row, idx) {
-      const label = String(row.label || "-");
-      const active = S.activeLabel && S.activeLabel.toLowerCase() === label.toLowerCase();
-      const ratio = totalTc > 0 ? Math.round((Number(row.count || 0) / totalTc) * 100) : 0;
-      return '<button type="button" class="ftc-label-top-card' + (active ? ' is-active' : '') + '" data-label="' + esc(label) + '">' +
-        '<span class="ftc-cat-comp-rank">#' + (idx + 1) + '</span>' +
-        '<strong>' + esc(label) + '</strong>' +
-        '<span class="ftc-cat-comp-meta">TC ' + formatNumber(row.count || 0) + ' · Task ' + formatNumber(row.task_count || row.count || 0) + ' · ' + ratio + '%</span>' +
-      '</button>';
-    }).join("");
   }
 
   if (top100Btn && showAllBtn) {
@@ -1589,158 +2373,311 @@ function renderLabelTable() {
   }
 
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="16" class="hint">조회 결과 없음</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" class="hint">조회 결과 없음</td></tr>';
     return;
   }
-  const maxCount = rows.reduce(function (max, row) { return Math.max(max, Number(row.count || 0)); }, 0);
+
   const limited = S.labelLimit > 0 ? rows.slice(0, S.labelLimit) : rows;
+
+  function totalGaugeCell(label, totalProgress, total) {
+    if (!totalProgress) return '<td class="ftc-lbg-cell">-</td>';
+    const done = total - Number(totalProgress.empty || 0);
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    const passPct = total ? Math.round((Number(totalProgress.pass || 0) / total) * 100) : 0;
+    const failPct = total ? Math.round((Number(totalProgress.fail || 0) / total) * 100) : 0;
+    const ntPct = total ? Math.round((Number(totalProgress.nt || 0) / total) * 100) : 0;
+    const naPct = total ? Math.round((Number(totalProgress.na || 0) / total) * 100) : 0;
+    return '<td class="ftc-lbg-cell ftc-brand-col total">' +
+      '<button type="button" class="ftc-lbg-wrap" data-label="' + esc(label) + '" data-brand="TOTAL">' +
+        '<div class="ftc-lbg-bar">' +
+          '<i class="pass" style="width:' + passPct + '%"></i>' +
+          '<i class="fail" style="width:' + failPct + '%"></i>' +
+          '<i class="nt" style="width:' + ntPct + '%"></i>' +
+          '<i class="na" style="width:' + naPct + '%"></i>' +
+        '</div>' +
+        '<div class="ftc-lbg-nums">' +
+          '<span class="ftc-lbg-pct">' + pct + '%</span>' +
+          '<span class="ftc-lbg-detail">' +
+            '<em class="pass">P ' + formatNumber(totalProgress.pass) + '</em>' +
+            '<em class="fail">F ' + formatNumber(totalProgress.fail) + '</em>' +
+            '<em class="nt">NT ' + formatNumber(totalProgress.nt) + '</em>' +
+          '</span>' +
+        '</div>' +
+      '</button>' +
+    '</td>';
+  }
+
+  function brandGaugeCell(label, brand, bp, total) {
+    if (!bp) return '<td class="ftc-lbg-cell">-</td>';
+    const done = total - Number(bp.empty || 0);
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    const passPct = total ? Math.round((Number(bp.pass || 0) / total) * 100) : 0;
+    const failPct = total ? Math.round((Number(bp.fail || 0) / total) * 100) : 0;
+    const ntPct = total ? Math.round((Number(bp.nt || 0) / total) * 100) : 0;
+    const naPct = total ? Math.round((Number(bp.na || 0) / total) * 100) : 0;
+    const brandLow = brand.toLowerCase();
+    return '<td class="ftc-lbg-cell ftc-brand-col ' + brandLow + '">' +
+      '<button type="button" class="ftc-lbg-wrap" data-label="' + esc(label) + '" data-brand="' + esc(brand) + '">' +
+        '<div class="ftc-lbg-bar">' +
+          '<i class="pass" style="width:' + passPct + '%"></i>' +
+          '<i class="fail" style="width:' + failPct + '%"></i>' +
+          '<i class="nt" style="width:' + ntPct + '%"></i>' +
+          '<i class="na" style="width:' + naPct + '%"></i>' +
+        '</div>' +
+        '<div class="ftc-lbg-nums">' +
+          '<span class="ftc-lbg-pct">' + pct + '%</span>' +
+          '<span class="ftc-lbg-detail">' +
+            '<em class="pass">P ' + formatNumber(bp.pass) + '</em>' +
+            '<em class="fail">F ' + formatNumber(bp.fail) + '</em>' +
+            '<em class="nt">NT ' + formatNumber(bp.nt) + '</em>' +
+          '</span>' +
+        '</div>' +
+      '</button>' +
+    '</td>';
+  }
+
+  function shareGaugeCell(count) {
+    const pctValue = totalTc > 0 ? Math.max(0, Math.round((count / totalTc) * 100)) : 0;
+    let tone = 'low';
+    let toneLabel = '소규모';
+    if (pctValue >= 40) {
+      tone = 'dominant';
+      toneLabel = '핵심';
+    } else if (pctValue >= 20) {
+      tone = 'high';
+      toneLabel = '상위';
+    } else if (pctValue >= 10) {
+      tone = 'mid';
+      toneLabel = '중간';
+    }
+    return '<td class="ftc-share-cell">' +
+      '<div class="ftc-share-gauge is-' + tone + '">' +
+        '<div class="ftc-share-gauge-head">' +
+          '<strong>' + pctValue + '%</strong>' +
+          '<span class="ftc-share-chip is-' + tone + '">' + toneLabel + '</span>' +
+        '</div>' +
+        '<div class="ftc-share-track"><i class="is-' + tone + '" style="width:' + pctValue + '%"></i></div>' +
+        '<div class="ftc-share-meta">' +
+          '<span>TC ' + formatNumber(count) + '</span>' +
+          '<span>전체 ' + formatNumber(totalTc) + '</span>' +
+        '</div>' +
+      '</div>' +
+    '</td>';
+  }
+
   body.innerHTML = limited.map(function (row, index) {
     const label = String(row.label || "-");
     const active = S.activeLabel && S.activeLabel.toLowerCase() === label.toLowerCase();
     const count = Number(row.count || 0);
     const progress = labelProgressMap[label] || {
-      total: count,
-      baseDone: 0,
-      koaDone: 0,
-      hoaDone: 0,
-      goaDone: 0,
-      pass: 0,
-      fail: 0,
-      nt: 0,
-      na: 0,
-      empty: count,
-      koa: { pass: 0, fail: 0, nt: 0, na: 0, empty: count },
+      total: count, koa: { pass: 0, fail: 0, nt: 0, na: 0, empty: count },
       hoa: { pass: 0, fail: 0, nt: 0, na: 0, empty: count },
       goa: { pass: 0, fail: 0, nt: 0, na: 0, empty: count },
     };
-    const ratio = totalTc > 0 ? Math.max(2, Math.round((count / totalTc) * 100)) : 0;
-    const normalized = maxCount > 0 ? Math.max(4, Math.round((count / maxCount) * 100)) : 0;
-    return '<tr>' +
+    return '<tr class="' + (active ? 'ftc-label-row-active' : '') + '">' +
       '<td><span class="ftc-cat-rank">' + (index + 1) + '</span></td>' +
       '<td><button type="button" class="ftc-label-badge ftc-label-row-btn' + (active ? ' is-active' : '') + '" data-label="' + esc(label) + '">' + esc(label) + '</button></td>' +
       '<td><strong>' + formatNumber(count) + '</strong></td>' +
-      '<td><strong>' + formatNumber(row.task_count || row.count || 0) + '</strong></td>' +
-      '<td><span class="ftc-rate-pill">' + progressRateText(progress.baseDone, progress.total) + '</span></td>' +
-      '<td>' + resultCountSetMarkup(progress.koa) + '</td>' +
-      '<td>' + resultCountSetMarkup(progress.hoa) + '</td>' +
-      '<td>' + resultCountSetMarkup(progress.goa) + '</td>' +
-      '<td><span class="ftc-rate-pill">' + percentText(progress.pass, progress.total) + '</span></td>' +
-      '<td><span class="ftc-rate-pill">' + percentText(progress.fail, progress.total) + '</span></td>' +
-      '<td><span class="ftc-rate-pill">' + percentText(progress.nt, progress.total) + '</span></td>' +
-      '<td><span class="ftc-rate-pill">' + percentText(progress.na, progress.total) + '</span></td>' +
-      '<td><span class="ftc-rate-pill">' + percentText(progress.empty, progress.total) + '</span></td>' +
-      '<td><span class="ftc-rate-pill">' + progressRateText(progress.total - progress.empty, progress.total) + '</span></td>' +
-      '<td><div class="ftc-cat-row-bar"><i style="width:' + normalized + '%"></i><span>' + ratio + '%</span></div></td>' +
-      '</tr>';
+      totalGaugeCell(label, progress, count) +
+      brandGaugeCell(label, 'KOA', progress.koa, count) +
+      brandGaugeCell(label, 'HOA', progress.hoa, count) +
+      brandGaugeCell(label, 'GOA', progress.goa, count) +
+      shareGaugeCell(count) +
+    '</tr>';
   }).join("");
 }
 
-function openDetailByIdentity(component, tcId, sheetRow) {
-  if (!S.data || !Array.isArray(S.data.detail_rows)) return;
-  const rows = S.data.detail_rows || [];
-  const targetIndex = rows.findIndex(function (item) {
-    return String(item.component || "") === String(component || "") &&
-      String(item.tc_id || "") === String(tcId || "") &&
-      Number(item.sheet_row || 0) === Number(sheetRow || 0);
-  });
-  if (targetIndex < 0) {
-    toast("해당 Full_TC 행을 찾지 못했습니다.", "error");
-    return;
-  }
-  const targetRow = rows[targetIndex];
-  S.component = component || "all";
-  S.pageDetail = Math.floor(targetIndex / Math.max(20, Number(S.pageSize || FTC_DEFAULT_PAGE_SIZE))) + 1;
-  S.detailFocusKey = rowOverrideKey(targetRow);
-  switchTab("detail", true);
-}
+function renderLabelBrandDrill() {
+  const card = document.getElementById("qaLabelBrandDrillCard");
+  const titleEl = document.getElementById("qaLabelBrandDrillTitle");
+  const hintEl = document.getElementById("qaLabelBrandDrillHint");
+  const tabsEl = document.getElementById("qaLabelBrandTabs");
+  const body = document.getElementById("qaLabelCompBody");
+  if (!card || !body) return;
 
-function renderLabelRowsTable() {
-  const hint = document.getElementById("qaFullTcLabelRowsHint");
-  const body = document.getElementById("qaFullTcLabelRowsBody");
-  if (!body) return;
-  const activeLabel = String(S.activeLabel || "").trim();
-  if (!activeLabel) {
-    if (hint) hint.textContent = "LABEL을 선택하면 해당 Full_TC 행을 보여줍니다.";
-    body.innerHTML = '<tr><td colspan="9" class="hint">LABEL을 선택해 주세요.</td></tr>';
+  const drill = S.labelBrandDrill;
+  if (!drill || !drill.label) {
+    card.hidden = true;
     return;
   }
-  const rows = (S.data && S.data.detail_rows ? S.data.detail_rows : []).filter(function (row) {
+  card.hidden = false;
+  if (card.scrollIntoView) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  const label = drill.label;
+  const activeBrand = String(drill.brand || "TOTAL").toUpperCase();
+  const activeBrandLabel = activeBrand === "TOTAL" ? "전체" : activeBrand;
+  if (titleEl) titleEl.innerHTML = '<i class="fa fa-layer-group"></i> <strong>' + esc(label) + '</strong> 브랜드별 컴포넌트 분석';
+
+  // Brand tabs
+  if (tabsEl) {
+    tabsEl.innerHTML = [
+      { key: 'TOTAL', text: '전체' },
+      { key: 'KOA', text: 'KOA' },
+      { key: 'HOA', text: 'HOA' },
+      { key: 'GOA', text: 'GOA' }
+    ].map(function (tab) {
+      const active = tab.key === activeBrand;
+      return '<button type="button" class="ftc-label-brand-tab-btn ' + tab.key.toLowerCase() + (active ? ' active' : '') + '" data-label="' + esc(label) + '" data-brand="' + tab.key + '">' + tab.text + '</button>';
+    }).join("");
+  }
+
+  // Filter rows for this label × brand
+  const brandKey = activeBrand === 'TOTAL' ? 'base_result' : activeBrand.toLowerCase() + '_result';
+  const allRows = (S.data && S.data.detail_rows ? S.data.detail_rows : []).filter(function (row) {
+    if (!rowHasLabel(row, label)) return false;
     if (S.component !== "all" && String(row.component || "") !== S.component) return false;
-    return rowHasLabel(row, activeLabel);
+    return true;
   });
-  if (hint) hint.textContent = '선택 LABEL: ' + activeLabel + ' | ' + formatNumber(rows.length) + '건 (중/소메뉴 집계)';
-  if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="9" class="hint">해당 LABEL의 Full_TC 행이 없습니다.</td></tr>';
+
+  if (!allRows.length) {
+    if (hintEl) hintEl.textContent = "해당 LABEL의 데이터가 없습니다.";
+    body.innerHTML = '<tr><td colspan="9" class="hint">데이터 없음</td></tr>';
     return;
   }
-  const aggMap = {};
-  rows.forEach(function (row) {
-    const component = String(row.component || "-");
-    const depth2 = String(row.depth2 || "(중분류 없음)");
-    const depth3 = String(row.depth3 || "(소분류 없음)");
-    const key = [component, depth2, depth3].join("||");
-    if (!aggMap[key]) {
-      aggMap[key] = { component: component, depth2: depth2, depth3: depth3, total: 0, pass: 0, fail: 0, nt: 0, na: 0, empty: 0 };
-    }
-    const bucket = normalizeResultBucket(row.base_result);
-    aggMap[key].total += 1;
-    if (bucket === "pass") aggMap[key].pass += 1;
-    else if (bucket === "fail") aggMap[key].fail += 1;
-    else if (bucket === "nt") aggMap[key].nt += 1;
-    else if (bucket === "na") aggMap[key].na += 1;
-    else aggMap[key].empty += 1;
+
+  // Aggregate by component
+  const compMap = {};
+  allRows.forEach(function (row) {
+    const comp = String(row.component || "기타");
+    if (!compMap[comp]) compMap[comp] = { component: comp, total: 0, pass: 0, fail: 0, nt: 0, na: 0, empty: 0 };
+    const bucket = normalizeResultBucket(row[brandKey] || "");
+    compMap[comp].total += 1;
+    if (bucket === "pass") compMap[comp].pass += 1;
+    else if (bucket === "fail") compMap[comp].fail += 1;
+    else if (bucket === "nt") compMap[comp].nt += 1;
+    else if (bucket === "na") compMap[comp].na += 1;
+    else compMap[comp].empty += 1;
   });
 
-  const aggRows = Object.keys(aggMap).map(function (key) { return aggMap[key]; });
-  aggRows.sort(function (a, b) {
-    if (b.total !== a.total) return b.total - a.total;
-    if (a.component !== b.component) return String(a.component).localeCompare(String(b.component));
-    if (a.depth2 !== b.depth2) return String(a.depth2).localeCompare(String(b.depth2));
-    return String(a.depth3).localeCompare(String(b.depth3));
-  });
+  const compRows = Object.values(compMap).sort(function (a, b) { return b.total - a.total; });
+  const totalRows = allRows.length;
+  if (hintEl) hintEl.textContent = label + ' · ' + activeBrandLabel + ' · ' + formatNumber(compRows.length) + '개 컴포넌트 · TC ' + formatNumber(totalRows) + '건';
 
-  body.innerHTML = aggRows.slice(0, 400).map(function (row) {
-    const total = Number(row.total || 0);
-    const done = total - Number(row.empty || 0);
-    return '<tr>' +
+  function miniGaugeBar(row) {
+    const t = row.total;
+    if (!t) return '<div class="ftc-lbg-bar" style="height:6px;"></div>';
+    const passPct = Math.round((row.pass / t) * 100);
+    const failPct = Math.round((row.fail / t) * 100);
+    const ntPct = Math.round((row.nt / t) * 100);
+    const naPct = Math.round((row.na / t) * 100);
+    const donePct = 100 - Math.round((row.empty / t) * 100);
+    return '<div class="ftc-comp-gauge">' +
+      '<div class="ftc-lbg-bar">' +
+        '<i class="pass" style="width:' + passPct + '%"></i>' +
+        '<i class="fail" style="width:' + failPct + '%"></i>' +
+        '<i class="nt" style="width:' + ntPct + '%"></i>' +
+        '<i class="na" style="width:' + naPct + '%"></i>' +
+      '</div>' +
+      '<span class="ftc-lbg-pct">' + donePct + '%</span>' +
+    '</div>';
+  }
+
+  body.innerHTML = compRows.map(function (row) {
+    const t = row.total;
+    const activeComp = S.labelRowDrill && S.labelRowDrill.label === label && S.labelRowDrill.brand === activeBrand && S.labelRowDrill.component === row.component;
+    return '<tr class="' + (activeComp ? 'ftc-label-row-active' : '') + '">' +
       '<td><strong>' + esc(row.component) + '</strong></td>' +
-      '<td>' + esc(row.depth2) + '</td>' +
-      '<td>' + esc(row.depth3) + '</td>' +
-      '<td>' + formatNumber(total) + '</td>' +
-      '<td><span class="ftc-rate-pill">' + percentText(row.pass, total) + '</span></td>' +
-      '<td><span class="ftc-rate-pill">' + percentText(row.fail, total) + '</span></td>' +
-      '<td><span class="ftc-rate-pill">' + percentText(row.nt, total) + '</span></td>' +
-      '<td><span class="ftc-rate-pill">' + percentText(row.na, total) + '</span></td>' +
-      '<td><span class="ftc-rate-pill">' + percentText(row.empty, total) + '</span></td>' +
-      '<td><span class="ftc-rate-pill">' + progressRateText(done, total) + '</span></td>' +
-      '</tr>';
+      '<td>' + formatNumber(t) + '</td>' +
+      '<td class="ftc-res-col pass"><span class="ftc-mini-count-chip is-pass">' + formatNumber(row.pass) + '</span></td>' +
+      '<td class="ftc-res-col fail"><span class="ftc-mini-count-chip is-fail">' + formatNumber(row.fail) + '</span></td>' +
+      '<td class="ftc-res-col nt"><span class="ftc-mini-count-chip is-nt">' + formatNumber(row.nt) + '</span></td>' +
+      '<td class="ftc-res-col na"><span class="ftc-mini-count-chip is-na">' + formatNumber(row.na) + '</span></td>' +
+      '<td class="ftc-res-col empty"><span class="ftc-mini-count-chip is-empty">' + formatNumber(row.empty) + '</span></td>' +
+      '<td>' + miniGaugeBar(row) + '</td>' +
+      '<td><button type="button" class="btn-secondary btn-sm ftc-label-row-drill-btn" data-label="' + esc(label) + '" data-brand="' + esc(activeBrand) + '" data-component="' + esc(row.component) + '"><i class="fa fa-list"></i> 행 보기</button></td>' +
+    '</tr>';
   }).join("");
 }
 
-function renderLabelToc() {
-  const hint = document.getElementById("qaFullTcLabelTocHint");
-  const el = document.getElementById("qaFullTcLabelToc");
-  if (!el) return;
-  const rows = (S.data && S.data.label_rows ? S.data.label_rows : []).slice();
-  if (!rows.length) {
-    if (hint) hint.textContent = "";
-    el.innerHTML = '<p class="hint">LABEL 데이터가 없습니다.</p>';
+function renderLabelRowDrill() {
+  const card = document.getElementById("qaLabelRowDrillCard");
+  const titleEl = document.getElementById("qaLabelRowDrillTitle");
+  const hintEl = document.getElementById("qaLabelRowDrillHint");
+  const body = document.getElementById("qaLabelRowDrillBody");
+  const pager = document.getElementById("qaLabelRowDrillPager");
+  if (!card || !body) return;
+
+  const drill = S.labelRowDrill;
+  if (!drill || !drill.label) {
+    card.hidden = true;
     return;
   }
-  rows.sort(function (a, b) {
-    return Number(b.count || 0) - Number(a.count || 0);
+  card.hidden = false;
+
+  const label = drill.label;
+  const brand = String(drill.brand || "TOTAL").toUpperCase();
+  const brandLabel = brand === 'TOTAL' ? '전체' : brand;
+  const component = drill.component || "";
+  const brandKey = brand === 'TOTAL' ? 'base_result' : brand.toLowerCase() + '_result';
+  const androidKey = brand === 'TOTAL' ? '' : brand.toLowerCase() + '_android';
+  const iosKey = brand === 'TOTAL' ? '' : brand.toLowerCase() + '_ios';
+
+  if (titleEl) titleEl.innerHTML = '<i class="fa fa-table-list"></i> Full_TC 행 조회 — <strong>' + esc(label) + '</strong> · <span class="ftc-brand-badge ' + brand.toLowerCase() + '">' + brandLabel + '</span>' + (component ? ' · ' + esc(component) : '');
+
+  const allRows = (S.data && S.data.detail_rows ? S.data.detail_rows : []).filter(function (row) {
+    if (!rowHasLabel(row, label)) return false;
+    if (component && String(row.component || "") !== component) return false;
+    return true;
   });
-  const topRows = rows.slice(0, 60);
-  if (hint) hint.textContent = rows.length + "개 LABEL";
-  el.innerHTML = topRows.map(function (row) {
-    const label = String(row.label || "-");
-    const active = String(S.activeLabel || "").toLowerCase() === label.toLowerCase();
-    return '<button type="button" class="ftc-label-toc-item' + (active ? ' active' : '') + '" data-label="' + esc(label) + '">' +
-      '<span class="ftc-label-toc-name">' + esc(label) + '</span>' +
-      '<span class="ftc-label-toc-meta">' + formatNumber(row.count || 0) + '건 / Task ' + formatNumber(row.task_count || row.count || 0) + '</span>' +
-      '</button>';
+
+  const page = Number(S.labelRowDrillPage || 1);
+  const pageSize = 50;
+  const totalRows = allRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const start = (safePage - 1) * pageSize;
+  const pageRows = allRows.slice(start, start + pageSize);
+
+  if (hintEl) hintEl.textContent = label + ' · ' + brandLabel + (component ? ' · ' + component : '') + ' | ' + formatNumber(totalRows) + '건 · ' + safePage + '/' + totalPages + '페이지';
+
+  if (!pageRows.length) {
+    body.innerHTML = '<tr><td colspan="11" class="hint">해당 조건의 Full_TC 행이 없습니다.</td></tr>';
+    if (pager) pager.innerHTML = "";
+    return;
+  }
+
+  body.innerHTML = pageRows.map(function (row) {
+    const baseBucket = normalizeResultBucket(row.base_result);
+    const brandBucket = normalizeResultBucket(row[brandKey] || "");
+    return '<tr>' +
+      '<td>' + esc(row.component || "-") + '</td>' +
+      '<td>' + esc(row.tc_id || "-") + '</td>' +
+      '<td>' + esc(row.depth1 || "-") + '</td>' +
+      '<td>' + esc(row.depth2 || "-") + '</td>' +
+      '<td>' + esc(row.depth3 || "-") + '</td>' +
+      '<td>' + esc(row.direction || "-") + '</td>' +
+      '<td>' + chip(row.base_result) + '</td>' +
+      '<td>' + chip(row[brandKey] || "") + '</td>' +
+      '<td>' + chip(androidKey ? (row[androidKey] || "") : "") + '</td>' +
+      '<td>' + chip(iosKey ? (row[iosKey] || "") : "") + '</td>' +
+      '<td class="ftc-label-cell">' + esc(row.label || "-") + '</td>' +
+    '</tr>';
   }).join("");
+
+  // Pager
+  if (pager) {
+    if (totalPages <= 1) {
+      pager.innerHTML = "";
+    } else {
+      let btns = '';
+      const rangeStart = Math.max(1, safePage - 3);
+      const rangeEnd = Math.min(totalPages, safePage + 3);
+      if (rangeStart > 1) btns += '<button type="button" class="ftc-pager-btn" data-drill-page="1">1</button><span class="ftc-pager-sep">…</span>';
+      for (let p = rangeStart; p <= rangeEnd; p++) {
+        btns += '<button type="button" class="ftc-pager-btn' + (p === safePage ? ' active' : '') + '" data-drill-page="' + p + '">' + p + '</button>';
+      }
+      if (rangeEnd < totalPages) btns += '<span class="ftc-pager-sep">…</span><button type="button" class="ftc-pager-btn" data-drill-page="' + totalPages + '">' + totalPages + '</button>';
+      pager.innerHTML = '<div class="ftc-pager-inner">' + btns + '</div>';
+    }
+  }
+
+  if (card.scrollIntoView) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
+
+// renderLabelRowsTable → 더 이상 사용하지 않음(renderLabelBrandDrill + renderLabelRowDrill로 대체)
+// renderLabelRowsTable / renderLabelToc → renderLabelBrandDrill + renderLabelRowDrill로 대체됨
+function renderLabelRowsTable() {}
+function renderLabelToc() {}
 
 function setActiveLabel(label) {
   S.activeLabel = String(label || "").trim();
@@ -2212,6 +3149,8 @@ function renderAll() {
   renderComponentToc();
   renderLabelToc();
   if (S.tab === "summary") {
+    renderSummaryProgressDeck();
+    switchSummaryView(S.summaryView);
     renderSummaryCards();
     renderComponentResultTable();
     renderBrandTable();
@@ -2241,7 +3180,6 @@ function renderAll() {
 async function loadSummary(force) {
   const hint = document.getElementById("qaFullTcHint");
   if (hint) hint.textContent = "데이터 로드 중...";
-  setLoadAlert("요약 데이터를 불러오는 중입니다. 대용량 파일은 최대 1분가량 소요될 수 있습니다.", "warn");
   setLoadAlert("", null);
   try {
     const data = await fetchJsonWithRetry("/api/qa/full-tc/summary" + (force ? "?force=true" : ""), { method: "GET" }, 2, FTC_SUMMARY_TIMEOUT_MS);
@@ -2275,7 +3213,9 @@ async function loadSummary(force) {
 }
 
 async function loadDefectMatch(force) {
-  setLoadAlert("Defect 대조 데이터를 불러오는 중입니다.", "warn");
+  if (S.tab === "defect") {
+    setLoadAlert("Defect 대조 데이터를 불러오는 중입니다.", "warn");
+  }
   try {
     const data = await fetchJsonWithRetry("/api/qa/full-tc/defect-match" + (force ? "?force=true" : ""), { method: "GET" }, 2, FTC_DEFECT_TIMEOUT_MS);
     if (!data) throw new Error("Defect 대조 로드 실패");
@@ -2299,6 +3239,8 @@ async function loadDefectMatch(force) {
   }
   if (!S.defect || !S.defect.ok) {
     setLoadAlert("Defect 대조 데이터를 불러오지 못했습니다. 소스 파일 또는 권한 상태를 확인해 주세요.", "warn");
+  } else if (S.tab !== "defect") {
+    setLoadAlert("", null);
   }
   renderAll();
   renderIntegrityAlert();
@@ -2340,6 +3282,12 @@ document.querySelectorAll(".ftc-tab").forEach(function (button) {
   });
 });
 
+document.querySelectorAll(".ftc-summary-view-tab").forEach(function (button) {
+  button.addEventListener("click", function () {
+    switchSummaryView(button.dataset.summaryView || "matrix");
+  });
+});
+
 document.getElementById("qaFullTcCompChips")?.addEventListener("click", function (event) {
   const button = event.target.closest("[data-component]");
   if (!button) return;
@@ -2348,21 +3296,136 @@ document.getElementById("qaFullTcCompChips")?.addEventListener("click", function
   renderAll();
 });
 
-document.getElementById("qaFullTcLabelToc")?.addEventListener("click", function (event) {
-  const button = event.target.closest("[data-label]");
+document.getElementById("qaFullTcBrandBody")?.addEventListener("click", function (event) {
+  const button = event.target.closest(".ftc-brand-count-btn");
   if (!button) return;
-  setActiveLabel(button.dataset.label || "");
-  switchTab("label", true);
-  resetMainPagination();
-  renderAll();
+  const next = {
+    brandKey: String(button.dataset.brandKey || ""),
+    brandLabel: String(button.dataset.brandKey || "").toUpperCase() === "ALL" ? "통합" : String(button.dataset.brandKey || "").toUpperCase(),
+    rowName: String(button.dataset.rowName || ""),
+    bucket: String(button.dataset.bucket || ""),
+  };
+  if (
+    S.brandDrill &&
+    S.brandDrill.brandKey === next.brandKey &&
+    S.brandDrill.rowName === next.rowName &&
+    S.brandDrill.bucket === next.bucket
+  ) {
+    S.brandDrill = null;
+    S.brandDrillViolationOnly = false;
+  } else {
+    S.brandDrill = next;
+    S.brandDrillViolationOnly = false;
+    S.pageBrandDrill = 1;
+  }
+  renderBrandTable();
 });
 
+document.getElementById("qaFullTcBrandViolationBtn")?.addEventListener("click", function () {
+  if (!isBrandDrillViolationAvailable()) return;
+  S.brandDrillViolationOnly = !S.brandDrillViolationOnly;
+  S.pageBrandDrill = 1;
+  renderBrandDrillRows();
+});
+
+// ── LABEL 이벤트 핸들러 ──────────────────────────────────────
+
+// 메인 LABEL 테이블 클릭: 라벨 버튼 → 브랜드 드릴, 게이지 버튼 → 해당 브랜드 드릴
 document.getElementById("qaFullTcLabelBody")?.addEventListener("click", function (event) {
-  const button = event.target.closest("[data-label]");
-  if (!button) return;
-  setActiveLabel(button.dataset.label || "");
-  switchTab("label", true);
-  renderAll();
+  // 라벨 이름 버튼 클릭
+  const labelBtn = event.target.closest(".ftc-label-row-btn");
+  if (labelBtn) {
+    const label = labelBtn.dataset.label || "";
+    setActiveLabel(label);
+    S.labelBrandDrill = { label: label, brand: "TOTAL" };
+    S.labelRowDrill = null;
+    renderLabelTable();
+    renderLabelBrandDrill();
+    renderLabelRowDrill();
+    return;
+  }
+  // 특정 브랜드 게이지 버튼 클릭
+  const gaugeBtn = event.target.closest(".ftc-lbg-wrap");
+  if (gaugeBtn) {
+    const label = gaugeBtn.dataset.label || "";
+    const brand = gaugeBtn.dataset.brand || "KOA";
+    setActiveLabel(label);
+    S.labelBrandDrill = { label: label, brand: brand };
+    S.labelRowDrill = null;
+    renderLabelTable();
+    renderLabelBrandDrill();
+    renderLabelRowDrill();
+    return;
+  }
+});
+
+// 브랜드 탭 클릭 (KOA / HOA / GOA)
+document.getElementById("qaLabelBrandTabs")?.addEventListener("click", function (event) {
+  const btn = event.target.closest("[data-brand]");
+  if (!btn) return;
+  const label = btn.dataset.label || (S.labelBrandDrill && S.labelBrandDrill.label) || "";
+  const brand = btn.dataset.brand || "TOTAL";
+  S.labelBrandDrill = { label: label, brand: brand };
+  if (S.labelRowDrill && S.labelRowDrill.label === label) {
+    S.labelRowDrill = { ...S.labelRowDrill, brand: brand };
+  } else {
+    S.labelRowDrill = null;
+  }
+  renderLabelBrandDrill();
+  renderLabelRowDrill();
+});
+
+// 컴포넌트 행 보기 버튼
+document.getElementById("qaLabelCompBody")?.addEventListener("click", function (event) {
+  const btn = event.target.closest(".ftc-label-row-drill-btn");
+  if (!btn) return;
+  const label = btn.dataset.label || "";
+  const brand = btn.dataset.brand || "KOA";
+  const component = btn.dataset.component || "";
+  S.labelRowDrill = { label: label, brand: brand, component: component };
+  S.labelRowDrillPage = 1;
+  renderLabelBrandDrill();
+  renderLabelRowDrill();
+});
+
+// 브랜드 드릴 닫기
+document.getElementById("qaLabelBrandDrillClose")?.addEventListener("click", function () {
+  S.labelBrandDrill = null;
+  S.labelRowDrill = null;
+  const card = document.getElementById("qaLabelBrandDrillCard");
+  if (card) card.hidden = true;
+  const rowCard = document.getElementById("qaLabelRowDrillCard");
+  if (rowCard) rowCard.hidden = true;
+});
+
+// 행 드릴 닫기
+document.getElementById("qaLabelRowDrillClose")?.addEventListener("click", function () {
+  S.labelRowDrill = null;
+  const rowCard = document.getElementById("qaLabelRowDrillCard");
+  if (rowCard) rowCard.hidden = true;
+});
+
+// 행 드릴 페이저
+document.getElementById("qaLabelRowDrillPager")?.addEventListener("click", function (event) {
+  const btn = event.target.closest("[data-drill-page]");
+  if (!btn) return;
+  S.labelRowDrillPage = Number(btn.dataset.drillPage || 1);
+  renderLabelRowDrill();
+});
+
+document.getElementById("qaFullTcLabelSearch")?.addEventListener("input", function (event) {
+  S.labelQuery = String(event.target.value || "").trim();
+  if (S.tab === "label") renderLabelTable();
+});
+
+document.getElementById("qaFullTcLabelTop100")?.addEventListener("click", function () {
+  S.labelLimit = 100;
+  if (S.tab === "label") renderLabelTable();
+});
+
+document.getElementById("qaFullTcLabelShowAll")?.addEventListener("click", function () {
+  S.labelLimit = 0;
+  if (S.tab === "label") renderLabelTable();
 });
 
 document.getElementById("qaFullTcCategorySearch")?.addEventListener("input", function (event) {
@@ -2387,31 +3450,50 @@ document.getElementById("qaFullTcCategoryComponentCards")?.addEventListener("cli
   if (!button) return;
   const component = button.dataset.component || "all";
   S.component = S.component === component ? "all" : component;
+  S.pageCategoryDrill = 1;
+  renderCategoryTree();
+});
+
+document.getElementById("qaFullTcCategoryOutlineBody")?.addEventListener("click", function (event) {
+  const button = event.target.closest(".ftc-cat-count-btn");
+  if (!button) return;
+  const level = String(button.dataset.level || "depth3");
+  const next = {
+    level: level,
+    component: String(button.dataset.component || "-"),
+    depth1: String(button.dataset.depth1 || "(대분류 없음)"),
+    depth2: String(button.dataset.depth2 || "(중분류 없음)"),
+    depth3: String(button.dataset.depth3 || "(소분류 없음)"),
+  };
+  if (
+    S.categoryDrill &&
+    S.categoryDrill.level === next.level &&
+    S.categoryDrill.component === next.component &&
+    S.categoryDrill.depth1 === next.depth1 &&
+    S.categoryDrill.depth2 === next.depth2 &&
+    S.categoryDrill.depth3 === next.depth3
+  ) {
+    S.categoryDrill = null;
+  } else {
+    S.categoryDrill = next;
+  }
+  S.pageCategoryDrill = 1;
   renderCategoryTree();
 });
 
 document.getElementById("qaFullTcLabelSearch")?.addEventListener("input", function (event) {
   S.labelQuery = String(event.target.value || "").trim();
-  if (S.tab === "label") {
-    renderLabelTable();
-    renderLabelRowsTable();
-  }
+  if (S.tab === "label") renderLabelTable();
 });
 
 document.getElementById("qaFullTcLabelTop100")?.addEventListener("click", function () {
   S.labelLimit = 100;
-  if (S.tab === "label") {
-    renderLabelTable();
-    renderLabelRowsTable();
-  }
+  if (S.tab === "label") renderLabelTable();
 });
 
 document.getElementById("qaFullTcLabelShowAll")?.addEventListener("click", function () {
   S.labelLimit = 0;
-  if (S.tab === "label") {
-    renderLabelTable();
-    renderLabelRowsTable();
-  }
+  if (S.tab === "label") renderLabelTable();
 });
 
 document.getElementById("qaFullTcLabelTopCards")?.addEventListener("click", function (event) {
