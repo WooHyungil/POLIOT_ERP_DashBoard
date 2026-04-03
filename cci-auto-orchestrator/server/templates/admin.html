@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CCI Admin Panel</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260320f" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260329a" />
+  <link rel="stylesheet" href="/static/admin-form-styles.css?v=20260320a" />
+  <link rel="stylesheet" href="/static/admin-ui-theme.css?v=20260320a" />
   <script src="/static/auto_logout.js"></script>
 </head>
 <body class="has-side-nav">
@@ -23,13 +25,10 @@
           <p class="eyebrow">Enterprise QA Orchestration</p>
           <h1>Admin Panel</h1>
           <p class="meta-text">관리자 권한으로 계정과 운영 정보를 관리합니다.</p>
+          <p class="meta-text" id="adminDebugInfo" style="font-size: 0.85em; color: #666; margin-top: 8px;">로그인 사용자: <span id="adminCurrentUser">-</span> | 게임 관리 권한: <span id="adminGameAccess">-</span></p>
         </div>
       </div>
       <nav class="topnav">
-        <a class="navlink" href="/">개요</a>
-        <a class="navlink" href="/manage">관리</a>
-        <a class="navlink active" href="/admin">관리자</a>
-        <span class="topbar-nav-sep" aria-hidden="true"></span>
         <span id="topbarUserName" class="topbar-username" hidden></span>
         <span id="topbarCountdown" class="topbar-countdown" hidden></span>
         <a class="navlink btn-ghost" href="/mypage" style="white-space:nowrap;">마이페이지</a>
@@ -83,6 +82,7 @@
             <option value="admin">관리자</option>
           </select>
           <button type="button" class="btn-ghost" id="adminMemberRefreshBtn">새로고침</button>
+          <button type="button" id="adminMemberAddBtn" style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap;">+ 인원 추가</button>
         </div>
 
         <p class="hint" id="adminMemberResultCount">조회 결과 0명</p>
@@ -96,7 +96,7 @@
                 <th>권한</th>
                 <th>승인 상태</th>
                 <th>로그인 상태</th>
-                <th>게임 권한</th>
+                <th id="memberGameAccessHeader" hidden>게임 권한</th>
                 <th>가입일</th>
                 <th>작업</th>
               </tr>
@@ -107,24 +107,189 @@
       </article>
 
       <article class="card" id="adminIssueTab">
-        <h2>인원별 이슈 통계</h2>
-        <p class="hint">상세 통계 모듈 재연결 중입니다.</p>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>항목</th>
-                <th>값</th>
-              </tr>
-            </thead>
-            <tbody id="memberDetailBreakdownBody"></tbody>
-          </table>
+        <div class="admin-issue-hero">
+          <div>
+            <h2>인원별 이슈</h2>
+            <p class="hint">DefectList_Raw 업로드 데이터를 기준으로 회사 인원별 이슈 수, 중복/Not a Bug 비중, 점수, 순위를 날짜별로 조회합니다.</p>
+          </div>
+          <div class="admin-issue-hero-actions">
+            <button type="button" class="btn-secondary" id="adminIssueRefreshBtn">새로고침</button>
+            <button type="button" class="btn-ghost" id="adminIssueExportBtn">엑셀 내보내기</button>
+          </div>
+        </div>
+
+        <div class="admin-issue-toolbar" role="group" aria-label="회사 인원 관리">
+          <input type="text" id="adminCompanyMemberInput" list="adminCompanyMemberList" placeholder="회사 인원명 입력 (예: 홍길동)" />
+          <datalist id="adminCompanyMemberList"></datalist>
+          <button type="button" class="btn-ghost" id="adminCompanyMemberAddBtn">인원 추가</button>
+          <button type="button" class="btn-ghost" id="adminCompanyMemberRemoveBtn">인원 제거</button>
+          <span class="hint" id="adminCompanyMemberHint">회사 인원 목록을 불러오는 중...</span>
+        </div>
+
+        <div class="admin-issue-stats">
+          <div class="admin-people-stats">
+            <article class="admin-people-stat-card">
+              <p class="admin-people-stat-label">총 티켓</p>
+              <strong class="admin-people-stat-value" id="adminIssueStatTotal">-</strong>
+            </article>
+            <article class="admin-people-stat-card approved">
+              <p class="admin-people-stat-label">Definite problem</p>
+              <strong class="admin-people-stat-value" id="adminIssueStatMembers">-</strong>
+            </article>
+            <article class="admin-people-stat-card pending">
+              <p class="admin-people-stat-label">Mistake rate</p>
+              <strong class="admin-people-stat-value" id="adminIssueStatPending">-</strong>
+            </article>
+            <article class="admin-people-stat-card blocked">
+              <p class="admin-people-stat-label">Score</p>
+              <strong class="admin-people-stat-value" id="adminIssueStatClosed">-</strong>
+            </article>
+          </div>
+        </div>
+
+        <div class="admin-issue-toolbar" role="group" aria-label="인원별 이슈 필터">
+          <input type="search" id="adminIssueSearchInput" placeholder="키, 요약, 상태, 브랜드, Assignee 검색" />
+          <select id="adminIssueAuthorFilter" aria-label="리포터 필터">
+            <option value="">전체 리포터</option>
+          </select>
+          <select id="adminIssueStatusFilter" aria-label="상태 필터">
+            <option value="all">전체 상태</option>
+          </select>
+          <select id="adminIssueSortFilter" aria-label="정렬">
+            <option value="score_desc">점수 높은 순</option>
+            <option value="total_desc">티켓 많은 순</option>
+            <option value="rank_asc">랭킹 순</option>
+            <option value="latest_desc">최근 등록순</option>
+            <option value="name_asc">이름순</option>
+          </select>
+          <input type="date" id="adminIssueStartDate" aria-label="시작일" />
+          <input type="date" id="adminIssueEndDate" aria-label="종료일" />
+          <button type="button" class="btn-ghost" id="adminIssueResetBtn">필터 초기화</button>
+        </div>
+
+        <div class="admin-issue-toolbar" role="group" aria-label="빠른 날짜 범위">
+          <div class="admin-issue-quick-range">
+            <button type="button" class="btn-ghost admin-issue-range-btn active" data-range="all">전체</button>
+            <button type="button" class="btn-ghost admin-issue-range-btn" data-range="today">오늘</button>
+            <button type="button" class="btn-ghost admin-issue-range-btn" data-range="7">7일</button>
+            <button type="button" class="btn-ghost admin-issue-range-btn" data-range="30">30일</button>
+            <button type="button" class="btn-ghost admin-issue-range-btn" data-range="90">90일</button>
+          </div>
+          <div class="admin-issue-toolbar-meta">
+            <span class="hint" id="adminIssuePeriodHint">기간: -</span>
+            <span class="hint" id="adminIssueResultCount">조회 결과 0건 · 0명</span>
+          </div>
+        </div>
+
+        <div class="admin-issue-source-bar">
+          <span class="hint" id="adminIssueSourceHint">데이터 출처: -</span>
+          <span class="hint" id="adminIssueUpdatedHint">갱신: -</span>
+        </div>
+
+        <div class="admin-issue-perf-panel" id="adminIssuePerfPanel">
+          <div class="admin-issue-perf-head">
+            <div class="admin-issue-perf-title-wrap">
+              <strong>응답 성능 모니터</strong>
+              <span class="admin-issue-perf-level-badge" id="adminIssuePerfLevelBadge">-</span>
+            </div>
+            <div class="admin-issue-perf-window" role="group" aria-label="성능 집계 구간">
+              <button type="button" class="btn-ghost admin-issue-perf-window-btn active" data-window-sec="60">1분</button>
+              <button type="button" class="btn-ghost admin-issue-perf-window-btn" data-window-sec="300">5분</button>
+              <button type="button" class="btn-ghost admin-issue-perf-window-btn" data-window-sec="900">15분</button>
+            </div>
+          </div>
+          <div class="admin-issue-perf-meta" id="adminIssuePerfMeta">p95 -ms · hit -% · 샘플 0건</div>
+          <div class="admin-issue-perf-endpoints" id="adminIssuePerfEndpointCards">
+            <span class="hint">성능 샘플을 수집하는 중...</span>
+          </div>
+        </div>
+
+        <div class="admin-issue-filter-chips" id="adminIssueQuickMembers">
+          <span class="hint">리포터 빠른 선택을 불러오는 중...</span>
+        </div>
+
+        <div class="admin-issue-podium" id="adminIssuePodium">
+          <p class="hint">상위 랭킹 데이터를 불러오는 중...</p>
+        </div>
+
+        <div id="adminIssueSummaryVisual" class="admin-issue-summary-visual">
+          <p class="hint">인원별 요약 데이터를 불러오는 중...</p>
+        </div>
+
+        <div class="card-table">
+          <div class="admin-pending-queue-head">
+            <h3>인원별 요약 랭킹</h3>
+            <span class="hint">중복/Not a Bug/Definite problem/점수 기준 비교</span>
+          </div>
+          <div class="table-wrap">
+            <table id="adminIssueMemberTable">
+              <thead>
+                <tr>
+                  <th>리포터</th>
+                  <th>Total issue</th>
+                  <th>Duplicate</th>
+                  <th>Not a Bug</th>
+                  <th>Definite problem</th>
+                  <th>Mistake rate</th>
+                  <th>Highest</th>
+                  <th>High</th>
+                  <th>Medium</th>
+                  <th>Low</th>
+                  <th>Lowest</th>
+                  <th>Score</th>
+                  <th>Rank</th>
+                  <th>최근 등록일</th>
+                  <th>최근 이슈 수</th>
+                  <th>상세</th>
+                </tr>
+              </thead>
+              <tbody id="adminIssueMemberRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card-table" id="adminIssueDetailCard">
+          <div class="admin-pending-queue-head">
+            <h3>티켓 상세 조회</h3>
+            <div class="admin-issue-detail-head-meta">
+              <span class="hint" id="adminIssueDetailCount">상세 0건 표시 중</span>
+              <button type="button" class="btn-ghost" id="adminIssueDetailToggleBtn">상세 접기</button>
+              <button type="button" class="btn-ghost" id="adminIssueLoadMoreBtn" hidden>더 보기</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table id="adminIssueDetailTable">
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th>리포터</th>
+                  <th>상태</th>
+                  <th>우선순위</th>
+                  <th>Resolution</th>
+                  <th>Summary</th>
+                  <th>Region</th>
+                  <th>OS</th>
+                  <th>Components</th>
+                  <th>Brand</th>
+                  <th>Affects Version/s</th>
+                  <th>Fix Version/s</th>
+                  <th>Assignee</th>
+                  <th>Created</th>
+                  <th>Labels</th>
+                  <th>Links</th>
+                  <th>비고</th>
+                </tr>
+              </thead>
+              <tbody id="adminIssueRows"></tbody>
+            </table>
+          </div>
         </div>
       </article>
 
       <article class="card" id="adminAssetApprovalTab">
-        <h2>요청 승인</h2>
-        <p class="hint">페이지별 승인 요청을 공통 목록으로 확인하고, 내용 버튼에서 요청 상세를 팝업으로 확인할 수 있습니다.</p>
+        <h2>승인 페이지</h2>
+        <p class="hint">게시판/자산/일정 승인 요청을 한 화면에서 연속으로 처리할 수 있습니다. 내용 버튼으로 상세를 확인하세요.</p>
+        <h3 style="margin:0 0 10px;">통합 승인 업무</h3>
         <div class="table-wrap">
           <table>
             <thead>
@@ -133,7 +298,7 @@
                 <th>요청자</th>
                 <th>요청일시</th>
                 <th>내용</th>
-                <th>판단</th>
+                <th>승인/반려</th>
                 <th>철회</th>
               </tr>
             </thead>
@@ -141,85 +306,17 @@
           </table>
         </div>
 
-        <hr style="margin:16px 0;border:none;border-top:1px solid #e2e8f0;" />
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px;">
-          <h3 style="margin:0;">게시판 승인</h3>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin:12px 0 8px;">
+          <p class="hint" style="margin:0;">게시판 승인 요청</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" class="board-admin-filter-btn active" data-status="pending" id="boardAdminFilterPending" style="padding:5px 12px;border:1px solid #f59e0b;border-radius:8px;background:#fffbeb;color:#92400e;font-size:0.8rem;font-weight:700;cursor:pointer;">⏳ 대기</button>
             <button type="button" class="board-admin-filter-btn" data-status="all" style="padding:5px 12px;border:1px solid #c7d5eb;border-radius:8px;background:#fff;color:#4a5568;font-size:0.8rem;font-weight:700;cursor:pointer;">전체</button>
             <button type="button" id="adminBoardRefreshBtn" style="padding:5px 12px;border:1px solid #c7d5eb;border-radius:8px;background:#fff;color:#4a5568;font-size:0.8rem;cursor:pointer;" title="새로고침"><i class="fas fa-sync-alt"></i></button>
           </div>
         </div>
-        <p class="hint">게시글의 승인/반려는 여기서만 처리합니다.</p>
-        <div class="table-wrap" style="margin-top:12px;">
-          <table>
-            <thead>
-              <tr>
-                <th>제목</th>
-                <th>작성자</th>
-                <th>작성일시</th>
-                <th>상태</th>
-                <th>승인</th>
-                <th>반려</th>
-                <th>상세</th>
-              </tr>
-            </thead>
-            <tbody id="adminBoardPostsList">
-              <tr><td colspan="7"><span class="hint"><i class="fas fa-circle-notch fa-spin"></i> 불러오는 중...</span></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </article>
-
-      <article class="card" id="adminAssetDecisionTab">
-        <h2>요청 판단</h2>
-        <div class="decision-headnote">
-          <p class="decision-lead">승인 가능한 요청만 빠르게 골라 처리하고, 상세 내용은 내용 버튼으로 확인합니다.</p>
-          <div class="decision-meta-strip">
-            <div class="decision-meta-pill">
-              <span>전체 요청</span>
-              <strong id="decisionTotalCount">0</strong>
-            </div>
-            <div class="decision-meta-pill">
-              <span>선택됨</span>
-              <strong id="decisionSelectedOnlyCount">0</strong>
-            </div>
-            <div class="decision-meta-pill is-accent">
-              <span>즉시 처리 가능</span>
-              <strong id="decisionActionableCount">0</strong>
-            </div>
-          </div>
-        </div>
-        <div class="decision-toolbar">
-          <label class="decision-checkall"><input id="decisionQueueCheckAll" type="checkbox" /> 처리 가능 항목 전체 선택</label>
-          <span id="decisionSelectedCount" class="decision-selection-text">0개 선택됨</span>
-          <div class="decision-toolbar-actions">
-            <button id="decisionWithdrawSelectedBtn" type="button" class="btn-warning">선택건 요청취소</button>
-          </div>
-        </div>
-        <div class="table-wrap decision-table-wrap">
-          <table class="decision-table">
-            <thead>
-              <tr>
-                <th style="width:54px;">선택</th>
-                <th>페이지</th>
-                <th>요청자</th>
-                <th>요청일시</th>
-                <th>내용</th>
-                <th>상태</th>
-                <th>요청취소</th>
-              </tr>
-            </thead>
-            <tbody id="decisionQueueRows"></tbody>
-          </table>
-        </div>
-        <div class="decision-action-panel">
-          <div class="decision-mode-group">
-            <label><input type="radio" name="decisionType" value="approve" checked /> 선택건 승인</label>
-            <label><input type="radio" name="decisionType" value="reject" /> 선택건 반려</label>
-          </div>
-          <input id="decisionBulkRejectReason" type="text" placeholder="반려 사유 (반려 선택 시 필수)" class="decision-reject-input" />
-          <button id="decisionApplyBtn" type="button">선택건 처리</button>
+        <p class="hint" style="margin:0 0 8px;">게시글의 승인/반려/삭제는 아래 목록에서 바로 처리합니다.</p>
+        <div id="adminBoardPostsList" class="board-admin-posts-list" style="margin-top:12px;">
+          <p class="hint"><i class="fas fa-circle-notch fa-spin"></i> 불러오는 중...</p>
         </div>
       </article>
 
@@ -331,11 +428,11 @@
             </div>
             <div class="admin-member-edit-field">
               <label for="memberEditPhone">연락처</label>
-              <input type="text" id="memberEditPhone" maxlength="40" />
+              <input type="text" id="memberEditPhone" maxlength="40" pattern="^(?:\+?\d[\d\-\s]{7,18}\d)$" title="전화번호 형식이 올바르지 않습니다. 예: 010-1234-5678" />
             </div>
             <div class="admin-member-edit-field">
               <label for="memberEditBirth">생년</label>
-              <input type="text" id="memberEditBirth" maxlength="30" />
+              <input type="text" id="memberEditBirth" maxlength="30" pattern="^\d{4}-\d{2}-\d{2}$" title="YYYY-MM-DD 형식으로 입력해 주세요." />
             </div>
             <div class="admin-member-edit-field admin-member-edit-field--wide">
               <label for="memberEditAddress">주소</label>
@@ -345,7 +442,7 @@
           <div class="admin-member-edit-flags">
             <label><input type="checkbox" id="memberEditApproved" /> 승인 완료</label>
             <label><input type="checkbox" id="memberEditCanLogin" /> 로그인 허용</label>
-            <label><input type="checkbox" id="memberEditGameAccess" /> 게임 메뉴 허용</label>
+            <label id="memberEditGameAccessField" hidden><input type="checkbox" id="memberEditGameAccess" /> 게임 메뉴 허용</label>
           </div>
           <div class="button-row">
             <button type="submit" id="memberEditSaveBtn">저장</button>
@@ -355,17 +452,108 @@
         <hr class="admin-member-modal-divider" />
         <form id="memberPasswordForm" class="admin-member-password-form">
           <h4>비밀번호 변경</h4>
-          <p class="hint">관리자가 즉시 비밀번호를 재설정할 수 있습니다. 8자 이상으로 입력하세요.</p>
+          <p class="hint">관리자가 즉시 비밀번호를 재설정할 수 있습니다. 8~100자, 영문/숫자/특수문자를 각각 1개 이상 포함해 주세요.</p>
           <div class="admin-member-password-row">
-            <input type="password" id="memberPasswordInput" placeholder="새 비밀번호" minlength="8" required />
+            <input type="password" id="memberPasswordInput" placeholder="새 비밀번호" minlength="8" maxlength="100" pattern="^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$" title="영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~100자로 입력해 주세요." required />
             <button type="submit" id="memberPasswordSaveBtn">비밀번호 변경</button>
           </div>
         </form>
       </div>
     </div>
+
+    <!-- 인원 추가 모달 -->
+    <section class="modal" id="memberAddModal" hidden>
+      <div class="modal-backdrop" data-close-member-add="1"></div>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="memberAddModalTitle">
+        <div class="modal-head">
+          <h3 id="memberAddModalTitle">새 인원 추가</h3>
+          <button type="button" class="btn-ghost" data-close-member-add="1">✕</button>
+        </div>
+        <div class="modal-body">
+          <form id="memberAddForm" class="member-add-form">
+            <!-- 필수 정보 섹션 -->
+            <fieldset class="form-section">
+              <legend>필수 정보</legend>
+              <div class="form-grid form-grid-2">
+                <div class="form-field form-field--wide">
+                  <label for="memberAddEmail">이메일 <span class="required-badge">필수</span></label>
+                  <input type="email" id="memberAddEmail" placeholder="example@poliot.co.kr" pattern="^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$" title="올바른 이메일 형식을 입력해 주세요." required />
+                  <small class="form-hint">회사 이메일을 입력하세요</small>
+                </div>
+                <div class="form-field form-field--wide">
+                  <label for="memberAddPassword">비밀번호 <span class="required-badge">필수</span></label>
+                  <input type="password" id="memberAddPassword" minlength="8" maxlength="100" pattern="^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$" title="영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~100자로 입력해 주세요." placeholder="8~100자, 영문/숫자/특수문자 포함" required />
+                  <small class="form-hint">8~100자, 영문/숫자/특수문자를 각각 1개 이상 포함해 주세요</small>
+                </div>
+                <div class="form-field">
+                  <label for="memberAddName">이름 <span class="required-badge">필수</span></label>
+                  <input type="text" id="memberAddName" placeholder="홍길동" maxlength="60" required />
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- 선택 정보 섹션 -->
+            <fieldset class="form-section">
+              <legend>선택 정보</legend>
+              <div class="form-grid form-grid-2">
+                <div class="form-field">
+                  <label for="memberAddPhone">전화번호</label>
+                  <input type="tel" id="memberAddPhone" placeholder="010-0000-0000" maxlength="40" pattern="^(?:\+?\d[\d\-\s]{7,18}\d)$" title="전화번호 형식이 올바르지 않습니다. 예: 010-1234-5678" />
+                </div>
+                <div class="form-field">
+                  <label for="memberAddTitle">직책/소속</label>
+                  <input type="text" id="memberAddTitle" placeholder="예: QA 개발팀 / 책임" maxlength="60" />
+                </div>
+                <div class="form-field">
+                  <label for="memberAddBirth">생년월일</label>
+                  <input type="text" id="memberAddBirth" placeholder="YYYY-MM-DD" maxlength="30" pattern="^\d{4}-\d{2}-\d{2}$" title="YYYY-MM-DD 형식으로 입력해 주세요." />
+                </div>
+                <div class="form-field form-field--wide">
+                  <label for="memberAddAddress">주소</label>
+                  <input type="text" id="memberAddAddress" placeholder="서울시 강남구..." maxlength="160" />
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- 권한 설정 섹션 -->
+            <fieldset class="form-section">
+              <legend>권한 및 상태</legend>
+              <div class="form-checkboxes">
+                <label class="checkbox-item">
+                  <input type="checkbox" id="memberAddApproved" checked />
+                  <span class="checkbox-label">
+                    <strong>승인 완료</strong>
+                    <small>즉시 계정 사용 가능</small>
+                  </span>
+                </label>
+                <label class="checkbox-item">
+                  <input type="checkbox" id="memberAddCanLogin" checked />
+                  <span class="checkbox-label">
+                    <strong>로그인 허용</strong>
+                    <small>로그인 접근 가능</small>
+                  </span>
+                </label>
+                <label class="checkbox-item">
+                  <input type="checkbox" id="memberAddRole" />
+                  <span class="checkbox-label">
+                    <strong>관리자 권한</strong>
+                    <small>관리 페이지 접근 가능</small>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+
+            <div class="button-row button-row--modal">
+              <button type="submit" class="btn-primary">추가하기</button>
+              <button type="button" class="btn-secondary" data-close-member-add="1">취소</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
   </section>
 
   <script src="/static/side_nav.js?v=20260320h"></script>
-  <script src="/static/admin.js?v=20260320h"></script>
+  <script src="/static/admin.js?v=20260330a"></script>
 </body>
 </html>

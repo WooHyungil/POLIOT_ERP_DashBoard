@@ -1066,5 +1066,1228 @@
       "대상: hiss0723@poliot.co.kr",
       "game_access: False -> True"
     ]
+  },
+  {
+    "title": "DefectList_Raw 최신화",
+    "kind": "updated",
+    "scope": "Data",
+    "updated_at": "2026-03-23T12:45:27",
+    "details": [
+      "시트: DefectList_Raw",
+      "범위: B5:R",
+      "반영 시각: 2026-03-23T12:45:27",
+      "이슈 건수: 0"
+    ]
+  },
+  {
+    "title": "내 정보 수정",
+    "kind": "updated",
+    "scope": "마이페이지",
+    "updated_at": "2026-03-24T09:29:45",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "계정: hiss0723@poliot.co.kr",
+      "name: hiss0723 -> 우형일",
+      "address: - -> SW품질/책임"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T11:18:25",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T11:18:26",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T11:18:27",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T11:18:27",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T12:29:05",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T12:40:20",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "can_login: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T12:40:23",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T12:40:23",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T12:40:24",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "game_access: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T12:40:24",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "can_login: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T12:40:25",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "게시판 글 반려",
+    "kind": "removed",
+    "scope": "게시판",
+    "updated_at": "2026-03-24T13:54:11",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: ㄴㅇㄹ",
+      "ID: board-f38be81ed56a",
+      "반려자: hiss0723@poliot.co.kr",
+      "사유: -"
+    ]
+  },
+  {
+    "title": "게시판 글 반려",
+    "kind": "removed",
+    "scope": "게시판",
+    "updated_at": "2026-03-24T13:54:13",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: 안녕하세요",
+      "ID: board-ac6ec60252ff",
+      "반려자: hiss0723@poliot.co.kr",
+      "사유: -"
+    ]
+  },
+  {
+    "title": "회원 계정 추가",
+    "kind": "added",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T15:51:14",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "이름: 이지연",
+      "권한: user",
+      "승인: 예",
+      "로그인 허용: 예",
+      "게임 접근: 차단"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T15:51:18",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "role: user -> admin"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T15:51:19",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "role: admin -> user"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T15:51:21",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "게시판 요청 철회(삭제)",
+    "kind": "removed",
+    "scope": "게시판",
+    "updated_at": "2026-03-24T16:04:11",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: ㄴㅇㄹ",
+      "ID: board-f38be81ed56a",
+      "요청자: hiss0723@poliot.co.kr",
+      "사유: -"
+    ]
+  },
+  {
+    "title": "게시판 요청 철회(삭제)",
+    "kind": "removed",
+    "scope": "게시판",
+    "updated_at": "2026-03-24T16:04:16",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: 안녕하세요",
+      "ID: board-ac6ec60252ff",
+      "요청자: hiss0723@poliot.co.kr",
+      "사유: -"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-24T16:04:40",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: Test",
+      "작성자: 우형일",
+      "중요도: High",
+      "ID: board-d5f735477069"
+    ]
+  },
+  {
+    "title": "회원가입 승인 요청",
+    "kind": "added",
+    "scope": "회원가입",
+    "updated_at": "2026-03-24T16:09:46",
+    "details": [
+      "작업자: system",
+      "계정: jy.lee@poliot.co.kr",
+      "이름: 기가연지",
+      "전화번호: 01052713459",
+      "상태: 관리자 승인 대기"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T16:10:05",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T16:10:06",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "회원 승인",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T16:10:07",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "approved: False -> True"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-24T16:11:13",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: ㅎㅇ",
+      "작성자: 우형일",
+      "중요도: Low",
+      "ID: board-52f871edd320"
+    ]
+  },
+  {
+    "title": "회원가입 승인 요청",
+    "kind": "added",
+    "scope": "회원가입",
+    "updated_at": "2026-03-24T16:13:37",
+    "details": [
+      "작업자: system",
+      "계정: jy.lee@poliot.co.kr",
+      "이름: 기가연지",
+      "전화번호: 01052713459",
+      "상태: 관리자 승인 대기"
+    ]
+  },
+  {
+    "title": "회원 승인",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T16:14:07",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "approved: False -> True",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-24T16:15:38",
+    "details": [
+      "작업자: 기가연지 (jy.lee@poliot.co.kr)",
+      "제목: hi",
+      "작성자: 기가연지",
+      "중요도: High",
+      "ID: board-af43cdca5704"
+    ]
+  },
+  {
+    "title": "게시판 글 승인",
+    "kind": "updated",
+    "scope": "게시판",
+    "updated_at": "2026-03-24T16:16:19",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: hi",
+      "ID: board-af43cdca5704",
+      "승인자: hiss0723@poliot.co.kr"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T16:19:08",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T16:23:45",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "role: user -> admin"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T16:23:57",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "role: admin -> user"
+    ]
+  },
+  {
+    "title": "일정 생성",
+    "kind": "added",
+    "scope": "일정 관리",
+    "updated_at": "2026-03-24T16:26:48",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: [연차] 26년 03월 04일~05일 연차 사용 신청의 건",
+      "일정 유형: vacation",
+      "시작일: 2026-03-28",
+      "종료일: 2026-03-28",
+      "승인 상태: pending"
+    ]
+  },
+  {
+    "title": "회원가입 승인 요청",
+    "kind": "added",
+    "scope": "회원가입",
+    "updated_at": "2026-03-24T17:14:19",
+    "details": [
+      "작업자: system",
+      "계정: aj7592@poliot.co.kr",
+      "이름: 유승훈",
+      "전화번호: 01063926528",
+      "상태: 관리자 승인 대기"
+    ]
+  },
+  {
+    "title": "회원 승인",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T17:14:37",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: aj7592@poliot.co.kr",
+      "approved: False -> True",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T17:14:39",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: aj7592@poliot.co.kr",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T17:14:53",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: aj7592@poliot.co.kr",
+      "role: user -> admin"
+    ]
+  },
+  {
+    "title": "DefectList_Raw 최신화",
+    "kind": "updated",
+    "scope": "Data",
+    "updated_at": "2026-03-24T22:38:23",
+    "details": [
+      "시트: DefectList_Raw",
+      "범위: B5:R",
+      "반영 시각: 2026-03-24T22:38:23",
+      "이슈 건수: 5631"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T22:38:57",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: aj7592@poliot.co.kr",
+      "role: admin -> user"
+    ]
+  },
+  {
+    "title": "회원 계정 추가",
+    "kind": "added",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T22:39:38",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: hiss0723@hiss0723",
+      "이름: 우형일",
+      "권한: user",
+      "승인: 예",
+      "로그인 허용: 예",
+      "게임 접근: 차단"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T22:41:09",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: hiss0723@hiss0723",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-24T22:41:49",
+    "details": [
+      "작업자: 우형일 (hiss0723@hiss0723)",
+      "제목: Test",
+      "작성자: test",
+      "중요도: High",
+      "ID: board-6b08ed41b590"
+    ]
+  },
+  {
+    "title": "게시판 글 승인",
+    "kind": "updated",
+    "scope": "게시판",
+    "updated_at": "2026-03-24T22:42:13",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "제목: Test",
+      "ID: board-6b08ed41b590",
+      "승인자: hiss0723@poliot.co.kr"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T22:42:43",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: hiss0723@hiss0723",
+      "role: user -> admin"
+    ]
+  },
+  {
+    "title": "회원 계정 삭제",
+    "kind": "removed",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-24T22:45:45",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: hiss0723@hiss0723",
+      "직원 연동 데이터 삭제: 1건"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T08:31:07",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T08:31:07",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: aj7592@poliot.co.kr",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T08:31:08",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T08:31:09",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "game_access: True -> False"
+    ]
+  },
+  {
+    "title": "회원 승인",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T09:19:15",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "approved: False -> True",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 승인",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T09:19:17",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "approved: False -> True",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 승인",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T09:19:18",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "대상: aj7592@poliot.co.kr",
+      "approved: False -> True",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "내 정보 수정",
+    "kind": "updated",
+    "scope": "마이페이지",
+    "updated_at": "2026-03-25T10:17:39",
+    "details": [
+      "작업자: hiss0723 (hiss0723@poliot.co.kr)",
+      "계정: hiss0723@poliot.co.kr",
+      "name: hiss0723 -> 우형일",
+      "title: - -> SW품질/책임",
+      "phone: - -> 010-8326-5491",
+      "birth: - -> 2001.07.23"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T10:20:22",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T10:22:06",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: aj7592@poliot.co.kr",
+      "password: updated"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T10:22:47",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "password: updated"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-25T12:33:29",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-021",
+      "요청자: hiss0723@poliot.co.kr",
+      "상태: active -> pending",
+      "삭제요청상태: none -> pending",
+      "구 관리번호: SW-GOA-20"
+    ]
+  },
+  {
+    "title": "단말 자산 삭제 요청 철회",
+    "kind": "updated",
+    "scope": "단말 관리",
+    "updated_at": "2026-03-25T12:33:43",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "ID: asset-poliot-eu-s-w-021",
+      "철회자: hiss0723@poliot.co.kr",
+      "원 요청자: hiss0723@poliot.co.kr",
+      "상태: pending -> active",
+      "삭제요청상태: pending -> none",
+      "구 관리번호: SW-GOA-20"
+    ]
+  },
+  {
+    "title": "회원가입 승인 요청",
+    "kind": "added",
+    "scope": "회원가입",
+    "updated_at": "2026-03-25T14:11:54",
+    "details": [
+      "작업자: system",
+      "계정: hey6410@poliot.co.kr",
+      "이름: 나덕윤",
+      "전화번호: 010-40057-2524",
+      "상태: 관리자 승인 대기"
+    ]
+  },
+  {
+    "title": "회원 승인",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:15:54",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: hey6410@poliot.co.kr",
+      "approved: False -> True",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:17:45",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: hey6410@poliot.co.kr",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:17:49",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: hey6410@poliot.co.kr",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:18:57",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: hey6410@poliot.co.kr",
+      "password: updated"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-25T14:21:23",
+    "details": [
+      "작업자: 나덕윤 (hey6410@poliot.co.kr)",
+      "제목: 집에 보내주세요",
+      "작성자: 우형일",
+      "중요도: High",
+      "ID: board-a8601f1a148b"
+    ]
+  },
+  {
+    "title": "일정 승인 처리",
+    "kind": "updated",
+    "scope": "일정 관리",
+    "updated_at": "2026-03-25T14:22:05",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "ID: schedule-147668a9bdf8",
+      "approval_status: pending -> approved",
+      "approved_by: - -> hiss0723@poliot.co.kr",
+      "approved_at: - -> 2026-03-25T05:22:05"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-25T14:23:03",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: 우형일",
+      "작성자: 우형일",
+      "중요도: Medium",
+      "ID: board-e32606aca567"
+    ]
+  },
+  {
+    "title": "회원 승인",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:23:50",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: hey6410@poliot.co.kr",
+      "approved: False -> True",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "게시판 글 승인",
+    "kind": "updated",
+    "scope": "게시판",
+    "updated_at": "2026-03-25T14:24:12",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: 집에 보내주세요",
+      "ID: board-a8601f1a148b",
+      "승인자: hiss0723@poliot.co.kr"
+    ]
+  },
+  {
+    "title": "회원가입 승인 요청",
+    "kind": "added",
+    "scope": "회원가입",
+    "updated_at": "2026-03-25T14:24:26",
+    "details": [
+      "작업자: system",
+      "계정: sadltkdahr12@gmail.com",
+      "이름: 이주원",
+      "전화번호: 01051800359",
+      "상태: 관리자 승인 대기"
+    ]
+  },
+  {
+    "title": "회원 승인",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:24:51",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "approved: False -> True",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:25:11",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:25:15",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 승인",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:25:15",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: hey6410@poliot.co.kr",
+      "approved: False -> True",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:25:21",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:26:30",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "password: updated"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:27:40",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:28:10",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "password: updated"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:28:20",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:29:33",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "password: updated"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:29:50",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:32:40",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "role: user -> admin"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:32:43",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 승인",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T14:34:56",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "role: admin -> user",
+      "approved: False -> True",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-25T14:50:28",
+    "details": [
+      "작업자: 이주원 (sadltkdahr12@gmail.com)",
+      "제목: 집에 가고 싶습니다",
+      "작성자: 익명",
+      "중요도: High",
+      "ID: board-d7e742b46e22"
+    ]
+  },
+  {
+    "title": "게시판 글 승인",
+    "kind": "updated",
+    "scope": "게시판",
+    "updated_at": "2026-03-25T16:18:16",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: 집에 가고 싶습니다",
+      "ID: board-d7e742b46e22",
+      "승인자: hiss0723@poliot.co.kr"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-03-25T16:21:09",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: 사나이",
+      "작성자: 우형일",
+      "중요도: High",
+      "ID: board-1e03a98d82b5"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-25T16:43:35",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: aj7592@poliot.co.kr",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "회원가입 승인 요청",
+    "kind": "added",
+    "scope": "회원가입",
+    "updated_at": "2026-03-26T15:06:11",
+    "details": [
+      "작업자: system",
+      "계정: yunjieun.poliot@gmail.com",
+      "이름: 윤지은",
+      "전화번호: 01091481495",
+      "상태: 관리자 승인 대기"
+    ]
+  },
+  {
+    "title": "회원 승인",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-26T15:06:32",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: yunjieun.poliot@gmail.com",
+      "approved: False -> True",
+      "can_login: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-26T15:06:34",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: yunjieun.poliot@gmail.com",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-03-26T15:06:36",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: yunjieun.poliot@gmail.com",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-04-03T14:31:42",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "game_access: False -> True"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-04-03T14:31:43",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "can_login: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-04-03T14:31:48",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sue@poliot.co.kr",
+      "game_access: True -> False"
+    ]
+  },
+  {
+    "title": "DefectList_Raw 최신화",
+    "kind": "updated",
+    "scope": "Data",
+    "updated_at": "2026-04-03T14:32:04",
+    "details": [
+      "시트: DefectList_Raw",
+      "범위: B5:R",
+      "반영 시각: 2026-04-03T14:32:04",
+      "이슈 건수: 4847"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-04-03T17:36:11",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: yunjieun.poliot@gmail.com",
+      "game_access: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-04-03T17:36:12",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "game_access: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-04-03T17:36:13",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: hey6410@poliot.co.kr",
+      "game_access: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-04-03T17:36:14",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: jy.lee@poliot.co.kr",
+      "game_access: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-04-03T17:36:15",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: aj7592@poliot.co.kr",
+      "game_access: True -> False"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-04-03T17:36:17",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: sadltkdahr12@gmail.com",
+      "변경 항목 없음"
+    ]
+  },
+  {
+    "title": "회원 계정 수정",
+    "kind": "updated",
+    "scope": "인원 관리",
+    "updated_at": "2026-04-03T17:36:45",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "대상: aj7592@poliot.co.kr",
+      "role: user -> admin"
+    ]
   }
 ]

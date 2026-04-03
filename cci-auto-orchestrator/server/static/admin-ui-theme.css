@@ -1,0 +1,370 @@
+/* ==================== 관리자 페이지 전체 테마 개선 ==================== */
+
+/* 색상 변수 */
+:root {
+  --admin-primary: #667eea;
+  --admin-primary-dark: #764ba2;
+  --admin-success: #10b981;
+  --admin-warning: #f59e0b;
+  --admin-danger: #ef4444;
+  --admin-info: #3b82f6;
+  --admin-light-bg: #f8fafc;
+  --admin-border: #e2e8f5;
+}
+
+/* 관리자 인원 통계 카드 개선 */
+.admin-people-stat-card {
+  padding: 16px;
+  border-radius: 10px;
+  border: 1.5px solid var(--admin-border);
+  background: white;
+  transition: all 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.admin-people-stat-card:hover {
+  border-color: var(--admin-primary);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+  transform: translateY(-2px);
+}
+
+.admin-people-stat-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.admin-people-stat-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--admin-primary);
+}
+
+.admin-people-stat-card.pending {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border-color: #fde68a;
+}
+
+.admin-people-stat-card.pending .admin-people-stat-value {
+  color: #b45309;
+}
+
+.admin-people-stat-card.approved {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border-color: #86efac;
+}
+
+.admin-people-stat-card.approved .admin-people-stat-value {
+  color: #15803d;
+}
+
+.admin-people-stat-card.blocked {
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  border-color: #fecaca;
+}
+
+.admin-people-stat-card.blocked .admin-people-stat-value {
+  color: #b91c1c;
+}
+
+/* 테이블 개선 */
+.table-wrap table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.table-wrap table thead tr {
+  background: linear-gradient(135deg, #f0f4ff 0%, #f5f9ff 100%);
+  border-bottom: 2px solid var(--admin-border);
+}
+
+.table-wrap table th {
+  padding: 12px 14px;
+  text-align: left;
+  font-weight: 600;
+  color: #334155;
+  font-size: 0.9rem;
+}
+
+.table-wrap table tbody tr {
+  border-bottom: 1px solid var(--admin-border);
+  transition: background 0.2s ease;
+}
+
+.table-wrap table tbody tr:hover {
+  background: var(--admin-light-bg);
+}
+
+.table-wrap table td {
+  padding: 12px 14px;
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+/* 상태 배지 개선 */
+.admin-member-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  min-width: 70px;
+  text-align: center;
+}
+
+.admin-member-status-badge.is-admin {
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  color: #6d28d9;
+  border: 1px solid #c4b5fd;
+}
+
+.admin-member-status-badge.is-user {
+  background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+  color: #334155;
+  border: 1px solid #94a3b8;
+}
+
+.admin-member-status-badge.is-approved {
+  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+  color: #166534;
+  border: 1px solid #86efac;
+}
+
+.admin-member-status-badge.is-pending {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+/* 액션 버튼 그룹 개선 */
+.admin-action-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.admin-action-buttons button,
+.admin-action-buttons .btn {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.btn-approve {
+  background: var(--admin-success);
+  color: white;
+}
+
+.btn-approve:hover {
+  background: #059669;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+.btn-edit {
+  background: var(--admin-info);
+  color: white;
+}
+
+.btn-edit:hover {
+  background: #2563eb;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.btn-game-access {
+  background: var(--admin-primary);
+  color: white;
+}
+
+.btn-game-access:hover {
+  background: var(--admin-primary-dark);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.btn-delete {
+  background: var(--admin-danger);
+  color: white;
+}
+
+.btn-delete:hover {
+  background: #dc2626;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+/* 인원 목록 툴바 개선 */
+.admin-people-toolbar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--admin-light-bg);
+  border-radius: 8px;
+  border: 1px solid var(--admin-border);
+}
+
+.admin-people-toolbar input[type="search"],
+.admin-people-toolbar select {
+  padding: 10px 12px;
+  border: 1px solid var(--admin-border);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.admin-people-toolbar input[type="search"]:focus,
+.admin-people-toolbar select:focus {
+  outline: none;
+  border-color: var(--admin-primary);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.admin-people-toolbar button {
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid var(--admin-border);
+}
+
+.admin-people-toolbar .btn-secondary {
+  background: white;
+  color: #475569;
+}
+
+.admin-people-toolbar .btn-secondary:hover {
+  background: #f1f5f9;
+  border-color: var(--admin-primary);
+  color: var(--admin-primary);
+}
+
+/* 게임 권한 열 스타일 */
+.game-access-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: var(--admin-light-bg);
+  border: 1px solid var(--admin-border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.game-access-toggle:hover {
+  border-color: var(--admin-primary);
+  background: rgba(102, 126, 234, 0.1);
+  color: var(--admin-primary);
+}
+
+.game-access-toggle.active {
+  background: linear-gradient(135deg, var(--admin-primary), var(--admin-primary-dark));
+  color: white;
+  border-color: var(--admin-primary);
+}
+
+/* 카드 스타일 개선 */
+.card {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid var(--admin-border);
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+}
+
+.card:hover {
+  border-color: rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.card h2 {
+  color: #1e293b;
+  font-size: 1.4rem;
+  margin: 0 0 8px;
+}
+
+.card .hint {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+/* 드롭다운 & 필터 개선 */
+select {
+  padding: 10px 12px;
+  border: 1px solid var(--admin-border);
+  border-radius: 6px;
+  background: white;
+  color: #475569;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+select:focus {
+  outline: none;
+  border-color: var(--admin-primary);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* 반응형 */
+@media (max-width: 1024px) {
+  .admin-people-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-people-toolbar input[type="search"],
+  .admin-people-toolbar select,
+  .admin-people-toolbar button {
+    width: 100%;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  .admin-action-buttons {
+    min-width: 100px;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-people-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .admin-action-buttons {
+    flex-direction: column;
+  }
+
+  .admin-action-buttons button,
+  .admin-action-buttons .btn {
+    width: 100%;
+  }
+
+  .table-wrap table {
+    font-size: 0.8rem;
+  }
+
+  .table-wrap table th,
+  .table-wrap table td {
+    padding: 8px 10px;
+  }
+}

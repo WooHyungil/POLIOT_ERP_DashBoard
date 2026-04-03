@@ -15,6 +15,9 @@ let boardState = {
   view: 'empty', // 'empty' | 'post' | 'write'
 };
 
+let commentLiveTimer = null;
+let lastCommentSyncToken = '';
+
 // ── 유틸 ────────────────────────────────────────────────────────────────────
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -53,6 +56,86 @@ function statusLabel(s) {
   return '⏳ 승인 대기';
 }
 
+function buildCommentSyncToken(comments) {
+  return (comments || [])
+    .map((c) => `${String(c?.id || '')}:${String(c?.created_at || '')}`)
+    .join('|');
+}
+
+function isNearBottom(el) {
+  if (!el) return false;
+  const remain = el.scrollHeight - el.scrollTop - el.clientHeight;
+  return remain <= 40;
+}
+
+function updateCommentCounters() {
+  const commentCount = (boardState.currentPost?.comments || []).length;
+  const c1 = document.getElementById('viewCommentCount');
+  const c2 = document.getElementById('viewCommentsCountHead');
+  if (c1) c1.innerHTML = `<i class="fas fa-comment"></i> ${commentCount}`;
+  if (c2) c2.textContent = commentCount;
+}
+
+function stopCommentLiveSync() {
+  if (commentLiveTimer) {
+    clearInterval(commentLiveTimer);
+    commentLiveTimer = null;
+  }
+}
+
+function startCommentLiveSync() {
+  stopCommentLiveSync();
+  if (!boardState.currentPostId || boardState.view !== 'post') return;
+  commentLiveTimer = setInterval(syncCurrentPostComments, 3000);
+}
+
+async function syncCurrentPostComments() {
+  if (!boardState.currentPostId || boardState.view !== 'post') return;
+  try {
+    const data = await apiFetch(`/api/board/posts/${encodeURIComponent(boardState.currentPostId)}`);
+    const nextPost = data?.post;
+    if (!nextPost) return;
+    const nextComments = nextPost.comments || [];
+    const nextToken = buildCommentSyncToken(nextComments);
+    if (nextToken === lastCommentSyncToken) return;
+
+    const listEl = document.getElementById('viewCommentsList');
+    const keepBottom = isNearBottom(listEl);
+
+    boardState.currentPost = { ...boardState.currentPost, ...nextPost, comments: nextComments };
+    renderComments(nextComments);
+    updateCommentCounters();
+    lastCommentSyncToken = nextToken;
+
+    const listElAfter = document.getElementById('viewCommentsList');
+    if (keepBottom && listElAfter) {
+      listElAfter.scrollTop = listElAfter.scrollHeight;
+    }
+  } catch {
+    // Ignore transient sync errors.
+  }
+}
+
+function getExt(name) {
+  const raw = String(name || '');
+  const idx = raw.lastIndexOf('.');
+  return idx >= 0 ? raw.slice(idx).toLowerCase() : '';
+}
+
+function isImageFile(file) {
+  const imageExt = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
+  const ext = getExt(file?.original_name || file?.name || '');
+  if (imageExt.has(ext)) return true;
+  const ctype = String(file?.content_type || '').toLowerCase();
+  return ctype.startsWith('image/');
+}
+
+function fileSizeLabel(size) {
+  const n = Number(size || 0);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
+
 // ── API ────────────────────────────────────────────────────────────────────
 async function apiFetch(url, opts = {}) {
   const r = await fetch(url, { credentials: 'include', ...opts });
@@ -67,6 +150,13 @@ async function loadPosts() {
     const data = await apiFetch('/api/board/posts');
     boardState.posts = data.items || [];
     boardState.isAdmin = !!data.is_admin;
+
+    const noticeText = document.getElementById('boardFormNoticeText');
+    if (noticeText) {
+      noticeText.textContent = boardState.isAdmin
+        ? '관리자 계정으로 등록한 게시글은 즉시 공개됩니다. High 중요도 글은 모든 페이지의 긴급 알림 영역에 표시됩니다.'
+        : '일반 사용자 게시글은 관리자 승인 후 게시판에 공개됩니다. High 중요도 글은 승인 후 모든 페이지의 긴급 알림 영역에 표시됩니다.';
+    }
 
     // 관리자에게 대기 필터 버튼 표시
     const pendingBtn = document.getElementById('boardPendingFilterBtn');
@@ -88,13 +178,24 @@ function renderList() {
   const currentEmail = String(boardState.currentEmail || '').toLowerCase();
 
   if (filter === 'pending') {
-    items = items.filter(p => p.status === 'pending' || p.status === 'rejected');
+    // 관리자용 대기 필터: pending + rejected + withdrawn 전부 보임
+    items = items.filter(p => p.status === 'pending' || p.status === 'rejected' || p.status === 'withdrawn');
   } else if (filter !== 'all') {
     items = items.filter(p => p.priority === filter && p.status === 'approved');
   } else {
     items = items.filter(p => {
+      const st = p.status;
+      if (st === 'approved') return true;
+      // 반려는 관리자/작성자에게만 노출
+      if (st === 'rejected') {
+        const authorEmail = String(p.author_email || '').toLowerCase();
+        return boardState.isAdmin || (currentEmail && authorEmail === currentEmail);
+      }
+      // 철회는 삭제 처리 대상이므로 숨김 (구 데이터 보호 차원에서 관리자만 예외 노출)
+      if (st === 'withdrawn') return boardState.isAdmin;
+      // pending: 관리자 또는 작성자 본인
       const authorEmail = String(p.author_email || '').toLowerCase();
-      return p.status === 'approved' || boardState.isAdmin || (currentEmail && authorEmail === currentEmail);
+      return boardState.isAdmin || (currentEmail && authorEmail === currentEmail);
     });
   }
 
@@ -149,8 +250,17 @@ async function openPost(id) {
     boardState.currentEmail = data.current_email || '';
     renderPostDetail(data.post, data.is_admin, data.current_email);
   } catch (e) {
-    if (contentEl) {
-      contentEl.innerHTML = `<div class="board-error"><i class="fas fa-exclamation-triangle"></i> 글 불러오기 실패: ${esc(e.message)}</div>`;
+    const msg = String(e.message || '').toLowerCase();
+    if (msg.includes('not approved') || msg.includes('403')) {
+      // 반려/비공개 글 — 목록으로 돌아가기
+      boardState.currentPostId = null;
+      showView('empty');
+      renderList();
+      toast('이 게시글은 비공개(반려/철회) 상태입니다.', 'warn');
+    } else {
+      if (contentEl) {
+        contentEl.innerHTML = `<div class="board-error"><i class="fas fa-exclamation-triangle"></i> 글 불러오기 실패: ${esc(e.message)}</div>`;
+      }
     }
   }
 }
@@ -189,11 +299,13 @@ function renderPostDetail(post, isAdmin, currentEmail) {
   const ownerAct = document.getElementById('viewOwnerActions');
   const editBtn = document.getElementById('viewEditBtn');
   const withdrawBtn = document.getElementById('viewWithdrawBtn');
+  const deleteBtn = document.getElementById('viewDeleteBtn');
   const isOwner = String(post.author_email || '').toLowerCase() === String(currentEmail || '').toLowerCase();
   const canManage = isOwner || isAdmin;
   ownerAct.hidden = !canManage;
   if (editBtn) editBtn.hidden = !canManage;
   if (withdrawBtn) withdrawBtn.hidden = !(canManage && (post.status === 'pending' || post.status === 'rejected'));
+  if (deleteBtn) deleteBtn.hidden = !canManage;
 
   // 본문 (줄바꿈 처리)
   document.getElementById('viewContent').innerHTML = esc(post.content).replace(/\n/g, '<br>');
@@ -203,11 +315,42 @@ function renderPostDetail(post, isAdmin, currentEmail) {
   const files = post.files || [];
   if (files.length > 0) {
     filesWrap.hidden = false;
-    document.getElementById('viewFileList').innerHTML = files.map(f =>
-      `<li><a href="${esc(f.path)}" download="${esc(f.original_name)}" target="_blank">
-        <i class="fas fa-file-download"></i> ${esc(f.original_name)}
-      </a></li>`
-    ).join('');
+    document.getElementById('viewFileList').innerHTML = files.map((f, idx) => {
+      const originalName = String(f?.original_name || `file-${idx + 1}`);
+      const openPath = String(f?.path || '');
+      const downloadPath = `/api/board/posts/${encodeURIComponent(post.id)}/files/${idx}/download`;
+      const isImage = Boolean(f?.is_image) || isImageFile(f);
+      const sizeText = fileSizeLabel(f?.size);
+
+      if (isImage && openPath) {
+        return `<li class="board-file-item board-file-item-image">
+          <div class="board-file-meta">
+            <i class="fas fa-image"></i>
+            <span class="board-file-name">${esc(originalName)}</span>
+            ${sizeText ? `<small class="hint">${esc(sizeText)}</small>` : ''}
+          </div>
+          <a href="${esc(openPath)}" target="_blank" rel="noopener noreferrer">
+            <img class="board-file-image-preview" src="${esc(openPath)}" alt="${esc(originalName)}" loading="lazy" />
+          </a>
+          <div class="board-file-actions">
+            <a href="${esc(openPath)}" target="_blank" rel="noopener noreferrer"><i class="fas fa-up-right-from-square"></i> 원본 보기</a>
+            <a href="${esc(downloadPath)}"><i class="fas fa-download"></i> 파일 다운로드</a>
+          </div>
+        </li>`;
+      }
+
+      return `<li class="board-file-item">
+        <div class="board-file-meta">
+          <i class="fas fa-file"></i>
+          <span class="board-file-name">${esc(originalName)}</span>
+          ${sizeText ? `<small class="hint">${esc(sizeText)}</small>` : ''}
+        </div>
+        <div class="board-file-actions">
+          ${openPath ? `<a href="${esc(openPath)}" target="_blank" rel="noopener noreferrer"><i class="fas fa-up-right-from-square"></i> 열기</a>` : ''}
+          <a href="${esc(downloadPath)}"><i class="fas fa-download"></i> 파일 다운로드</a>
+        </div>
+      </li>`;
+    }).join('');
   } else {
     filesWrap.hidden = true;
   }
@@ -215,10 +358,12 @@ function renderPostDetail(post, isAdmin, currentEmail) {
   // 댓글
   renderComments(post.comments || []);
   resetReplyTarget();
+  lastCommentSyncToken = buildCommentSyncToken(post.comments || []);
+  startCommentLiveSync();
 
   // 댓글 폼: 승인된 글에만 보임
   const commentForm = document.getElementById('commentForm');
-  if (commentForm) commentForm.style.display = post.status === 'approved' ? 'flex' : 'none';
+  if (commentForm) commentForm.style.display = 'flex';
 
   view.hidden = false;
 }
@@ -301,6 +446,9 @@ function showView(view) {
   document.getElementById('boardEmptyState').hidden = view !== 'empty';
   document.getElementById('boardPostView').hidden = view !== 'post';
   document.getElementById('boardWriteForm').hidden = view !== 'write';
+  if (view !== 'post') {
+    stopCommentLiveSync();
+  }
 }
 
 // ── 글 작성 폼 ───────────────────────────────────────────────────────────────
@@ -432,10 +580,16 @@ function bindEvents() {
         }
       } else {
         const fd = new FormData(form);
-        await apiFetch('/api/board/posts', { method: 'POST', body: fd });
-        toast('게시글이 등록되었습니다. 관리자 승인 후 공개됩니다.', 'ok');
+        const created = await apiFetch('/api/board/posts', { method: 'POST', body: fd });
+        const createdStatus = String((created?.post || {}).status || '').toLowerCase();
+        if (createdStatus === 'approved') {
+          toast('게시글이 등록되고 즉시 공개되었습니다.', 'ok');
+        } else {
+          toast('게시글이 등록되었습니다. 관리자 승인 후 공개됩니다.', 'ok');
+        }
         await loadPosts();
         showView('empty');
+        await loadUrgentFloat();
       }
     } catch (err) {
       toast(`오류: ${err.message}`, 'error');
@@ -469,16 +623,47 @@ function bindEvents() {
   document.getElementById('viewWithdrawBtn')?.addEventListener('click', async () => {
     if (!boardState.currentPostId) return;
     const reason = prompt('요청 철회 사유를 입력하세요. (선택)', '') || '';
-    if (!confirm('이 게시글의 승인 요청을 철회하시겠습니까?')) return;
+    if (!confirm('이 게시글의 승인 요청을 철회하고 글을 삭제하시겠습니까?\n\n삭제 후 복구할 수 없습니다.')) return;
     try {
       await apiFetch(`/api/board/posts/${encodeURIComponent(boardState.currentPostId)}/withdraw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: reason.trim() }),
       });
-      toast('게시글 요청이 철회되었습니다.', 'warn');
+      const deletedId = boardState.currentPostId;
+      boardState.currentPostId = null;
+      boardState.currentPost = null;
+      showView('empty');
+      toast('게시글 요청 철회와 함께 글이 삭제되었습니다.', 'warn');
       await loadPosts();
-      await openPost(boardState.currentPostId);
+      if (deletedId && location.hash.replace('#', '') === deletedId) {
+        history.replaceState(null, '', '/board');
+      }
+      await loadUrgentFloat();
+    } catch (e) {
+      toast(`오류: ${e.message}`, 'error');
+    }
+  });
+
+  // 삭제 버튼
+  document.getElementById('viewDeleteBtn')?.addEventListener('click', async () => {
+    if (!boardState.currentPostId) return;
+    const post = boardState.currentPost;
+    const titlePreview = post?.title ? `"${post.title}"` : '이 게시글';
+    if (!confirm(`${titlePreview}을(를) 삭제하시겠습니까?\n\n삭제 후 복구할 수 없습니다.`)) return;
+    try {
+      await apiFetch(`/api/board/posts/${encodeURIComponent(boardState.currentPostId)}`, {
+        method: 'DELETE',
+      });
+      const deletedId = boardState.currentPostId;
+      boardState.currentPostId = null;
+      boardState.currentPost = null;
+      showView('empty');
+      toast('게시글이 삭제되었습니다.', 'warn');
+      await loadPosts();
+      if (deletedId && location.hash.replace('#', '') === deletedId) {
+        history.replaceState(null, '', '/board');
+      }
       await loadUrgentFloat();
     } catch (e) {
       toast(`오류: ${e.message}`, 'error');
@@ -492,7 +677,12 @@ function bindEvents() {
     if (commentCharCount) commentCharCount.textContent = `${commentInput.value.length} / 1000`;
   });
   commentInput?.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.key === 'Enter') document.getElementById('commentForm').requestSubmit();
+    if (e.key !== 'Enter') return;
+    if (e.shiftKey) return;
+    // Enter submits like messenger/youtube comment box, Shift+Enter adds newline.
+    e.preventDefault();
+    e.stopPropagation();
+    document.getElementById('commentForm')?.requestSubmit();
   });
   document.getElementById('commentReplyCancelBtn')?.addEventListener('click', () => {
     resetReplyTarget();
@@ -510,11 +700,28 @@ function bindEvents() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, parent_id: boardState.replyParentId || '' }),
       });
+
+      const me = String(boardState.currentEmail || '').trim();
+      const optimisticComment = {
+        id: `local-${Date.now()}`,
+        author_name: me || '나',
+        author_email: me,
+        content,
+        parent_id: boardState.replyParentId || '',
+        created_at: new Date().toISOString().slice(0, 19),
+      };
+      const currentComments = Array.isArray(boardState.currentPost?.comments) ? boardState.currentPost.comments : [];
+      boardState.currentPost.comments = [...currentComments, optimisticComment];
+      renderComments(boardState.currentPost.comments);
+      updateCommentCounters();
+      const listEl = document.getElementById('viewCommentsList');
+      if (listEl) listEl.scrollTop = listEl.scrollHeight;
+
       commentInput.value = '';
       resetReplyTarget();
       if (commentCharCount) commentCharCount.textContent = '0 / 1000';
       toast('댓글이 등록되었습니다.', 'ok');
-      await openPost(boardState.currentPostId);
+      setTimeout(syncCurrentPostComments, 150);
     } catch (err) {
       toast(`오류: ${err.message}`, 'error');
     } finally {
@@ -527,13 +734,25 @@ function renderFilePreview(files) {
   const list = document.getElementById('filePreviewList');
   if (!list) return;
   if (!files || files.length === 0) { list.innerHTML = ''; return; }
-  list.innerHTML = Array.from(files).map((f, i) =>
-    `<div class="board-file-preview-item">
+  list.innerHTML = Array.from(files).map((f) => {
+    const image = isImageFile(f);
+    const sizeText = fileSizeLabel(f.size);
+    if (image) {
+      const previewUrl = URL.createObjectURL(f);
+      return `<div class="board-file-preview-item board-file-preview-item-image">
+        <img class="board-file-preview-thumb" src="${esc(previewUrl)}" alt="${esc(f.name)}" loading="lazy" />
+        <div class="board-file-preview-meta">
+          <span>${esc(f.name)}</span>
+          <small class="hint">이미지${sizeText ? ` · ${esc(sizeText)}` : ''}</small>
+        </div>
+      </div>`;
+    }
+    return `<div class="board-file-preview-item">
       <i class="fas fa-file"></i>
       <span>${esc(f.name)}</span>
-      <small class="hint">${(f.size / 1024 / 1024).toFixed(2)} MB</small>
-    </div>`
-  ).join('');
+      <small class="hint">${esc(sizeText)}</small>
+    </div>`;
+  }).join('');
 }
 
 // ── 긴급 플로팅 배너 ──────────────────────────────────────────────────────────
@@ -618,6 +837,8 @@ async function init() {
   if (hash && hash.startsWith('board-')) {
     openPost(hash);
   }
+
+  window.addEventListener('beforeunload', stopCommentLiveSync);
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -124,6 +124,33 @@ function renderQualityStats(runSummary) {
   ].join("");
 }
 
+function renderPersonaCards(runSummary) {
+  const s = runSummary || {};
+  const pending = Number(s.pending || 0);
+  const running = Number(s.running || 0);
+  const failed = Number(s.failed || 0);
+  const nt = Number(s.nt || 0);
+  const done = Number(s.passed || 0) + failed + nt;
+  const total = Number(s.total_tasks || 0);
+  const doneRate = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  if (qaIsAdmin) {
+    return [
+      `<article class="qa-persona-card is-admin"><p>관리자 집중 지표</p><strong>대기 작업 ${pending}건</strong><small>스케줄/배정이 필요한 항목</small></article>`,
+      `<article class="qa-persona-card is-admin"><p>실행 상태</p><strong>Running ${running}건</strong><small>진행 중 작업 실시간 추적</small></article>`,
+      `<article class="qa-persona-card is-admin"><p>리스크</p><strong>FAIL ${failed} · N/T ${nt}</strong><small>우선 조치 필요 항목</small></article>`,
+      `<article class="qa-persona-card is-admin"><p>완료율</p><strong>${doneRate}%</strong><small>전체 진행률 기준</small></article>`,
+    ].join("");
+  }
+
+  return [
+    `<article class="qa-persona-card"><p>내 확인 포인트</p><strong>오늘 진행 ${running}건</strong><small>현재 실행 중인 작업</small></article>`,
+    `<article class="qa-persona-card"><p>완료 현황</p><strong>${doneRate}%</strong><small>전체 대비 완료율</small></article>`,
+    `<article class="qa-persona-card"><p>주의 항목</p><strong>FAIL ${failed}건</strong><small>재검증 필요 대상</small></article>`,
+    `<article class="qa-persona-card"><p>보류 항목</p><strong>N/T ${nt}건</strong><small>사유 확인 필요</small></article>`,
+  ].join("");
+}
+
 function getDateFilters() {
   const start = document.getElementById("memberStartDate")?.value || "";
   const end = document.getElementById("memberEndDate")?.value || "";
@@ -170,7 +197,7 @@ function applyQaHashMode() {
   }
 
   if (hash === "#recentIssueChartSection") {
-    overview.hidden = true;
+    overview.hidden = false;
     recent.hidden = false;
     regular.hidden = true;
     closing.hidden = true;
@@ -178,7 +205,7 @@ function applyQaHashMode() {
     return;
   }
   if (hash === "#regularReleaseSection") {
-    overview.hidden = true;
+    overview.hidden = false;
     recent.hidden = true;
     regular.hidden = false;
     closing.hidden = true;
@@ -186,7 +213,7 @@ function applyQaHashMode() {
     return;
   }
   if (hash === "#closingSummarySection") {
-    overview.hidden = true;
+    overview.hidden = false;
     recent.hidden = true;
     regular.hidden = true;
     closing.hidden = false;
@@ -516,21 +543,37 @@ function renderMemberChart(stats) {
 
 async function fetchMemberNamesFromAdmin() {
   try {
-    const res = await fetch("/api/admin/employees", { credentials: "same-origin" });
-    if (!res.ok) return [];
+    const res = await fetch("/api/company-members", { credentials: "same-origin" });
+    if (!res.ok) throw new Error(`company-members unavailable (${res.status})`);
     const data = await res.json();
-    const items = Array.isArray(data?.items) ? data.items : [];
+    const items = Array.isArray(data?.members) ? data.members : [];
     const seen = new Set();
     const out = [];
     items.forEach(function (row) {
-      const name = String(row?.name || "").trim();
+      const name = String(row || "").trim();
       if (!name || seen.has(name)) return;
       seen.add(name);
       out.push(name);
     });
     return out;
   } catch {
-    return [];
+    try {
+      const res = await fetch("/api/admin/employees", { credentials: "same-origin" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const items = Array.isArray(data?.items) ? data.items : [];
+      const seen = new Set();
+      const out = [];
+      items.forEach(function (row) {
+        const name = String(row?.name || "").trim();
+        if (!name || seen.has(name)) return;
+        seen.add(name);
+        out.push(name);
+      });
+      return out;
+    } catch {
+      return [];
+    }
   }
 }
 
@@ -539,6 +582,43 @@ function toIsoDate(d) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function setRecentDatePreset(days) {
+  const startInput = document.getElementById("recentStartDate");
+  const endInput = document.getElementById("recentEndDate");
+  if (!startInput || !endInput) return;
+  if (!days || days <= 0) {
+    startInput.value = "";
+    endInput.value = "";
+    currentRecentStartDate = "";
+    currentRecentEndDate = "";
+  } else {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - (days - 1));
+    currentRecentStartDate = toIsoDate(start);
+    currentRecentEndDate = toIsoDate(end);
+    startInput.value = currentRecentStartDate;
+    endInput.value = currentRecentEndDate;
+  }
+  refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], false, currentRecentRegions || [], currentRecentStartDate, currentRecentEndDate)
+    .catch((e) => toast(`날짜 조회 실패: ${String(e)}`, "error"));
+}
+
+function clearRecentFilters() {
+  currentRecentStatus = "Open";
+  currentRecentGroups = [];
+  currentRecentRegions = [];
+  currentRecentStartDate = "";
+  currentRecentEndDate = "";
+  const startInput = document.getElementById("recentStartDate");
+  const endInput = document.getElementById("recentEndDate");
+  if (startInput) startInput.value = "";
+  if (endInput) endInput.value = "";
+  refreshRecentStatusIssues("Open", [], false, [], "", "")
+    .then(() => toast("최근 이슈 필터를 초기화했습니다.", "ok"))
+    .catch((e) => toast(`필터 초기화 실패: ${String(e)}`, "error"));
 }
 
 function setMemberDateRange(days) {
@@ -642,6 +722,7 @@ async function refreshDefectSheetNow(opts) {
 function renderRecentStatusRows(data, status, groups, regions, startDate, endDate) {
   const hint = document.getElementById("recentStatusHint");
   const body = document.getElementById("recentStatusBody");
+  const chips = document.getElementById("recentActiveFilters");
   if (!hint || !body) return;
 
   const cellText = (v) => {
@@ -655,6 +736,15 @@ function renderRecentStatusRows(data, status, groups, regions, startDate, endDat
   const startLabel = String(startDate || "").trim() || "전체";
   const endLabel = String(endDate || "").trim() || "전체";
   hint.innerText = `상태: ${status} | 그룹: ${groupLabel} | 지역: ${regionLabel} | 기간: ${startLabel} ~ ${endLabel} | 총 ${Number(data?.count || 0)}건`;
+  if (chips) {
+    const items = [
+      `<span class="qa-active-chip">상태: ${esc(status)}</span>`,
+      `<span class="qa-active-chip">그룹: ${esc(groupLabel)}</span>`,
+      `<span class="qa-active-chip">지역: ${esc(regionLabel)}</span>`,
+      `<span class="qa-active-chip">기간: ${esc(startLabel)} ~ ${esc(endLabel)}</span>`,
+    ];
+    chips.innerHTML = items.join("");
+  }
 
   if (!rows.length) {
     body.innerHTML = '<tr><td colspan="12" class="hint">조회 결과가 없습니다.</td></tr>';
@@ -807,8 +897,24 @@ async function refreshMemberStats(force) {
   if (filters.start) qs.set("start_date", filters.start);
   if (filters.end) qs.set("end_date", filters.end);
 
-  const res = await fetch(`/api/stats/company-defects?${qs.toString()}`);
-  const data = await res.json();
+  async function requestMemberStats(forceFlag) {
+    const params = new URLSearchParams();
+    if (forceFlag) params.set("force", "true");
+    if (filters.start) params.set("start_date", filters.start);
+    if (filters.end) params.set("end_date", filters.end);
+    const res = await fetch(`/api/stats/company-defects?${params.toString()}`, { credentials: "same-origin" });
+    if (!res.ok) {
+      throw new Error(`인원별 이슈 통계 요청 실패 (${res.status})`);
+    }
+    return await res.json();
+  }
+
+  let data = await requestMemberStats(Boolean(force));
+  const hasMembers = Array.isArray(data?.members) && data.members.length > 0;
+  const totalRows = Number(data?.total_rows || 0);
+  if (!force && !hasMembers && totalRows === 0) {
+    data = await requestMemberStats(true);
+  }
   renderMemberChart(data);
 }
 
@@ -1148,10 +1254,12 @@ async function refreshQa() {
   const summary = document.getElementById("summary");
   const systemStats = document.getElementById("systemStats");
   const qualityStats = document.getElementById("qualityStats");
+  const personaCards = document.getElementById("qaPersonaCards");
 
   if (summary) summary.innerHTML = renderSummary(dashboard.run_summary || {});
   if (systemStats) systemStats.innerHTML = renderSystemStats(dashboard, validate);
   if (qualityStats) qualityStats.innerHTML = renderQualityStats(dashboard.run_summary || {});
+  if (personaCards) personaCards.innerHTML = renderPersonaCards(dashboard.run_summary || {});
 }
 
 document.getElementById("memberDateFilterBtn")?.addEventListener("click", function () {
@@ -1364,6 +1472,20 @@ document.getElementById("recentEndDate")?.addEventListener("change", function ()
   currentRecentEndDate = endDate;
   refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], false, currentRecentRegions || [], currentRecentStartDate, currentRecentEndDate).catch((e) => toast(`날짜 조회 실패: ${String(e)}`, "error"));
 });
+
+document.getElementById("recentPreset7dBtn")?.addEventListener("click", function () {
+  setRecentDatePreset(7);
+});
+
+document.getElementById("recentPreset30dBtn")?.addEventListener("click", function () {
+  setRecentDatePreset(30);
+});
+
+document.getElementById("recentPresetAllBtn")?.addEventListener("click", function () {
+  setRecentDatePreset(0);
+});
+
+document.getElementById("recentClearFiltersBtn")?.addEventListener("click", clearRecentFilters);
 // ===== 공용 테이블 컬럼 필터 시스템 =====
 // recentStatusTable, regularReleaseDetailTable, closingSummaryDetailTable 에 적용
 

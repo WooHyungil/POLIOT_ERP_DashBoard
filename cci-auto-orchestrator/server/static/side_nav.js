@@ -3,7 +3,7 @@
   if (!nav) return;
 
   const toggle = document.getElementById("sideNavToggle");
-  const links = Array.from(nav.querySelectorAll(".side-nav-link"));
+  const topLinks = Array.from(nav.querySelectorAll("a.side-nav-link[data-path]"));
   const subLinks = Array.from(nav.querySelectorAll(".side-nav-sublink"));
   const parentButtons = Array.from(nav.querySelectorAll(".side-nav-parent[data-submenu-target]"));
   const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
@@ -27,41 +27,94 @@
     return path === targetPath || path.startsWith(targetPath + "/");
   }
 
-  for (const link of links) {
-    const target = link.getAttribute("data-path") || link.getAttribute("href") || "";
-    if (isMatch(target)) {
-      link.classList.add("active");
+  function isExactPath(targetPath) {
+    const normalized = (String(targetPath || "").replace(/\/+$/, "") || "/");
+    return path === normalized;
+  }
+
+  function isQueryMatch(targetQuery) {
+    const query = String(targetQuery || "").trim();
+    if (!query) return true;
+    const current = new URLSearchParams(window.location.search || "");
+    const expected = new URLSearchParams(query);
+    for (const [key, value] of expected.entries()) {
+      if (current.get(key) !== value) return false;
+    }
+    return true;
+  }
+
+  function getTopLinkHash(link) {
+    const explicitHash = String(link.getAttribute("data-hash") || "").trim();
+    if (explicitHash) return explicitHash;
+    const href = String(link.getAttribute("href") || "").trim();
+    if (!href) return "";
+    if (href.startsWith("#")) return href;
+    const hashIndex = href.indexOf("#");
+    return hashIndex >= 0 ? href.slice(hashIndex) : "";
+  }
+
+  function applyTopLinkActiveState() {
+    const currentHash = window.location.hash || "";
+    for (const link of topLinks) {
+      const targetPath = link.getAttribute("data-path") || link.getAttribute("href") || "/";
+      const targetHash = getTopLinkHash(link);
+      const targetQuery = link.getAttribute("data-query") || "";
+      const pathOk = isExactPath(targetPath);
+      const hashOk = targetHash ? currentHash === targetHash : currentHash === "";
+      const queryOk = isQueryMatch(targetQuery);
+      link.classList.toggle("active", pathOk && hashOk && queryOk);
     }
   }
 
+  function openSubmenuChain(submenuEl) {
+    let sub = submenuEl;
+    while (sub) {
+      sub.classList.add("open");
+      const parent = nav.querySelector(`.side-nav-parent[data-submenu-target="${sub.id}"]`);
+      if (!parent) break;
+      parent.classList.add("expanded");
+      const upper = parent.parentElement ? parent.parentElement.closest(".side-nav-submenu") : null;
+      sub = upper;
+    }
+  }
+
+  applyTopLinkActiveState();
+
   function applySubLinkActiveState() {
     const currentHash = window.location.hash || "";
-    const detailVisible = nav.classList.contains("is-open") || nav.matches(":hover");
+
+    applyTopLinkActiveState();
+
+    nav.querySelectorAll(".side-nav-submenu").forEach(function (submenu) {
+      submenu.classList.remove("open");
+    });
+    parentButtons.forEach(function (btn) {
+      btn.classList.remove("expanded", "active");
+    });
 
     for (const link of subLinks) {
       const targetPath = link.getAttribute("data-path") || "/";
       const targetHash = link.getAttribute("data-hash") || "";
-      const pathOk = isMatch(targetPath);
+      const targetQuery = link.getAttribute("data-query") || "";
+      const pathOk = isExactPath(targetPath);
       const hashOk = targetHash ? currentHash === targetHash : true;
-      const isCurrent = pathOk && hashOk;
+      const queryOk = isQueryMatch(targetQuery);
+      const isCurrent = pathOk && hashOk && queryOk;
 
       if (isCurrent) {
         const sub = link.closest(".side-nav-submenu");
-        if (sub) {
-          sub.classList.add("open");
-          const parent = nav.querySelector(`.side-nav-parent[data-submenu-target="${sub.id}"]`);
-          if (parent) parent.classList.add("expanded");
-        }
+        if (sub) openSubmenuChain(sub);
       }
 
-      link.classList.toggle("active", detailVisible && isCurrent);
+      link.classList.toggle("active", isCurrent);
     }
 
-    // 접힘 상태에서도 활성 경로의 대메뉴만 active 표시
+    // 활성된 하위 링크가 있는 부모 메뉴만 active
     for (const btn of parentButtons) {
-      const targetPath = btn.getAttribute("data-path") || "";
-      const isActive = Boolean(targetPath && isMatch(targetPath));
-      btn.classList.toggle("active", isActive);
+      const submenuId = btn.getAttribute("data-submenu-target") || "";
+      const submenu = submenuId ? document.getElementById(submenuId) : null;
+      const hasActiveChild = !!(submenu && submenu.querySelector(".side-nav-sublink.active"));
+      btn.classList.toggle("active", hasActiveChild);
     }
   }
 

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CCI Dashboard - 로그인</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260320e" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260325a" />
   <style>
     body {
       display: flex;
@@ -19,127 +19,225 @@
     }
     .login-container {
       background: white;
-      border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+      border-radius: 16px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
       width: 100%;
-      max-width: 360px;
-      padding: 40px;
+      max-width: 380px;
+      padding: 44px 40px 36px;
     }
     .login-header {
       text-align: center;
-      margin-bottom: 30px;
+      margin-bottom: 28px;
     }
+    .login-logo {
+      width: 52px;
+      height: 52px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+    .login-logo i { color: #fff; font-size: 22px; }
     .login-header h1 {
-      font-size: 24px;
-      margin: 15px 0 5px;
-      color: #333;
+      font-size: 22px;
+      margin: 0 0 5px;
+      color: #1e293b;
+      font-weight: 700;
     }
     .login-header p {
-      font-size: 14px;
-      color: #666;
+      font-size: 13px;
+      color: #64748b;
       margin: 0;
     }
-    .form-group {
+    /* ── 메시지 배너 (타입별 색상) ── */
+    .auth-message {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      border-radius: 10px;
+      padding: 13px 14px;
+      font-size: 13.5px;
+      line-height: 1.5;
       margin-bottom: 20px;
     }
+    .auth-message i { flex: 0 0 auto; margin-top: 2px; font-size: 15px; }
+    .auth-message.error   { background: #fef2f2; border: 1px solid #fca5a5; color: #b91c1c; }
+    .auth-message.pending { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
+    .auth-message.success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+    .auth-message.info    { background: #eff6ff; border: 1px solid #93c5fd; color: #1d4ed8; }
+    /* ── 가입 완료 배너 ── */
+    .auth-success-panel {
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    .auth-success-panel .auth-success-icon {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+    .auth-success-panel strong { display: block; color: #166534; font-size: 14px; margin-bottom: 4px; }
+    .auth-success-panel p { color: #15803d; font-size: 12.5px; margin: 0; line-height: 1.5; }
+    /* ── 폼 ── */
+    .form-group { margin-bottom: 18px; }
     .form-group label {
       display: block;
-      font-size: 14px;
-      font-weight: 500;
-      margin-bottom: 8px;
-      color: #333;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #374151;
     }
     .form-group input {
       width: 100%;
-      padding: 12px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
+      padding: 11px 13px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 8px;
       font-size: 14px;
       box-sizing: border-box;
-      transition: border-color 0.3s;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      color: #1e293b;
     }
     .form-group input:focus {
       outline: none;
       border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-    .form-group.message {
-      background: #fff3cd;
-      border: 1px solid #ffc107;
-      border-radius: 6px;
-      padding: 12px;
-      color: #856404;
-      font-size: 13px;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
     }
     .login-button {
       width: 100%;
-      padding: 12px;
+      padding: 13px;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
       border: none;
-      border-radius: 6px;
-      font-size: 16px;
-      font-weight: 600;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 700;
       cursor: pointer;
-      transition: transform 0.2s, box-shadow 0.2s;
-      margin-bottom: 15px;
+      transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
-    .login-button:hover {
+    .login-button:hover:not(:disabled) {
       transform: translateY(-2px);
-      box-shadow: 0 8px 16px rgba(102, 126, 234, 0.4);
+      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.45);
     }
-    .login-button:active {
-      transform: translateY(0);
-    }
+    .login-button:disabled { opacity: 0.65; cursor: not-allowed; transform: none; }
     .register-link {
       text-align: center;
       font-size: 13px;
+      color: #64748b;
+      margin-top: 4px;
     }
     .register-link a {
       color: #667eea;
       text-decoration: none;
-      font-weight: 500;
+      font-weight: 600;
     }
-    .register-link a:hover {
-      text-decoration: underline;
+    .register-link a:hover { text-decoration: underline; }
+    /* 코너 네비 */
+    .auth-corner-nav {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
+    .auth-corner-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      text-decoration: none;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      color: #ffffff;
+      background: rgba(15, 23, 42, 0.22);
+      backdrop-filter: blur(6px);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .auth-corner-link:hover { background: rgba(15, 23, 42, 0.4); }
+    .divider { border: none; border-top: 1px solid #e5e7eb; margin: 18px 0; }
   </style>
 </head>
 <body>
+  <div class="auth-corner-nav" aria-label="빠른 이동">
+    <a class="auth-corner-link" href="/"><i class="fas fa-house"></i> 홈</a>
+    <a class="auth-corner-link" href="/auth/register?next={{ next }}"><i class="fas fa-user-plus"></i> 회원가입</a>
+  </div>
+
   <div class="login-container">
     <div class="login-header">
+      <div class="login-logo"><i class="fas fa-chart-line"></i></div>
       <h1>CCI Dashboard</h1>
       <p>POLIOT Device Control Center</p>
     </div>
-    
-    {% if popup_message %}
-    <div class="form-group message">
-      {{ popup_message }}
+
+    {% if msg_type == "success" %}
+    {# 회원가입 완료 케이스: 별도 패널 #}
+    <div class="auth-success-panel">
+      <div class="auth-success-icon">🎉</div>
+      <strong>회원가입이 완료되었습니다!</strong>
+      <p>관리자 승인 후 로그인이 가능합니다.<br>관리자에게 승인을 요청해 주세요.</p>
+    </div>
+    {% elif popup_message %}
+    <div class="auth-message {% if msg_type == 'error' %}error{% elif msg_type == 'pending' %}pending{% else %}info{% endif %}">
+      {% if msg_type == 'error' %}<i class="fas fa-circle-xmark"></i>
+      {% elif msg_type == 'pending' %}<i class="fas fa-clock"></i>
+      {% else %}<i class="fas fa-circle-info"></i>{% endif %}
+      <span>{{ popup_message }}</span>
     </div>
     {% endif %}
-    
-    <form method="post" action="/auth/login">
+
+    <form method="post" action="/auth/login" id="loginForm" onsubmit="handleLoginSubmit(event)">
       <div class="form-group">
         <label for="email">이메일</label>
-        <input type="email" id="email" name="email" placeholder="example@poliot.co.kr" required autofocus />
+        <input type="email" id="email" name="email"
+               placeholder="example@poliot.co.kr"
+               value="{{ prefill_email }}"
+               required
+               {% if not prefill_email %}autofocus{% endif %} />
       </div>
-      
+
       <div class="form-group">
         <label for="password">비밀번호</label>
-        <input type="password" id="password" name="password" placeholder="비밀번호 입력" required />
+        <input type="password" id="password" name="password"
+               placeholder="비밀번호 입력"
+               required
+               {% if prefill_email %}autofocus{% endif %} />
       </div>
-      
+
       <input type="hidden" name="next" value="{{ next }}" />
-      
-      <button type="submit" class="login-button">
-        <i class="fas fa-sign-in-alt"></i> 로그인
+
+      <button type="submit" class="login-button" id="loginBtn">
+        <i class="fas fa-sign-in-alt"></i>
+        <span id="loginBtnText">로그인</span>
       </button>
     </form>
-    
+
+    <hr class="divider" />
     <div class="register-link">
-      <p style="margin: 0 0 10px;">{{ message }}</p>
-      <p style="margin: 0;">계정이 없으신가요? <a href="/auth/register?next={{ next }}">회원가입</a></p>
+      계정이 없으신가요? <a href="/auth/register?next={{ next }}">회원가입</a>
     </div>
   </div>
+
+  <script>
+    function handleLoginSubmit(event) {
+      const btn = document.getElementById("loginBtn");
+      const btnText = document.getElementById("loginBtnText");
+      if (!btn || !btnText) return;
+      btn.disabled = true;
+      btnText.textContent = "로그인 중...";
+      btn.querySelector("i").className = "fas fa-circle-notch fa-spin";
+    }
+  </script>
 </body>
 </html>

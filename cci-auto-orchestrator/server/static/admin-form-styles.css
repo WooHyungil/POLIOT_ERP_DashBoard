@@ -1,0 +1,223 @@
+/* ==================== 관리자 인원 추가 폼 스타일 ==================== */
+
+.member-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* 폼 섹션 */
+.form-section {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-section legend {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #334155;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e2e8f5;
+}
+
+/* 폼 그리드 */
+.form-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.form-grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.form-grid-2 .form-field--wide {
+  grid-column: 1 / -1;
+}
+
+/* 폼 필드 */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-field label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.required-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ef4444;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.form-field input {
+  padding: 10px 12px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  background: #ffffff;
+}
+
+.form-field input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  background: #f8fafe;
+}
+
+.form-field input::placeholder {
+  color: #94a3b8;
+}
+
+.form-field input:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+.form-hint {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-top: -2px;
+}
+
+/* 체크박스 그룹 */
+.form-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.checkbox-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+
+.checkbox-item:hover {
+  background: #f8fafc;
+}
+
+.checkbox-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: #667eea;
+}
+
+.checkbox-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.checkbox-label strong {
+  font-size: 0.9rem;
+  color: #1e293b;
+}
+
+.checkbox-label small {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+/* 버튼 스타일 */
+.btn-primary {
+  padding: 11px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  padding: 11px 20px;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+.btn-secondary:active {
+  background: #cbd5e1;
+}
+
+/* 버튼 행 */
+.button-row--modal {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f5;
+}
+
+.button-row--modal button {
+  flex: 0 0 auto;
+  min-width: 120px;
+}
+
+/* 반응형: 태블릿 이상에서만 2열 */
+@media (max-width: 640px) {
+  .form-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid-2 .form-field--wide {
+    grid-column: 1;
+  }
+
+  .button-row--modal {
+    flex-direction: column-reverse;
+  }
+
+  .button-row--modal button {
+    width: 100%;
+  }
+}

@@ -1,6 +1,6 @@
 param(
-	[ValidateSet("ngrok", "serveo")]
-	[string]$Provider = "ngrok",
+	[ValidateSet("ngrok", "serveo", "localhostrun")]
+	[string]$Provider = "localhostrun",
 	[string]$NgrokDomain = "",
 	[string]$Subdomain = "cci-dashboard",
 	[int]$LocalPort = 8000,
@@ -99,7 +99,7 @@ function Start-ServeoTunnel {
 
 	$targetUrl = "https://$SubdomainName.serveousercontent.com"
 	$sshArgs = @("-o", "StrictHostKeyChecking=no", "-R", "$SubdomainName:80:localhost:$Port", "serveo.net")
-	Start-Process -FilePath "ssh" -ArgumentList $sshArgs -RedirectStandardOutput $tunnelLogPath -RedirectStandardError $tunnelErrLogPath | Out-Null
+	Start-Process -FilePath "ssh" -ArgumentList $sshArgs -WindowStyle Hidden -RedirectStandardOutput $tunnelLogPath -RedirectStandardError $tunnelErrLogPath | Out-Null
 
 	$resolvedUrl = ""
 	for ($i = 0; $i -lt 20; $i++) {
@@ -112,7 +112,7 @@ function Start-ServeoTunnel {
 			continue
 		}
 
-		$httpMatch = [regex]::Match($raw, "https?://[^\s`\"']+")
+		$httpMatch = [regex]::Match($raw, 'https?://[^\s"''`]+')
 		if ($httpMatch.Success) {
 			$resolvedUrl = $httpMatch.Value.Trim()
 			break
@@ -120,17 +120,71 @@ function Start-ServeoTunnel {
 
 		$tcpMatch = [regex]::Match($raw, "Forwarding TCP connections from\s+([^\s:]+):(\d+)")
 		if ($tcpMatch.Success) {
-			$host = $tcpMatch.Groups[1].Value
+			$forwardHost = $tcpMatch.Groups[1].Value
 			$p = $tcpMatch.Groups[2].Value
-			if ($host -and $p) {
-				$resolvedUrl = "http://$host`:$p"
+			if ($forwardHost -and $p) {
+				$resolvedUrl = "http://$forwardHost`:$p"
 				break
 			}
 		}
 	}
 
-	if ([string]::IsNullOrWhiteSpace($resolvedUrl)) {
+	if ([string]::IsNullOrWhiteSpace($resolvedUrl) -or $resolvedUrl -like "https://console.serveo.net/*") {
 		$resolvedUrl = $targetUrl
+	}
+
+	Write-PublicUrl -Url $resolvedUrl
+	Write-Host "Public URL: $resolvedUrl"
+	Write-Host "Saved to: $publicUrlPath"
+	return $resolvedUrl
+}
+
+function Start-LocalhostRunTunnel {
+	param(
+		[int]$Port,
+		[switch]$StopBeforeStart
+	)
+
+	if ($StopBeforeStart.IsPresent) {
+		Get-Process ssh -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+		Start-Sleep -Seconds 1
+	}
+
+	$ts = Get-Date -Format "yyyyMMdd_HHmmss"
+	$lrLogPath = Join-Path $runtimeDir ("localhostrun_" + $ts + ".log")
+	$lrErrLogPath = Join-Path $runtimeDir ("localhostrun_" + $ts + ".err.log")
+	$sshArgs = @("-o", "StrictHostKeyChecking=no", "-R", "80:localhost:$Port", "nokey@localhost.run")
+	Start-Process -FilePath "ssh" -ArgumentList $sshArgs -WindowStyle Hidden -RedirectStandardOutput $lrLogPath -RedirectStandardError $lrErrLogPath | Out-Null
+
+	$resolvedUrl = ""
+	for ($i = 0; $i -lt 30; $i++) {
+		Start-Sleep -Milliseconds 500
+		$raw = ""
+		if (Test-Path $lrLogPath) {
+			$raw += (Get-Content -Path $lrLogPath -Raw -ErrorAction SilentlyContinue)
+		}
+		if (Test-Path $lrErrLogPath) {
+			$raw += "`n" + (Get-Content -Path $lrErrLogPath -Raw -ErrorAction SilentlyContinue)
+		}
+		if ([string]::IsNullOrWhiteSpace($raw)) {
+			continue
+		}
+
+		$matches = [regex]::Matches($raw, 'https://[^\s"''`]+')
+		foreach ($m in $matches) {
+			$u = $m.Value.Trim()
+			if ($u -match "localhost\.run|lhr\.life") {
+				$resolvedUrl = $u
+				break
+			}
+		}
+		if (-not [string]::IsNullOrWhiteSpace($resolvedUrl)) {
+			break
+		}
+	}
+
+	if ([string]::IsNullOrWhiteSpace($resolvedUrl)) {
+		throw "Failed to resolve localhost.run public URL. Check $lrLogPath and $lrErrLogPath"
 	}
 
 	Write-PublicUrl -Url $resolvedUrl
@@ -162,7 +216,7 @@ function Start-NgrokTunnel {
 	}
 	$args += "$Port"
 
-	Start-Process -FilePath $ngrokCmd.Source -ArgumentList $args -RedirectStandardOutput $tunnelLogPath -RedirectStandardError $tunnelErrLogPath | Out-Null
+	Start-Process -FilePath $ngrokCmd.Source -ArgumentList $args -WindowStyle Hidden -RedirectStandardOutput $tunnelLogPath -RedirectStandardError $tunnelErrLogPath | Out-Null
 	return (Resolve-NgrokUrl -PreferredDomain $Domain)
 }
 
@@ -230,5 +284,10 @@ if ($Provider -eq "ngrok") {
 
 if ($Provider -eq "serveo") {
 	$null = Start-ServeoTunnel -SubdomainName $Subdomain -Port $LocalPort -StopBeforeStart:$StopExisting
+	exit 0
+}
+
+if ($Provider -eq "localhostrun") {
+	$null = Start-LocalhostRunTunnel -Port $LocalPort -StopBeforeStart:$StopExisting
 	exit 0
 }

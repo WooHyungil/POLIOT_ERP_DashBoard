@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>게시판 – CCI</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260320l" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260324n" />
   <script src="/static/auto_logout.js"></script>
 </head>
 <body class="has-side-nav">
@@ -27,10 +27,6 @@
           </div>
         </div>
         <nav class="topnav">
-          <a class="navlink" href="/">개요</a>
-          <a class="navlink active" href="/board">게시판</a>
-          <a class="navlink" href="/qa">QA 대시보드</a>
-          <a class="navlink" href="/manage">관리</a>
           <div class="topbar-fixed-actions">
             <a class="navlink btn-ghost" href="/mypage" style="white-space:nowrap;">마이페이지</a>
             <form method="post" action="/auth/logout" style="margin:0;display:contents;">
@@ -100,6 +96,7 @@
             <div id="viewOwnerActions" class="board-owner-actions" hidden>
               <button type="button" id="viewEditBtn" class="btn-ghost"><i class="fas fa-pen"></i> 수정</button>
               <button type="button" id="viewWithdrawBtn" class="btn-ghost"><i class="fas fa-rotate-left"></i> 요청 철회</button>
+              <button type="button" id="viewDeleteBtn" class="btn-ghost btn-danger-ghost"><i class="fas fa-trash"></i> 삭제</button>
             </div>
           </div>
 
@@ -195,7 +192,7 @@
 
             <div class="board-form-notice">
               <i class="fas fa-info-circle"></i>
-              게시글은 관리자 승인 후 게시판에 공개됩니다. High 중요도 글은 승인 후 모든 페이지의 긴급 알림 영역에 표시됩니다.
+              <span id="boardFormNoticeText">게시글은 관리자 승인 후 게시판에 공개됩니다. High 중요도 글은 승인 후 모든 페이지의 긴급 알림 영역에 표시됩니다.</span>
             </div>
 
             <div class="board-form-actions">
@@ -214,6 +211,6 @@
   <div id="boardUrgentFloat" class="board-urgent-float" hidden></div>
 
   <script src="/static/side_nav.js?v=20260319c"></script>
-  <script src="/static/board.js?v=20260320d"></script>
+  <script src="/static/board.js?v=20260403a"></script>
 </body>
 </html>

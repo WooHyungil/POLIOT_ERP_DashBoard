@@ -12,20 +12,29 @@ import json
 import re
 import base64
 import hashlib
-from urllib.parse import quote, urlencode, urljoin, urlsplit, urlunsplit
-from collections import Counter
+import hmac
+import secrets
+import ipaddress
+import tempfile
+import logging
+import html as html_lib
+from io import BytesIO
+from urllib.parse import quote, urlencode, urlsplit, urlunsplit
+from collections import Counter, deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, Response, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter, column_index_from_string
 import pandas as pd
@@ -43,6 +52,13 @@ from .models import Device
 from .orchestrator import orchestrator
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+LOG_LEVEL = str(os.getenv("CCI_LOG_LEVEL", "INFO") or "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+logger = logging.getLogger("cci.api")
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 REPORT_DIR = BASE_DIR / "reports"
@@ -62,13 +78,21 @@ USERS_FILE = BASE_DIR.parent / "config" / "users.json"
 EMPLOYEES_FILE = BASE_DIR.parent / "config" / "employees.json"
 LEGACY_USERS_FILE = BASE_DIR.parent / "config" / "core" / "users.json"
 LEGACY_EMPLOYEES_FILE = BASE_DIR.parent / "config" / "core" / "employees.json"
+USERS_SNAPSHOT_DIR = BASE_DIR.parent / "config" / "history" / "users"
+MAX_USERS_SNAPSHOTS = 60
+DATA_SNAPSHOT_DIR = BASE_DIR.parent / "config" / "history" / "data"
+MAX_DATA_SNAPSHOTS_PER_FILE = max(20, int(os.getenv("MAX_DATA_SNAPSHOTS_PER_FILE", "120")))
+DATA_LOSS_GUARD_ENABLED = str(os.getenv("DATA_LOSS_GUARD_ENABLED", "1")).strip().lower() not in {"0", "false", "no"}
+DATA_LOSS_GUARD_MIN_PREV_COUNT = max(5, int(os.getenv("DATA_LOSS_GUARD_MIN_PREV_COUNT", "20")))
+DATA_LOSS_GUARD_MIN_RETAIN_RATIO = max(0.05, min(1.0, float(os.getenv("DATA_LOSS_GUARD_MIN_RETAIN_RATIO", "0.35"))))
 ASSETS_FILE = BASE_DIR.parent / "config" / "assets.json"
 MANAGE_SCHEDULES_FILE = BASE_DIR.parent / "config" / "manage_schedules.json"
 GAME_SCORES_FILE = BASE_DIR.parent / "config" / "game_scores.json"
-AUTH_LOCK = threading.Lock()
+AUTH_LOCK = threading.RLock()
+ACTIVE_LOGIN_LOCK = threading.Lock()
+ACTIVE_LOGIN_SESSIONS: dict[str, dict] = {}
 
 ADMIN_EMAILS = {
-    "sue@poliot.co.kr",
     "hiss0723@poliot.co.kr",
 }
 GAME_ACCESS_MANAGER_EMAIL = "hiss0723@poliot.co.kr"
@@ -140,7 +164,7 @@ DEVICE_MEMORY_CACHE: dict[str, dict] = {}
 DEVICE_MEMORY_LOADED = False
 GOOGLE_DEFECT_SHEET_URL = os.getenv(
     "GOOGLE_DEFECT_SHEET_URL",
-    "https://docs.google.com/spreadsheets/d/1vEiIZM--JUzh7WYX8DLTqi8dysplrOY7n20nNT18eL8/edit?gid=1901079782#gid=1901079782",
+    "https://docs.google.com/spreadsheets/d/1PYG_I-jDws5jNrpp_J1UTW5G4k0UdWV9bXLkhj9UsSc/edit?gid=287354374#gid=287354374",
 )
 DEFAULT_PUBLIC_SHARE_URL = os.getenv("DEFAULT_PUBLIC_SHARE_URL", "https://cci-dashboard.serveousercontent.com").strip()
 GROUPWARE_BASE_URL = os.getenv("GROUPWARE_BASE_URL", "https://gw.poliot.co.kr").strip().rstrip("/")
@@ -163,7 +187,9 @@ UPLOADED_FULL_TC_FILE = UPLOAD_DIR / "full_tc_uploaded.xlsx"
 DEFECT_RAW_UPLOAD_HISTORY_FILE = UPLOAD_DIR / "defectlist_raw_upload_history.json"
 DEFECT_RAW_UPLOAD_HISTORY_LOCK = threading.Lock()
 MAX_DEFECT_RAW_UPLOAD_HISTORY = 50
-GOOGLE_RAW_STATUS_RANGE = os.getenv("GOOGLE_RAW_STATUS_RANGE", "B2:R")
+GOOGLE_RAW_STATUS_RANGE = os.getenv("GOOGLE_RAW_STATUS_RANGE", "B:R")
+GOOGLE_DEFECT_SHEET_GID = os.getenv("GOOGLE_DEFECT_SHEET_GID", "").strip()
+GOOGLE_DEFECT_RAW_UPLOAD_ONLY = str(os.getenv("GOOGLE_DEFECT_RAW_UPLOAD_ONLY", "1")).strip().lower() in {"1", "true", "yes", "y", "on"}
 GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()
 GOOGLE_DEFECT_CACHE_TTL_SEC = max(20.0, float(os.getenv("GOOGLE_DEFECT_CACHE_TTL_SEC", "90")))
 GOOGLE_DEFECT_API_KEY = os.getenv("GOOGLE_SHEETS_API_KEY", "").strip()
@@ -180,6 +206,16 @@ RAW_DEFECT_ISSUES_CACHE_LOCK = threading.Lock()
 RAW_DEFECT_ISSUES_CACHE_TS = 0.0
 RAW_DEFECT_ISSUES_CACHE_DATA: dict = {}
 RAW_DEFECT_ISSUES_CACHE_FETCHING = False
+ADMIN_MEMBER_ISSUES_CACHE_LOCK = threading.Lock()
+ADMIN_MEMBER_ISSUES_CACHE_DATA: dict[str, dict] = {}
+ADMIN_MEMBER_ISSUES_PREPARED_CACHE: dict = {"source_fingerprint": "", "data": {}}
+ADMIN_MEMBER_ISSUES_CACHE_TTL_SEC = max(5.0, float(os.getenv("ADMIN_MEMBER_ISSUES_CACHE_TTL_SEC", "30")))
+ADMIN_MEMBER_ISSUES_PERF_WARN_MS = max(100.0, float(os.getenv("ADMIN_MEMBER_ISSUES_PERF_WARN_MS", "800")))
+ADMIN_MEMBER_ISSUES_PERF_INFO_MS = max(50.0, float(os.getenv("ADMIN_MEMBER_ISSUES_PERF_INFO_MS", "250")))
+ADMIN_MEMBER_ISSUES_PERF_WINDOW_SEC = max(10, int(os.getenv("ADMIN_MEMBER_ISSUES_PERF_WINDOW_SEC", "60")))
+ADMIN_MEMBER_ISSUES_PERF_SAMPLES_MAX = max(100, int(os.getenv("ADMIN_MEMBER_ISSUES_PERF_SAMPLES_MAX", "5000")))
+ADMIN_MEMBER_ISSUES_PERF_LOCK = threading.Lock()
+ADMIN_MEMBER_ISSUES_PERF_SAMPLES = deque(maxlen=ADMIN_MEMBER_ISSUES_PERF_SAMPLES_MAX)
 # Raw row cache for DefectList editor (B17 header + B18:Z data)
 DEFECTLIST_ROWS_CACHE_LOCK = threading.Lock()
 DEFECTLIST_ROWS_CACHE_TS = 0.0
@@ -216,6 +252,10 @@ FULL_TC_NORMAL_CACHE_TTL_SEC = max(10.0, float(os.getenv("FULL_TC_NORMAL_CACHE_T
 FULL_TC_CACHE_LOCK = threading.Lock()
 FULL_TC_SHEET_LIST_CACHE: dict = {"ts": 0.0, "data": None}
 FULL_TC_SHEET_DATA_CACHE: dict[str, dict] = {}
+FULL_TC_BRIDGE_PERF_WINDOW_SEC = max(30, int(os.getenv("FULL_TC_BRIDGE_PERF_WINDOW_SEC", "900")))
+FULL_TC_BRIDGE_PERF_SAMPLES_MAX = max(200, int(os.getenv("FULL_TC_BRIDGE_PERF_SAMPLES_MAX", "8000")))
+FULL_TC_BRIDGE_PERF_LOCK = threading.Lock()
+FULL_TC_BRIDGE_PERF_SAMPLES = deque(maxlen=FULL_TC_BRIDGE_PERF_SAMPLES_MAX)
 COMPANY_DEFAULT_MEMBERS = [
     "장수경/협력사",
     "이도권/협력사",
@@ -242,13 +282,65 @@ SEVERITY_SCORE = {
 }
 
 app = FastAPI(title="CCI Automation Orchestrator")
-APP_SESSION_SECRET = os.getenv("CCI_SESSION_SECRET", "cci-dashboard-session-secret-2026").strip()
+SESSION_SECRET_FILE = BASE_DIR.parent / "config" / "core" / "session_secret.key"
+
+
+def _load_or_create_session_secret() -> str:
+    env_secret = str(os.getenv("CCI_SESSION_SECRET", "") or "").strip()
+    if len(env_secret) >= 32:
+        return env_secret
+
+    try:
+        if SESSION_SECRET_FILE.exists():
+            value = SESSION_SECRET_FILE.read_text(encoding="utf-8").strip()
+            if len(value) >= 32:
+                return value
+    except Exception:
+        pass
+
+    # Persist one strong secret so service restarts keep session signature stability.
+    generated = secrets.token_urlsafe(48)
+    try:
+        SESSION_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=str(SESSION_SECRET_FILE.parent), suffix=".tmp") as tf:
+            tf.write(generated)
+            temp_name = tf.name
+        os.replace(temp_name, str(SESSION_SECRET_FILE))
+    except Exception:
+        logger.warning("Failed to persist session secret file; using in-memory generated secret")
+    return generated
+
+
+APP_SESSION_SECRET = _load_or_create_session_secret()
 SESSION_IDLE_TIMEOUT_SECONDS = 60 * 60 * 1        # 유휴 1시간 → 자동 로그아웃
 SESSION_MAX_AGE_SECONDS = 60 * 60 * 2             # 쿠키 최대 수명 2시간 (heartbeat가 주기적으로 갱신)
 SESSION_COOKIE_SAMESITE = os.getenv("CCI_SESSION_SAMESITE", "lax").strip().lower() or "lax"
 if SESSION_COOKIE_SAMESITE not in {"lax", "strict", "none"}:
     SESSION_COOKIE_SAMESITE = "lax"
 SESSION_COOKIE_HTTPS_ONLY = os.getenv("CCI_SESSION_HTTPS_ONLY", "0").strip().lower() in {"1", "true", "yes", "on"}
+LAN_ONLY_ENABLED = os.getenv("CCI_LAN_ONLY", "0").strip().lower() in {"1", "true", "yes", "on"}
+SINGLE_LOGIN_PER_USER = os.getenv("CCI_SINGLE_LOGIN_PER_USER", "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _load_allowed_lan_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    raw = str(os.getenv("CCI_ALLOWED_LAN_CIDRS", "") or "").strip()
+    if not raw:
+        return []
+
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for token in raw.replace(";", ",").split(","):
+        value = token.strip()
+        if not value:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(value, strict=False))
+        except ValueError:
+            continue
+    return networks
+
+
+ALLOWED_LAN_NETWORKS = _load_allowed_lan_networks()
+ACTIVE_LOGIN_TTL_SECONDS = SESSION_IDLE_TIMEOUT_SECONDS
 app.add_middleware(
     SessionMiddleware,
     secret_key=APP_SESSION_SECRET,
@@ -265,7 +357,128 @@ class NgrokWarningSkipMiddleware(BaseHTTPMiddleware):
         response.headers["ngrok-skip-browser-warning-for-user-agent"] = "*"
         return response
 
+
+    @app.middleware("http")
+    async def api_access_log_middleware(request: Request, call_next):
+        started = time.perf_counter()
+        path = str(request.url.path or "")
+        try:
+            response = await call_next(request)
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            if path.startswith("/api/"):
+                logger.info(
+                    "api_access method=%s path=%s status=%s elapsed_ms=%.2f client=%s",
+                    request.method,
+                    path,
+                    getattr(response, "status_code", "-"),
+                    elapsed_ms,
+                    (request.client.host if request.client else "-"),
+                )
+            return response
+        except Exception:
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            logger.exception(
+                "api_error method=%s path=%s elapsed_ms=%.2f client=%s",
+                request.method,
+                path,
+                elapsed_ms,
+                (request.client.host if request.client else "-"),
+            )
+            raise
+
+
+def _is_lan_client(host: str) -> bool:
+    text = str(host or "").strip()
+    if not text:
+        return False
+    text = text.split(",", 1)[0].strip()
+    if not text:
+        return False
+    if text.startswith("[") and "]" in text:
+        text = text[1:text.find("]")].strip()
+    elif text.count(":") == 1 and "." in text:
+        text = text.split(":", 1)[0].strip()
+
+    if text in {"localhost", "::1", "127.0.0.1"}:
+        return True
+    if text.startswith("::ffff:"):
+        text = text.split("::ffff:", 1)[1].strip()
+
+    try:
+        ip_obj = ipaddress.ip_address(text)
+    except ValueError:
+        return False
+
+    if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
+        return True
+
+    if isinstance(ip_obj, ipaddress.IPv4Address):
+        # Some enterprise LANs use CGNAT ranges internally.
+        if ip_obj in ipaddress.ip_network("100.64.0.0/10"):
+            return True
+
+    for network in ALLOWED_LAN_NETWORKS:
+        if ip_obj in network:
+            return True
+
+    return False
+
+
+def _is_public_share_request(request: Request) -> bool:
+    candidates = [
+        str(request.headers.get("host", "") or "").strip().lower(),
+        str(request.headers.get("x-forwarded-host", "") or "").strip().lower(),
+    ]
+    public_base = (os.getenv("PUBLIC_BASE_URL") or "").strip().lower()
+    if public_base:
+        try:
+            parsed = urlsplit(public_base)
+            host = str(parsed.netloc or parsed.path or "").strip().lower()
+            if host:
+                candidates.append(host)
+        except Exception:
+            pass
+
+    known_public_suffixes = (
+        ".localhost.run",
+        ".lhr.life",
+        ".serveousercontent.com",
+        ".ngrok-free.app",
+        ".ngrok.app",
+        ".ngrok.dev",
+    )
+    for value in candidates:
+        host = value.split(",", 1)[0].strip()
+        if not host:
+            continue
+        host = host.split(":", 1)[0].strip()
+        if any(host.endswith(suffix) for suffix in known_public_suffixes):
+            return True
+    return False
+
+
+class LanOnlyAccessMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if not LAN_ONLY_ENABLED:
+            return await call_next(request)
+        if _is_public_share_request(request):
+            return await call_next(request)
+
+        client_host = ""
+        forwarded_for = str(request.headers.get("x-forwarded-for", "")).strip()
+        if forwarded_for:
+            client_host = forwarded_for.split(",")[0].strip()
+        elif request.client:
+            client_host = str(request.client.host or "").strip()
+
+        if not _is_lan_client(client_host):
+            return JSONResponse(status_code=403, content={"ok": False, "detail": "LAN only access"})
+
+        return await call_next(request)
+
+app.add_middleware(LanOnlyAccessMiddleware)
 app.add_middleware(NgrokWarningSkipMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1000)  # 1KB 이상인 응답만 압축
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 app.mount("/reports", StaticFiles(directory=str(REPORT_DIR)), name="reports")
 app.mount("/artifacts", StaticFiles(directory=str(ARTIFACT_DIR)), name="artifacts")
@@ -273,62 +486,383 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 app.mount("/exports", StaticFiles(directory=str(EXPORT_DIR)), name="exports")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+EMAIL_REGEX = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+PASSWORD_REGEX = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$")
+PHONE_REGEX = re.compile(r"^(?:\+?\d[\d\-\s]{7,18}\d)$")
 
-def _hash_password(email: str, password: str) -> str:
+
+def _is_valid_email(email: str) -> bool:
+    return bool(EMAIL_REGEX.fullmatch(str(email or "").strip().lower()))
+
+
+def _is_valid_password(password: str) -> bool:
+    return bool(PASSWORD_REGEX.fullmatch(str(password or "")))
+
+
+def _password_policy_text() -> str:
+    return "비밀번호는 8~100자이며, 영문/숫자/특수문자를 각각 1개 이상 포함해야 합니다."
+
+
+def _phone_policy_text() -> str:
+    return "전화번호 형식이 올바르지 않습니다. 예: 010-1234-5678"
+
+
+def _birth_policy_text() -> str:
+    return "생년월일 형식이 올바르지 않습니다. YYYY-MM-DD 형식으로 입력해 주세요."
+
+
+@app.get("/api/health")
+def api_health():
+    return {
+        "ok": True,
+        "status": "healthy",
+        "time": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def _is_valid_phone(phone: str) -> bool:
+    text = str(phone or "").strip()
+    if not text:
+        return False
+    return bool(PHONE_REGEX.fullmatch(text))
+
+
+def _is_valid_birth(birth: str) -> bool:
+    text = str(birth or "").strip()
+    if not text:
+        return False
+    try:
+        datetime.strptime(text, "%Y-%m-%d")
+        return True
+    except Exception:
+        return False
+
+
+def _legacy_hash_password(email: str, password: str) -> str:
     key = f"{email.strip().lower()}::{password}::poliot"
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
+def _hash_password(email: str, password: str) -> str:
+    # PBKDF2 with per-password random salt.
+    normalized_email = str(email or "").strip().lower()
+    base = f"{normalized_email}::{password}::poliot".encode("utf-8")
+    salt_hex = secrets.token_hex(16)
+    rounds = 260000
+    derived = hashlib.pbkdf2_hmac("sha256", base, bytes.fromhex(salt_hex), rounds)
+    return f"pbkdf2_sha256${rounds}${salt_hex}${derived.hex()}"
+
+
+def _verify_password(email: str, password: str, password_hash: str) -> bool:
+    stored = str(password_hash or "").strip()
+    if not stored:
+        return False
+
+    if stored.startswith("pbkdf2_sha256$"):
+        try:
+            _algo, rounds_text, salt_hex, expected_hex = stored.split("$", 3)
+            rounds = int(rounds_text)
+            if rounds <= 0:
+                return False
+            base = f"{str(email or '').strip().lower()}::{password}::poliot".encode("utf-8")
+            candidate = hashlib.pbkdf2_hmac("sha256", base, bytes.fromhex(salt_hex), rounds).hex()
+            return hmac.compare_digest(candidate, expected_hex)
+        except Exception:
+            return False
+
+    # Backward compatibility for existing deterministic SHA256 hashes.
+    return hmac.compare_digest(stored, _legacy_hash_password(email, password))
+
+
 def _load_json_array(path: Path) -> list[dict]:
+    loaded = _parse_json_array_file(path)
+    if loaded is not None:
+        return loaded
+
+    backup = Path(str(path) + ".bak")
+    loaded_backup = _parse_json_array_file(backup)
+    if loaded_backup is not None:
+        return loaded_backup
+    return []
+
+
+def _parse_json_array_file(path: Path) -> list[dict] | None:
     if not path.exists():
-        return []
+        return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return []
+        return None
     if isinstance(data, list):
         return [x for x in data if isinstance(x, dict)]
-    return []
+    return None
+
+
+def _write_text_atomic(path: Path, text: str, *, encoding: str = "utf-8", keep_backup: bool = True) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if keep_backup and path.exists():
+        backup_path = path.with_suffix(path.suffix + ".bak")
+        try:
+            shutil.copy2(path, backup_path)
+        except Exception:
+            pass
+
+    with tempfile.NamedTemporaryFile("w", encoding=encoding, delete=False, dir=str(path.parent), suffix=".tmp") as tf:
+        tf.write(text)
+        temp_name = tf.name
+    os.replace(temp_name, str(path))
+
+
+def _data_snapshot_stem(path: Path) -> str:
+    try:
+        rel = path.relative_to(BASE_DIR.parent / "config")
+        return re.sub(r"[^0-9A-Za-z_.-]+", "_", str(rel).replace("\\", "__").replace("/", "__"))
+    except Exception:
+        return re.sub(r"[^0-9A-Za-z_.-]+", "_", str(path.name))
+
+
+def _save_data_snapshot(path: Path, items: list[dict], tag: str) -> None:
+    try:
+        DATA_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        stem = _data_snapshot_stem(path)
+        stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+        snapshot_path = DATA_SNAPSHOT_DIR / f"{stem}__{tag}__{stamp}.json"
+        _write_text_atomic(snapshot_path, json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8", keep_backup=False)
+
+        pattern = f"{stem}__*.json"
+        snapshots = sorted(
+            [p for p in DATA_SNAPSHOT_DIR.glob(pattern) if p.is_file()],
+            key=lambda p: p.stat().st_mtime,
+        )
+        overflow = max(0, len(snapshots) - MAX_DATA_SNAPSHOTS_PER_FILE)
+        for old in snapshots[:overflow]:
+            try:
+                old.unlink()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _enforce_data_loss_guard(path: Path, before_items: list[dict], after_items: list[dict]) -> None:
+    if not DATA_LOSS_GUARD_ENABLED:
+        return
+    if str(os.getenv("CCI_ALLOW_RISKY_DATA_SAVE", "")).strip() == "1":
+        return
+
+    before_count = len(before_items or [])
+    after_count = len(after_items or [])
+    if before_count < DATA_LOSS_GUARD_MIN_PREV_COUNT:
+        return
+    if after_count >= before_count:
+        return
+
+    retain_ratio = float(after_count) / float(before_count or 1)
+    risky = (after_count <= 1) or (retain_ratio < DATA_LOSS_GUARD_MIN_RETAIN_RATIO)
+    if not risky:
+        return
+
+    _save_data_snapshot(path, before_items, "guard_before")
+    _save_data_snapshot(path, after_items, "guard_blocked")
+    raise RuntimeError(
+        f"Blocked risky save for {path.name}: {before_count} -> {after_count}. "
+        "Set CCI_ALLOW_RISKY_DATA_SAVE=1 to override intentionally."
+    )
 
 
 def _save_json_array(path: Path, items: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    previous_items = _parse_json_array_file(path) or []
+    _enforce_data_loss_guard(path, previous_items, list(items or []))
+    _save_data_snapshot(path, previous_items, "pre")
+
+    payload = json.dumps(items, ensure_ascii=False, indent=2)
+
+    # 최근 정상본 백업을 유지해 비정상 종료/충돌 시 복구 가능성을 높인다.
+    if path.exists():
+        backup_path = path.with_suffix(path.suffix + ".bak")
+        try:
+            shutil.copy2(path, backup_path)
+        except Exception:
+            pass
+
+    # 임시 파일에 먼저 기록한 뒤 원자적으로 교체한다.
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=str(path.parent), suffix=".tmp") as tf:
+        tf.write(payload)
+        temp_name = tf.name
+    os.replace(temp_name, str(path))
+    _save_data_snapshot(path, list(items or []), "post")
+
+
+def _iter_users_snapshot_files() -> list[Path]:
+    if not USERS_SNAPSHOT_DIR.exists():
+        return []
+    return sorted(
+        [p for p in USERS_SNAPSHOT_DIR.glob("users_*.json") if p.is_file()],
+        key=lambda p: p.stat().st_mtime,
+    )
+
+
+def _save_users_snapshot(items: list[dict], reason: str) -> None:
+    try:
+        USERS_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+        path = USERS_SNAPSHOT_DIR / f"users_{stamp}_{reason}.json"
+        _write_text_atomic(path, json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8", keep_backup=False)
+
+        snapshots = _iter_users_snapshot_files()
+        overflow = max(0, len(snapshots) - MAX_USERS_SNAPSHOTS)
+        for old in snapshots[:overflow]:
+            try:
+                old.unlink()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _load_users_merged_from_sources(include_snapshots: bool = False) -> list[dict]:
+    sources = [
+        LEGACY_USERS_FILE,
+        Path(str(LEGACY_USERS_FILE) + ".bak"),
+        USERS_FILE,
+        Path(str(USERS_FILE) + ".bak"),
+    ]
+
+    merged_by_email: dict[str, dict] = {}
+    for src in sources:
+        for row in _load_json_array(src):
+            email = str(row.get("email", "")).strip().lower()
+            if not email:
+                continue
+            prev = merged_by_email.get(email) or {}
+            merged_by_email[email] = {**prev, **row, "email": email}
+
+    if include_snapshots and len(merged_by_email) <= len(ADMIN_EMAILS):
+        for snap in _iter_users_snapshot_files():
+            for row in _load_json_array(snap):
+                email = str(row.get("email", "")).strip().lower()
+                if not email:
+                    continue
+                if email in merged_by_email:
+                    continue
+                merged_by_email[email] = {**row, "email": email}
+
+    return list(merged_by_email.values())
+
+
+def _load_employees_merged_by_email() -> dict[str, dict]:
+    merged: dict[str, dict] = {}
+    for path in (LEGACY_EMPLOYEES_FILE, EMPLOYEES_FILE):
+        for row in _load_json_array(path):
+            email = str(row.get("account_email", "")).strip().lower()
+            if not email:
+                continue
+            prev = merged.get(email) or {}
+            merged[email] = {**prev, **row, "account_email": email}
+    return merged
 
 
 def _ensure_users_file() -> None:
     with AUTH_LOCK:
-        users = _load_json_array(USERS_FILE)
-        by_email = {str(x.get("email", "")).strip().lower(): x for x in users}
+        existing_users = _load_users_merged_from_sources(include_snapshots=True)
+        by_email = {
+            str(x.get("email", "")).strip().lower(): {**x, "email": str(x.get("email", "")).strip().lower()}
+            for x in existing_users
+            if str(x.get("email", "")).strip().lower()
+        }
+        changed = False
         for admin_email in sorted(ADMIN_EMAILS):
             if admin_email not in by_email:
-                users.append(
-                    {
-                        "email": admin_email,
-                        "password_hash": _hash_password(admin_email, "Poliot12!@"),
-                        "role": "admin",
-                        "name": admin_email.split("@")[0],
-                        "created_at": datetime.utcnow().isoformat(timespec="seconds"),
-                        "game_access": admin_email == GAME_ACCESS_MANAGER_EMAIL,
-                        "shortcut_items": [],
-                        "shortcut_windows": [],
-                    }
-                )
+                by_email[admin_email] = {
+                    "email": admin_email,
+                    "password_hash": _hash_password(admin_email, "Poliot12!@"),
+                    "role": "admin",
+                    "name": admin_email.split("@")[0],
+                    "created_at": datetime.utcnow().isoformat(timespec="seconds"),
+                    "game_access": admin_email == GAME_ACCESS_MANAGER_EMAIL,
+                    "shortcut_items": [],
+                    "shortcut_windows": [],
+                }
+                changed = True
             else:
                 by_email[admin_email]["role"] = "admin"
                 # Core admin game permission policy is deterministic:
                 # only the designated manager can access game features.
                 by_email[admin_email]["game_access"] = admin_email == GAME_ACCESS_MANAGER_EMAIL
-        _save_json_array(USERS_FILE, users)
+
+        # 유실 복구: 관리자만 남은 비정상 상태면 employees를 기준으로 사용자 골격을 복원한다.
+        non_admin_count = sum(1 for e in by_email.keys() if e not in ADMIN_EMAILS)
+        if non_admin_count == 0:
+            employees_by_email = _load_employees_merged_by_email()
+            for email, emp in employees_by_email.items():
+                if email in by_email:
+                    continue
+                by_email[email] = {
+                    "email": email,
+                    "password_hash": "",
+                    "role": "user",
+                    "name": str(emp.get("name", "") or email.split("@")[0]).strip(),
+                    "phone": str(emp.get("phone", "") or "").strip(),
+                    "title": str(emp.get("title", "") or "").strip(),
+                    "birth": str(emp.get("birth", "") or "").strip(),
+                    "address": str(emp.get("address", "") or "").strip(),
+                    "created_at": datetime.utcnow().isoformat(timespec="seconds"),
+                    "approved": False,
+                    "can_login": False,
+                    "shortcut_items": [],
+                    "shortcut_windows": [],
+                }
+                changed = True
+        merged = list(by_email.values())
+
+        # 파일 부재/불일치가 있거나 관리 계정 보정이 발생한 경우만 동기화 저장한다.
+        primary_users = _load_json_array(USERS_FILE)
+        legacy_users = _load_json_array(LEGACY_USERS_FILE)
+        need_sync = changed
+        if not USERS_FILE.exists() or not LEGACY_USERS_FILE.exists():
+            need_sync = True
+        if len(primary_users) < len(merged) or len(legacy_users) < len(merged):
+            need_sync = True
+
+        if need_sync:
+            _save_json_array(USERS_FILE, merged)
+            _save_json_array(LEGACY_USERS_FILE, merged)
+            _save_users_snapshot(merged, "ensure")
 
 
 def _load_users() -> list[dict]:
     _ensure_users_file()
-    return _load_json_array(USERS_FILE)
+    # 읽기 시에는 절대 파일을 재저장하지 않는다. (데이터 유실 방지)
+    return _load_users_merged_from_sources(include_snapshots=True)
 
 
-def _save_users(users: list[dict]) -> None:
-    _save_json_array(USERS_FILE, users)
+def _save_users(users: list[dict], preserve_missing: bool = True) -> None:
+    incoming_by_email: dict[str, dict] = {}
+    for row in list(users or []):
+        if not isinstance(row, dict):
+            continue
+        email = str(row.get("email", "")).strip().lower()
+        if not email:
+            continue
+        incoming_by_email[email] = {**row, "email": email}
+
+    if preserve_missing:
+        current_by_email: dict[str, dict] = {}
+        for row in _load_users_merged_from_sources(include_snapshots=True):
+            email = str(row.get("email", "")).strip().lower()
+            if not email:
+                continue
+            current_by_email[email] = {**row, "email": email}
+        current_by_email.update(incoming_by_email)
+        merged = list(current_by_email.values())
+    else:
+        merged = list(incoming_by_email.values())
+
+    _save_users_snapshot(merged, "prewrite")
+    _save_json_array(USERS_FILE, merged)
+    _save_json_array(LEGACY_USERS_FILE, merged)
+    _save_users_snapshot(merged, "saved")
 
 
 def _find_user(email: str) -> dict | None:
@@ -378,12 +912,104 @@ def _has_game_access(user: dict | None) -> bool:
         return False
     if _can_manage_game_access(user):
         return True
-    if _is_admin_user(user):
-        return False
     raw = user.get("game_access", None)
     if raw is None:
         return False
     return bool(raw)
+
+
+def _merge_user_profile_fields(user: dict | None) -> dict:
+    user = user or {}
+    email = str(user.get("email", "")).strip().lower()
+    employee: dict = {}
+    if email:
+        for path in (EMPLOYEES_FILE, LEGACY_EMPLOYEES_FILE):
+            for row in _load_json_array(path):
+                if str(row.get("account_email", "")).strip().lower() == email:
+                    employee = {**employee, **row}
+
+    def pick_text(*values: object) -> str:
+        for value in values:
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
+
+    return {
+        "email": email,
+        "name": pick_text(user.get("name"), employee.get("name"), email.split("@")[0] if email else ""),
+        "title": pick_text(user.get("title"), employee.get("title")),
+        "phone": pick_text(user.get("phone"), employee.get("phone")),
+        "birth": pick_text(user.get("birth"), employee.get("birth")),
+        "address": pick_text(user.get("address"), employee.get("address")),
+    }
+
+
+def _sync_employee_profile(*, email: str, name: str = "", title: str = "", phone: str = "", birth: str = "", address: str = "") -> None:
+    target = str(email or "").strip().lower()
+    if not target:
+        return
+
+    name = str(name or "").strip()
+    title = str(title or "").strip()
+    phone = str(phone or "").strip()
+    birth = str(birth or "").strip()
+    address = str(address or "").strip()
+
+    found_any = False
+    for path in (EMPLOYEES_FILE, LEGACY_EMPLOYEES_FILE):
+        items = _load_json_array(path)
+        if not items and path != EMPLOYEES_FILE:
+            continue
+        changed = False
+        found_here = False
+        for row in items:
+            if str(row.get("account_email", "")).strip().lower() != target:
+                continue
+            row["account_email"] = target
+            if name:
+                row["name"] = name
+            row["title"] = title
+            row["phone"] = phone
+            row["birth"] = birth
+            row["address"] = address
+            found_here = True
+            changed = True
+        if found_here:
+            _save_json_array(path, items)
+            found_any = True
+        elif path == EMPLOYEES_FILE:
+            items.append(
+                {
+                    "id": f"emp-{uuid.uuid4().hex[:10]}",
+                    "name": name or target.split("@")[0],
+                    "title": title,
+                    "account_email": target,
+                    "phone": phone,
+                    "birth": birth,
+                    "address": address,
+                }
+            )
+            _save_json_array(path, items)
+            found_any = True
+        elif changed:
+            _save_json_array(path, items)
+
+    if not found_any:
+        _save_json_array(
+            EMPLOYEES_FILE,
+            [
+                {
+                    "id": f"emp-{uuid.uuid4().hex[:10]}",
+                    "name": name or target.split("@")[0],
+                    "title": title,
+                    "account_email": target,
+                    "phone": phone,
+                    "birth": birth,
+                    "address": address,
+                }
+            ],
+        )
 
 
 def _load_game_scores() -> list[dict]:
@@ -405,6 +1031,70 @@ def _decode_session_cookie_value(raw_cookie: str) -> dict:
         return payload if isinstance(payload, dict) else {}
     except (BadSignature, SignatureExpired, ValueError, json.JSONDecodeError):
         return {}
+
+
+def _ensure_client_session_key(request: Request) -> str:
+    session_data = request.scope.get("session")
+    if isinstance(session_data, dict):
+        key = str(session_data.get("client_session_key", "")).strip()
+        if key:
+            return key
+        key = f"sess-{uuid.uuid4().hex}"
+        session_data["client_session_key"] = key
+        return key
+    return f"sess-{uuid.uuid4().hex}"
+
+
+def _purge_expired_active_logins(now_ts: float) -> None:
+    expired = []
+    for email, info in ACTIVE_LOGIN_SESSIONS.items():
+        last_seen = float(info.get("last_seen", 0) or 0)
+        if now_ts - last_seen > ACTIVE_LOGIN_TTL_SECONDS:
+            expired.append(email)
+    for email in expired:
+        ACTIVE_LOGIN_SESSIONS.pop(email, None)
+
+
+def _touch_active_login(email: str, client_session_key: str) -> None:
+    target_email = str(email or "").strip().lower()
+    key = str(client_session_key or "").strip()
+    if not target_email or not key:
+        return
+    now_ts = time.time()
+    with ACTIVE_LOGIN_LOCK:
+        _purge_expired_active_logins(now_ts)
+        ACTIVE_LOGIN_SESSIONS[target_email] = {
+            "client_session_key": key,
+            "last_seen": now_ts,
+        }
+
+
+def _release_active_login(email: str, client_session_key: str) -> None:
+    target_email = str(email or "").strip().lower()
+    key = str(client_session_key or "").strip()
+    if not target_email or not key:
+        return
+    with ACTIVE_LOGIN_LOCK:
+        info = ACTIVE_LOGIN_SESSIONS.get(target_email) or {}
+        if str(info.get("client_session_key", "")).strip() == key:
+            ACTIVE_LOGIN_SESSIONS.pop(target_email, None)
+
+
+def _is_duplicate_active_login(email: str, client_session_key: str) -> bool:
+    if not SINGLE_LOGIN_PER_USER:
+        return False
+    target_email = str(email or "").strip().lower()
+    key = str(client_session_key or "").strip()
+    if not target_email or not key:
+        return False
+    now_ts = time.time()
+    with ACTIVE_LOGIN_LOCK:
+        _purge_expired_active_logins(now_ts)
+        info = ACTIVE_LOGIN_SESSIONS.get(target_email)
+        if not info:
+            return False
+        active_key = str(info.get("client_session_key", "")).strip()
+        return bool(active_key and active_key != key)
 
 
 def _is_session_timed_out(request: Request) -> bool:
@@ -1063,15 +1753,16 @@ def favicon():
 
 
 @app.get("/auth/login", response_class=HTMLResponse)
-def auth_login_page(request: Request, next: str = "/", message: str = ""):
-    help_text = "현재 사용하고 있는 구글 시트에 아이디(이메일)/비밀번호를 입력해 주세요"
+def auth_login_page(request: Request, next: str = "/", message: str = "", msg_type: str = "", email: str = ""):
     return templates.TemplateResponse(
+        request,
         "auth_login.html",
         {
             "request": request,
             "next": next or "/",
-            "message": help_text,
             "popup_message": str(message or "").strip(),
+            "msg_type": str(msg_type or "").strip(),
+            "prefill_email": str(email or "").strip(),
         },
     )
 
@@ -1083,33 +1774,60 @@ def auth_login_submit(request: Request, email: str = Form(...), password: str = 
     if not redirect_to.startswith("/"):
         redirect_to = "/"
 
-    if not user or str(user.get("password_hash", "")) != _hash_password(email, password):
-        msg = quote("이메일 또는 비밀번호가 올바르지 않습니다.", safe="")
-        return RedirectResponse(url=f"/auth/login?next={quote(redirect_to, safe='/:#?=&')}&message={msg}", status_code=303)
+    email_param = quote(str(email or "").strip(), safe="")
+    def _login_error(msg_text: str, mtype: str = "error") -> RedirectResponse:
+        msg = quote(msg_text, safe="")
+        return RedirectResponse(
+            url=f"/auth/login?next={quote(redirect_to, safe='/:#?=&')}&message={msg}&msg_type={mtype}&email={email_param}",
+            status_code=303,
+        )
+
+    stored_hash = str((user or {}).get("password_hash", "") or "")
+    if not user or not _verify_password(email, password, stored_hash):
+        return _login_error("이메일 또는 비밀번호가 올바르지 않습니다.")
+
+    # Successful login with legacy hash upgrades it to PBKDF2 immediately.
+    if user and stored_hash and not stored_hash.startswith("pbkdf2_sha256$"):
+        users = _load_users()
+        changed = False
+        for row in users:
+            row_email = str(row.get("email", "")).strip().lower()
+            if row_email != str(user.get("email", "")).strip().lower():
+                continue
+            row["password_hash"] = _hash_password(row_email, password)
+            changed = True
+            break
+        if changed:
+            _save_users(users)
+            user = _find_user(str(user.get("email", ""))) or user
 
     if not _is_user_approved(user):
-        msg = quote("관리자 승인 대기 중입니다. 관리자에게 승인 요청해 주세요.", safe="")
-        return RedirectResponse(url=f"/auth/login?next={quote(redirect_to, safe='/:#?=&')}&message={msg}", status_code=303)
+        return _login_error("가입 승인 대기 중인 계정입니다. 관리자 승인 후 로그인할 수 있습니다.", "pending")
 
     if not _can_user_login(user):
-        msg = quote("로그인 권한이 비활성화된 계정입니다. 관리자에게 문의해 주세요.", safe="")
-        return RedirectResponse(url=f"/auth/login?next={quote(redirect_to, safe='/:#?=&')}&message={msg}", status_code=303)
+        return _login_error("로그인 권한이 비활성화된 계정입니다. 관리자에게 문의해 주세요.", "pending")
+
+    client_session_key = _ensure_client_session_key(request)
+    if _is_duplicate_active_login(str(user.get("email", "")), client_session_key):
+        return _login_error("이미 다른 기기/브라우저에서 로그인 중인 계정입니다. 기존 세션을 로그아웃한 뒤 다시 시도해 주세요.", "pending")
 
     now_iso = datetime.utcnow().isoformat(timespec="seconds")
     request.session["user_email"] = str(user.get("email", "")).strip().lower()
     request.session["login_at"] = now_iso
     request.session["last_active_at"] = now_iso
+    request.session["client_session_key"] = client_session_key
+    _touch_active_login(str(user.get("email", "")), client_session_key)
     return RedirectResponse(url=redirect_to, status_code=303)
 
 
 @app.get("/auth/register", response_class=HTMLResponse)
 def auth_register_page(request: Request, next: str = "/", message: str = ""):
     return templates.TemplateResponse(
+        request,
         "auth_register.html",
         {
             "request": request,
             "next": next or "/",
-            "message": "현재 사용하고 있는 구글 시트에 아이디(이메일)/비밀번호를 입력해 주세요",
             "popup_message": str(message or "").strip(),
         },
     )
@@ -1138,7 +1856,7 @@ def auth_register_submit(
     if not redirect_to.startswith("/"):
         redirect_to = "/"
 
-    if "@" not in normalized:
+    if not _is_valid_email(normalized):
         msg = quote("이메일 형식이 올바르지 않습니다.", safe="")
         return RedirectResponse(url=f"/auth/register?next={quote(redirect_to, safe='/:#?=&')}&message={msg}", status_code=303)
     if not clean_name:
@@ -1147,8 +1865,14 @@ def auth_register_submit(
     if not clean_phone:
         msg = quote("전화번호를 입력해 주세요.", safe="")
         return RedirectResponse(url=f"/auth/register?next={quote(redirect_to, safe='/:#?=&')}&message={msg}", status_code=303)
-    if len(str(password or "")) < 8:
-        msg = quote("비밀번호는 8자 이상이어야 합니다.", safe="")
+    if not _is_valid_phone(clean_phone):
+        msg = quote(_phone_policy_text(), safe="")
+        return RedirectResponse(url=f"/auth/register?next={quote(redirect_to, safe='/:#?=&')}&message={msg}", status_code=303)
+    if clean_birth and not _is_valid_birth(clean_birth):
+        msg = quote(_birth_policy_text(), safe="")
+        return RedirectResponse(url=f"/auth/register?next={quote(redirect_to, safe='/:#?=&')}&message={msg}", status_code=303)
+    if not _is_valid_password(str(password or "")):
+        msg = quote(_password_policy_text(), safe="")
         return RedirectResponse(url=f"/auth/register?next={quote(redirect_to, safe='/:#?=&')}&message={msg}", status_code=303)
 
     users = _load_users()
@@ -1177,33 +1901,14 @@ def auth_register_submit(
     )
     _save_users(users)
 
-    employees = _load_json_array(EMPLOYEES_FILE)
-    found_employee = False
-    for row in employees:
-        account_email = str(row.get("account_email", "")).strip().lower()
-        if account_email != normalized:
-            continue
-        row["name"] = clean_name
-        row["title"] = clean_title
-        row["account_email"] = normalized
-        row["phone"] = clean_phone
-        row["birth"] = clean_birth
-        row["address"] = clean_address
-        found_employee = True
-        break
-    if not found_employee:
-        employees.append(
-            {
-                "id": f"emp-{uuid.uuid4().hex[:10]}",
-                "name": clean_name,
-                "title": clean_title,
-                "account_email": normalized,
-                "phone": clean_phone,
-                "birth": clean_birth,
-                "address": clean_address,
-            }
-        )
-    _save_json_array(EMPLOYEES_FILE, employees)
+    _sync_employee_profile(
+        email=normalized,
+        name=clean_name,
+        title=clean_title,
+        phone=clean_phone,
+        birth=clean_birth,
+        address=clean_address,
+    )
 
     if not is_admin_seed:
         _append_audit_update(
@@ -1218,8 +1923,8 @@ def auth_register_submit(
             scope="회원가입",
         )
     if not is_admin_seed:
-        msg = quote("회원가입이 완료되었습니다. 관리자 승인 후 로그인할 수 있습니다.", safe="")
-        return RedirectResponse(url=f"/auth/login?next={quote(redirect_to, safe='/:#?=&')}&message={msg}", status_code=303)
+        msg = quote("회원가입이 완료되었습니다! 관리자 승인 후 로그인할 수 있습니다.", safe="")
+        return RedirectResponse(url=f"/auth/login?next={quote(redirect_to, safe='/:#?=&')}&message={msg}&msg_type=success", status_code=303)
     request.session["user_email"] = normalized
     request.session["login_at"] = datetime.utcnow().isoformat(timespec="seconds")
     return RedirectResponse(url=redirect_to, status_code=303)
@@ -1227,6 +1932,12 @@ def auth_register_submit(
 
 @app.post("/auth/logout")
 def auth_logout(request: Request):
+    user = _current_user_from_request(request)
+    session_data = request.scope.get("session")
+    client_session_key = ""
+    if isinstance(session_data, dict):
+        client_session_key = str(session_data.get("client_session_key", "")).strip()
+    _release_active_login(str((user or {}).get("email", "")), client_session_key)
     _clear_groupware_client(request)
     if request.session:
         request.session.clear()
@@ -1238,17 +1949,21 @@ def auth_me(request: Request):
     user = _current_user_from_request(request)
     if not user:
         return JSONResponse(status_code=401, content={"ok": False, "detail": "login required"})
+    profile = _merge_user_profile_fields(user)
     return {
         "ok": True,
         "user": {
-            "email": str(user.get("email", "")),
-            "name": str(user.get("name", "")),
+            "email": str(profile.get("email", "") or user.get("email", "")),
+            "name": str(profile.get("name", "") or user.get("name", "")),
             "role": "admin" if _is_admin_user(user) else "user",
             "approved": _is_user_approved(user),
             "can_login": _can_user_login(user),
             "game_access": _has_game_access(user),
             "can_manage_game_access": _can_manage_game_access(user),
-            "address": str(user.get("address", "") or ""),
+            "title": str(profile.get("title", "") or ""),
+            "phone": str(profile.get("phone", "") or ""),
+            "birth": str(profile.get("birth", "") or ""),
+            "address": str(profile.get("address", "") or ""),
             "login_at": str(request.session.get("login_at", "") or ""),
             "last_active_at": str(request.session.get("last_active_at", "") or request.session.get("login_at", "") or ""),
         },
@@ -1261,6 +1976,15 @@ def auth_heartbeat(request: Request):
     user = _current_user_from_request(request)
     if not user:
         return JSONResponse(status_code=401, content={"ok": False, "detail": "login required"})
+    session_data = request.scope.get("session")
+    client_session_key = ""
+    if isinstance(session_data, dict):
+        client_session_key = str(session_data.get("client_session_key", "")).strip()
+        if not client_session_key:
+            client_session_key = _ensure_client_session_key(request)
+            session_data["client_session_key"] = client_session_key
+    if client_session_key:
+        _touch_active_login(str(user.get("email", "")), client_session_key)
     request.session["last_active_at"] = datetime.utcnow().isoformat(timespec="seconds")
     return {"ok": True}
 
@@ -1283,21 +2007,45 @@ async def user_self_update(request: Request):
         before = dict(row)
         if "name" in payload:
             new_name = str(payload.get("name", "") or "").strip()
-            if new_name:
-                row["name"] = new_name
+            if not new_name:
+                raise HTTPException(status_code=400, detail="이름은 필수 입력입니다.")
+            row["name"] = new_name
         if "password" in payload:
             password = str(payload.get("password", "") or "")
             if password:
-                if len(password) < 8:
-                    raise HTTPException(status_code=400, detail="password too short")
+                if not _is_valid_password(password):
+                    raise HTTPException(status_code=400, detail=_password_policy_text())
                 row["password_hash"] = _hash_password(target_email, password)
                 audit_lines.append("password: updated")
         if "address" in payload:
             row["address"] = str(payload.get("address", "") or "").strip()
-        audit_lines = _build_change_lines(before, row, ["name", "address"]) + audit_lines
+        if "title" in payload:
+            row["title"] = str(payload.get("title", "") or "").strip()
+        if "phone" in payload:
+            next_phone = str(payload.get("phone", "") or "").strip()
+            if next_phone and not _is_valid_phone(next_phone):
+                raise HTTPException(status_code=400, detail=_phone_policy_text())
+            row["phone"] = next_phone
+        if "birth" in payload:
+            next_birth = str(payload.get("birth", "") or "").strip()
+            if next_birth and not _is_valid_birth(next_birth):
+                raise HTTPException(status_code=400, detail=_birth_policy_text())
+            row["birth"] = next_birth
+        audit_lines = _build_change_lines(before, row, ["name", "title", "phone", "birth", "address"]) + audit_lines
+        _sync_employee_profile(
+            email=target_email,
+            name=str(row.get("name", "") or ""),
+            title=str(row.get("title", "") or ""),
+            phone=str(row.get("phone", "") or ""),
+            birth=str(row.get("birth", "") or ""),
+            address=str(row.get("address", "") or ""),
+        )
         updated_user = {
             "email": target_email,
             "name": str(row.get("name", "")),
+            "title": str(row.get("title", "") or ""),
+            "phone": str(row.get("phone", "") or ""),
+            "birth": str(row.get("birth", "") or ""),
             "address": str(row.get("address", "") or ""),
         }
         break
@@ -1320,6 +2068,9 @@ async def user_self_update(request: Request):
 @app.get("/api/admin/users")
 def admin_users(request: Request):
     _require_admin(request)
+    current_user = _current_user_from_request(request)
+    current_user_email = str((current_user or {}).get("email", "")).strip().lower()
+    can_manage_game_access = current_user_email == GAME_ACCESS_MANAGER_EMAIL
 
     # Read both primary and legacy stores so admin page can always show signup fields.
     users_by_email: dict[str, dict] = {}
@@ -1355,12 +2106,12 @@ def admin_users(request: Request):
         out.append(
             {
                 "email": email,
-                "name": str(row.get("name", "")),
+            "name": str(row.get("name", "") or employee.get("name", "") or ""),
                 "role": "admin" if str(row.get("role", "user")).strip().lower() == "admin" else "user",
                 "created_at": str(row.get("created_at", "")),
                 "approved": _is_user_approved(row),
                 "can_login": _can_user_login(row),
-                "game_access": _has_game_access(row),
+                "game_access": _has_game_access(row) if can_manage_game_access else None,
                 "title": title,
                 "phone": phone,
                 "birth": birth,
@@ -1372,7 +2123,8 @@ def admin_users(request: Request):
     return {
         "ok": True,
         "items": out,
-        "can_manage_game_access": _can_manage_game_access(_current_user_from_request(request)),
+        "current_user_email": current_user_email,
+        "can_manage_game_access": can_manage_game_access,
     }
 
 
@@ -1385,14 +2137,22 @@ async def admin_user_create(request: Request):
 
     email = str(payload.get("email", "")).strip().lower()
     password = str(payload.get("password", "") or "")
-    if "@" not in email:
-        raise HTTPException(status_code=400, detail="invalid email")
-    if len(password) < 8:
-        raise HTTPException(status_code=400, detail="password too short")
+    if not _is_valid_email(email):
+        raise HTTPException(status_code=400, detail="이메일 형식이 올바르지 않습니다.")
+    if not _is_valid_password(password):
+        raise HTTPException(status_code=400, detail=_password_policy_text())
+    if not str(payload.get("name", "") or "").strip():
+        raise HTTPException(status_code=400, detail="이름은 필수 입력입니다.")
+    create_phone = str(payload.get("phone", "") or "").strip()
+    create_birth = str(payload.get("birth", "") or "").strip()
+    if create_phone and not _is_valid_phone(create_phone):
+        raise HTTPException(status_code=400, detail=_phone_policy_text())
+    if create_birth and not _is_valid_birth(create_birth):
+        raise HTTPException(status_code=400, detail=_birth_policy_text())
 
     users = _load_users()
     if any(str(x.get("email", "")).strip().lower() == email for x in users):
-        raise HTTPException(status_code=400, detail="email already exists")
+        raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
 
     is_core_admin = email in ADMIN_EMAILS
     role = str(payload.get("role", "user")).strip().lower()
@@ -1420,6 +2180,14 @@ async def admin_user_create(request: Request):
     }
     users.append(created)
     _save_users(users)
+    _sync_employee_profile(
+        email=email,
+        name=str(created.get("name", "") or ""),
+        title=str(payload.get("title", "") or "").strip(),
+        phone=str(payload.get("phone", "") or "").strip(),
+        birth=str(payload.get("birth", "") or "").strip(),
+        address=str(payload.get("address", "") or "").strip(),
+    )
 
     item = {
         "email": email,
@@ -1450,6 +2218,7 @@ async def admin_user_create(request: Request):
 @app.put("/api/admin/users/{user_email}")
 async def admin_user_update(user_email: str, request: Request):
     admin_user = _require_admin(request)
+    actor_email = str((admin_user or {}).get("email", "")).strip().lower()
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="invalid payload")
@@ -1476,21 +2245,33 @@ async def admin_user_update(user_email: str, request: Request):
         if "title" in payload:
             row["title"] = str(payload.get("title", "") or "").strip()
         if "phone" in payload:
-            row["phone"] = str(payload.get("phone", "") or "").strip()
+            next_phone = str(payload.get("phone", "") or "").strip()
+            if next_phone and not _is_valid_phone(next_phone):
+                raise HTTPException(status_code=400, detail=_phone_policy_text())
+            row["phone"] = next_phone
         if "birth" in payload:
-            row["birth"] = str(payload.get("birth", "") or "").strip()
+            next_birth = str(payload.get("birth", "") or "").strip()
+            if next_birth and not _is_valid_birth(next_birth):
+                raise HTTPException(status_code=400, detail=_birth_policy_text())
+            row["birth"] = next_birth
         if "address" in payload:
             row["address"] = str(payload.get("address", "") or "").strip()
         if "password" in payload:
             password = str(payload.get("password", "") or "")
             if password:
-                if len(password) < 8:
-                    raise HTTPException(status_code=400, detail="password too short")
+                if not _is_valid_password(password):
+                    raise HTTPException(status_code=400, detail=_password_policy_text())
                 row["password_hash"] = _hash_password(email, password)
         if "role" in payload and not is_core_admin:
             role = str(payload.get("role", "user")).strip().lower()
+            if email == actor_email and role != "admin":
+                raise HTTPException(status_code=400, detail="cannot remove your own admin role")
             if role in {"admin", "user"}:
                 row["role"] = role
+        if "role" in payload and is_core_admin:
+            role = str(payload.get("role", "admin")).strip().lower()
+            if role != "admin":
+                raise HTTPException(status_code=400, detail="hiss0723 admin role is immutable")
         if "approved" in payload and not is_core_admin:
             row["approved"] = bool(payload.get("approved"))
             if bool(row["approved"]):
@@ -1500,8 +2281,6 @@ async def admin_user_update(user_email: str, request: Request):
         if "game_access" in payload:
             if not _can_manage_game_access(admin_user):
                 raise HTTPException(status_code=403, detail="only hiss0723 can manage game access")
-            if str(row.get("role", "user")).strip().lower() == "admin":
-                raise HTTPException(status_code=400, detail="admin game access cannot be changed")
             row["game_access"] = bool(payload.get("game_access"))
         if is_core_admin:
             row["role"] = "admin"
@@ -1553,6 +2332,14 @@ async def admin_user_update(user_email: str, request: Request):
         raise HTTPException(status_code=404, detail="user not found")
 
     _save_users(users)
+    _sync_employee_profile(
+        email=str(updated.get("email", "") or ""),
+        name=str(updated.get("name", "") or ""),
+        title=str(updated.get("title", "") or ""),
+        phone=str(updated.get("phone", "") or ""),
+        birth=str(updated.get("birth", "") or ""),
+        address=str(updated.get("address", "") or ""),
+    )
     return {"ok": True, "item": updated}
 
 
@@ -1560,22 +2347,33 @@ async def admin_user_update(user_email: str, request: Request):
 def admin_user_delete(user_email: str, request: Request):
     admin_user = _require_admin(request)
     target = str(user_email or "").strip().lower()
+    actor_email = str((admin_user or {}).get("email", "")).strip().lower()
     if not target:
         raise HTTPException(status_code=400, detail="invalid user")
+    if target == actor_email:
+        raise HTTPException(status_code=400, detail="cannot delete your own account")
     if target in ADMIN_EMAILS:
-        raise HTTPException(status_code=400, detail="core admin cannot be deleted")
+        raise HTTPException(status_code=400, detail="hiss0723 account is immutable")
 
     users = _load_users()
     next_users = [x for x in users if str(x.get("email", "")).strip().lower() != target]
     employees = _load_json_array(EMPLOYEES_FILE)
+    legacy_employees = _load_json_array(LEGACY_EMPLOYEES_FILE)
     next_employees = [
         x
         for x in employees
         if str(x.get("account_email", "")).strip().lower() != target
     ]
-    _save_users(next_users)
+    next_legacy_employees = [
+        x
+        for x in legacy_employees
+        if str(x.get("account_email", "")).strip().lower() != target
+    ]
+    _save_users(next_users, preserve_missing=False)
     if len(next_employees) != len(employees):
         _save_json_array(EMPLOYEES_FILE, next_employees)
+    if len(next_legacy_employees) != len(legacy_employees):
+        _save_json_array(LEGACY_EMPLOYEES_FILE, next_legacy_employees)
     if len(next_users) < len(users):
         removed_employee_count = len(employees) - len(next_employees)
         details = [f"대상: {target}"]
@@ -1615,18 +2413,43 @@ async def put_user_shortcut_state(request: Request):
     return {"ok": True, **state}
 
 
+@app.post("/api/user/shortcut-state-beacon")
+async def post_user_shortcut_state_beacon(request: Request):
+    """navigator.sendBeacon 전용 엔드포인트 — 페이지 언로드 시 상태 저장 보장."""
+    user = _current_user_from_request(request)
+    if not user:
+        return Response(status_code=204)
+    try:
+        payload = await request.json()
+        if isinstance(payload, dict):
+            _save_user_shortcut_state(
+                str(user.get("email", "")),
+                payload.get("items") or [],
+                payload.get("windows") or [],
+            )
+    except Exception:
+        pass
+    return Response(status_code=204)
+
+
 @app.get("/mypage", response_class=HTMLResponse)
 def mypage_page(request: Request):
     user = _current_user_from_request(request)
     if not user:
         return RedirectResponse(url="/auth/login?next=/mypage", status_code=303)
-    return templates.TemplateResponse("mypage.html", {"request": request})
+    return templates.TemplateResponse(request, "mypage.html", {"request": request})
 
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page(request: Request):
     _require_admin(request)
-    return templates.TemplateResponse("admin.html", {"request": request})
+    return templates.TemplateResponse(
+        request,
+        "admin.html",
+        {
+            "request": request,
+        },
+    )
 
 
 @app.get("/manage", response_class=HTMLResponse)
@@ -1634,7 +2457,7 @@ def manage_page(request: Request):
     user = _current_user_from_request(request)
     if not user:
         return RedirectResponse(url="/auth/login?next=/manage", status_code=303)
-    return templates.TemplateResponse("manage.html", {"request": request})
+    return templates.TemplateResponse(request, "manage.html", {"request": request})
 
 
 @app.get("/games", response_class=HTMLResponse)
@@ -1644,7 +2467,7 @@ def games_page(request: Request):
         return RedirectResponse(url="/auth/login?next=/games", status_code=303)
     if not _has_game_access(user):
         raise HTTPException(status_code=403, detail="game access denied")
-    return templates.TemplateResponse("games.html", {"request": request})
+    return templates.TemplateResponse(request, "games.html", {"request": request})
 
 
 @app.get("/games/stats", response_class=HTMLResponse)
@@ -2177,8 +3000,8 @@ async def admin_employee_create(request: Request):
     item["account_email"] = account_email
 
     if password:
-        if len(password) < 8:
-            raise HTTPException(status_code=400, detail="password too short")
+        if not _is_valid_password(password):
+            raise HTTPException(status_code=400, detail=_password_policy_text())
         users = _load_users()
         user_row = next((x for x in users if str(x.get("email", "")).strip().lower() == account_email), None)
         if user_row is None:
@@ -2228,8 +3051,8 @@ async def admin_employee_update(item_id: str, request: Request):
         raise HTTPException(status_code=404, detail="employee not found")
 
     if new_password:
-        if len(new_password) < 8:
-            raise HTTPException(status_code=400, detail="password too short")
+        if not _is_valid_password(new_password):
+            raise HTTPException(status_code=400, detail=_password_policy_text())
         account_email = str(updated.get("account_email", "")).strip().lower()
         users = _load_users()
         user_row = next((x for x in users if str(x.get("email", "")).strip().lower() == account_email), None)
@@ -2559,7 +3382,7 @@ def admin_asset_withdraw_request(item_id: str, request: Request):
             f"철회자: {actor_email}",
             f"원 요청자: {requester}",
             f"상태: {before_status or '-'} -> active",
-            f"삭제요청상태: pending -> none",
+            "삭제요청상태: pending -> none",
             f"구 관리번호: {str(target.get('구 관리번호', '')).strip() or '-'}",
         ],
         kind="updated",
@@ -2957,6 +3780,7 @@ BOARD_ALLOWED_EXT = {
     ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt",
     ".txt", ".zip", ".png", ".jpg", ".jpeg", ".gif", ".mp4", ".csv",
 }
+BOARD_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 
 
 def _board_summary(p: dict) -> dict:
@@ -2975,6 +3799,75 @@ def _board_summary(p: dict) -> dict:
     }
 
 
+def _parse_board_datetime(value: str) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _parse_board_filter_date(value: str) -> date | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _extract_first_http_url(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    match = re.search(r"https?://[^\s,;]+", text)
+    if not match:
+        return ""
+    return str(match.group(0) or "").strip()
+
+
+def _admin_defect_status_group(value: str) -> str:
+    normalized = _normalize_defect_status(value).strip().lower()
+    if normalized in {"resolved", "close", "closed", "done"}:
+        return "closed"
+    if normalized in {"in progress"}:
+        return "in_progress"
+    return "open"
+
+
+def _board_admin_detail(p: dict) -> dict:
+    files = list(p.get("files") or [])
+    comments = list(p.get("comments") or [])
+    file_names = []
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("original_name", "") or "").strip()
+        if name:
+            file_names.append(name)
+    return {
+        "id": str(p.get("id", "")),
+        "title": str(p.get("title", "")),
+        "author_name": str(p.get("author_name", "")),
+        "author_email": str(p.get("author_email", "")).strip().lower(),
+        "content": str(p.get("content", "")),
+        "priority": str(p.get("priority", "Medium") or "Medium"),
+        "status": str(p.get("status", "pending") or "pending").strip().lower(),
+        "comment_count": len(comments),
+        "file_count": len(files),
+        "file_names": file_names,
+        "created_at": str(p.get("created_at", "") or ""),
+        "updated_at": str(p.get("updated_at", "") or ""),
+        "reviewed_by": str(p.get("reviewed_by", "") or "").strip().lower(),
+        "reviewed_at": str(p.get("reviewed_at", "") or ""),
+        "reject_reason": str(p.get("reject_reason", "") or ""),
+    }
+
+
 def _can_view_board_post(post: dict, user: dict | None) -> bool:
     if not user:
         return False
@@ -2983,6 +3876,9 @@ def _can_view_board_post(post: dict, user: dict | None) -> bool:
         return True
     if _is_admin_user(user):
         return True
+    # 일반 사용자는 본인 글만 비공개 상태(pending/rejected) 열람 가능
+    if status == "withdrawn":
+        return False
     viewer_email = str(user.get("email", "")).strip().lower()
     author_email = str(post.get("author_email", "")).strip().lower()
     return bool(viewer_email and author_email and viewer_email == author_email)
@@ -2990,7 +3886,7 @@ def _can_view_board_post(post: dict, user: dict | None) -> bool:
 
 @app.get("/board", response_class=HTMLResponse)
 def board_page(request: Request):
-    return templates.TemplateResponse("board.html", {"request": request})
+    return templates.TemplateResponse(request, "board.html", {"request": request})
 
 
 @app.get("/api/board/posts")
@@ -3036,6 +3932,8 @@ async def board_create_post(
     user = _current_user_from_request(request)
     if not user:
         raise HTTPException(status_code=401, detail="login required")
+    is_admin = _is_admin_user(user)
+    reviewer_email = str(user.get("email", "")).strip().lower()
     priority = priority if priority in ("High", "Medium", "Low") else "Medium"
     post_id = f"board-{uuid.uuid4().hex[:12]}"
     now = datetime.utcnow().isoformat(timespec="seconds")
@@ -3053,7 +3951,15 @@ async def board_create_post(
         if len(content_bytes) > BOARD_MAX_FILE_SIZE:
             continue
         dest.write_bytes(content_bytes)
-        saved_files.append({"original_name": f.filename, "path": f"/uploads/board/{safe_name}"})
+        saved_files.append(
+            {
+                "original_name": f.filename,
+                "path": f"/uploads/board/{safe_name}",
+                "size": len(content_bytes),
+                "content_type": str(getattr(f, "content_type", "") or ""),
+                "is_image": Path(f.filename).suffix.lower() in BOARD_IMAGE_EXT,
+            }
+        )
 
     post = {
         "id": post_id,
@@ -3062,11 +3968,13 @@ async def board_create_post(
         "author_email": str(user.get("email", "")).strip().lower(),
         "content": str(content)[:5000].strip(),
         "priority": priority,
-        "status": "pending",
+        "status": "approved" if is_admin else "pending",
         "files": saved_files,
         "comments": [],
         "created_at": now,
         "updated_at": now,
+        "reviewed_by": reviewer_email if is_admin else "",
+        "reviewed_at": now if is_admin else "",
     }
 
     with BOARD_LOCK:
@@ -3162,22 +4070,17 @@ async def board_withdraw_post(post_id: str, request: Request):
         if str(post.get("status", "")).strip().lower() not in ("pending", "rejected"):
             raise HTTPException(status_code=400, detail="cannot withdraw in current status")
 
-        post["status"] = "withdrawn"
-        post["reviewed_by"] = user_email
-        post["reviewed_at"] = datetime.utcnow().isoformat(timespec="seconds")
-        if reason:
-            post["reject_reason"] = reason
-        posts[idx] = post
+        posts.pop(idx)
         _save_json_array(BOARD_POSTS_FILE, posts)
 
     _append_audit_update(
-        "게시판 요청 철회",
+        "게시판 요청 철회(삭제)",
         [f"제목: {post.get('title', '')}", f"ID: {post_id}", f"요청자: {user.get('email', '')}", f"사유: {reason or '-'}"],
-        kind="updated",
+        kind="removed",
         scope="게시판",
         actor=user,
     )
-    return {"ok": True, "post": _board_summary(post)}
+    return {"ok": True, "deleted_id": post_id}
 
 
 @app.post("/api/board/posts/{post_id}/comments")
@@ -3206,8 +4109,8 @@ async def board_add_comment(post_id: str, request: Request):
         if idx < 0:
             raise HTTPException(status_code=404, detail="post not found")
         post = dict(posts[idx])
-        if str(post.get("status", "")) != "approved" and not _is_admin_user(user):
-            raise HTTPException(status_code=403, detail="not approved")
+        if not _can_view_board_post(post, user):
+            raise HTTPException(status_code=403, detail="not allowed")
         comments = list(post.get("comments") or [])
         if parent_id:
             parent_exists = any(str(c.get("id", "")).strip() == parent_id for c in comments)
@@ -3297,6 +4200,676 @@ def board_delete_post(post_id: str, request: Request):
     return {"ok": True}
 
 
+def _build_admin_board_member_issues_payload(
+    reporter: str = "",
+    author_email: str = "",
+    status: str = "all",
+    start_date: str = "",
+    end_date: str = "",
+    search: str = "",
+    sort_by: str = "total_desc",
+    detail_limit: int = 120,
+    detail_offset: int = 0,
+    perf_meta: dict | None = None,
+) -> dict:
+    fallback_reason = ""
+    raw_data = _get_cached_raw_defect_issue_stats(force=False)
+    if not list(raw_data.get("issues") or []):
+        raw_data = _get_cached_raw_defect_issue_stats(force=True)
+    if not list(raw_data.get("issues") or []):
+        company = _get_cached_company_defect_stats(force=False)
+        company_issues = list(company.get("all_issues") or company.get("issues") or [])
+        if not company_issues:
+            company = _get_cached_company_defect_stats(force=True)
+            company_issues = list(company.get("all_issues") or company.get("issues") or [])
+        if company_issues:
+            fp = str(company.get("source_fingerprint") or company.get("fingerprint") or "")
+            if not fp:
+                fp_src = json.dumps(company_issues, ensure_ascii=False, separators=(",", ":"))
+                fp = hashlib.sha1(fp_src.encode("utf-8")).hexdigest()
+            raw_data = {
+                "ok": True,
+                "source": company.get("source", ""),
+                "source_type": str(company.get("source_type", "") or "").strip() or "company-fallback",
+                "uploaded_at": company.get("uploaded_at", ""),
+                "sheet": company.get("sheet", GOOGLE_DEFECT_SHEET_NAME),
+                "range": company.get("range", GOOGLE_TEAM_DEFECT_RANGE),
+                "updated_at": company.get("updated_at", datetime.now().isoformat(timespec="seconds")),
+                "total_rows": len(company_issues),
+                "source_fingerprint": fp,
+                "issues": company_issues,
+            }
+            fallback_reason = "company_stats_fallback"
+    base_data = _get_prepared_admin_member_issue_base(raw_data)
+    prepared_items = list(base_data.get("prepared_items") or [])
+
+    reporter_filter = str(reporter or author_email or "").strip().lower()
+    status_filter = str(status or "all").strip().lower() or "all"
+    normalized_sort = str(sort_by or "score_desc").strip().lower() or "score_desc"
+    if normalized_sort not in {"score_desc", "total_desc", "latest_desc", "name_asc", "rank_asc"}:
+        normalized_sort = "score_desc"
+    start_filter = _parse_board_filter_date(start_date)
+    end_filter = _parse_board_filter_date(end_date)
+    start_filter_text = start_filter.isoformat() if start_filter else ""
+    end_filter_text = end_filter.isoformat() if end_filter else ""
+    query = str(search or "").strip().lower()
+    source_fingerprint = str(raw_data.get("source_fingerprint", "") or "")
+
+    cache_key = json.dumps(
+        {
+            "source_fingerprint": source_fingerprint,
+            "reporter": reporter_filter,
+            "status": status_filter,
+            "start_date": str(start_date or "").strip(),
+            "end_date": str(end_date or "").strip(),
+            "search": query,
+            "sort_by": normalized_sort,
+            "detail_limit": int(detail_limit or 0),
+            "detail_offset": int(detail_offset or 0),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    with ADMIN_MEMBER_ISSUES_CACHE_LOCK:
+        cached = ADMIN_MEMBER_ISSUES_CACHE_DATA.get(cache_key)
+        if cached and (time.monotonic() - float(cached.get("ts", 0.0) or 0.0)) < ADMIN_MEMBER_ISSUES_CACHE_TTL_SEC:
+            if perf_meta is not None:
+                perf_meta["cache_hit"] = True
+            return dict(cached.get("payload") or {})
+    if perf_meta is not None:
+        perf_meta["cache_hit"] = False
+
+    filtered_items: list[dict] = []
+    for item in prepared_items:
+        if reporter_filter and str(item.get("reporter_key", "") or "") != reporter_filter:
+            continue
+        if status_filter != "all" and str(item.get("status_key", "") or "") != status_filter:
+            continue
+        created_date_text = str(item.get("created_date", "") or "")
+        if start_filter_text and (not created_date_text or created_date_text < start_filter_text):
+            continue
+        if end_filter_text and (not created_date_text or created_date_text > end_filter_text):
+            continue
+        if query and query not in str(item.get("search_blob", "") or ""):
+            continue
+        filtered_items.append(item)
+
+    if normalized_sort == "name_asc":
+        filtered_items.sort(
+            key=lambda row: (
+                str(row.get("reporter", "") or "").lower(),
+                str(row.get("created_date", "") or ""),
+                str(row.get("key", "") or ""),
+            )
+        )
+    else:
+        filtered_items.sort(
+            key=lambda row: (str(row.get("created_date", "") or ""), str(row.get("key", "") or "")),
+            reverse=True,
+        )
+
+    detail_limit_value = int(detail_limit or 0)
+    detail_offset_value = int(detail_offset or 0)
+    if detail_limit_value < 0:
+        detail_limit_value = 0
+    if detail_limit_value > 500:
+        detail_limit_value = 500
+    if detail_offset_value < 0:
+        detail_offset_value = 0
+    total_filtered_items = len(filtered_items)
+    if detail_offset_value > total_filtered_items:
+        detail_offset_value = total_filtered_items
+    if detail_limit_value == 0:
+        visible_items = filtered_items[detail_offset_value:]
+    else:
+        visible_items = filtered_items[detail_offset_value:detail_offset_value + detail_limit_value]
+    shown_count = detail_offset_value + len(visible_items)
+
+    reporter_names = sorted({str(item.get("reporter", "") or "").strip() or "미지정" for item in filtered_items})
+    ranked_core = _build_member_summary_from_issue_rows(filtered_items, reporter_names)
+    ranked_by_name = {str(row.get("name", "") or "").strip(): row for row in ranked_core}
+
+    member_meta_map: dict[str, dict] = {}
+    for item in filtered_items:
+        reporter_name = str(item.get("reporter", "") or "").strip() or "미지정"
+        meta = member_meta_map.get(reporter_name)
+        if meta is None:
+            meta = {
+                "latest_created_at": str(item.get("created", "") or ""),
+                "recent_titles": [],
+            }
+            member_meta_map[reporter_name] = meta
+        created_now = str(item.get("created", "") or "")
+        if created_now and created_now > str(meta.get("latest_created_at", "") or ""):
+            meta["latest_created_at"] = created_now
+        title = str(item.get("summary", "") or "").strip()
+        if title and title not in meta["recent_titles"] and len(meta["recent_titles"]) < 3:
+            meta["recent_titles"].append(title)
+
+    member_items: list[dict] = []
+    for reporter_name in reporter_names:
+        rec = ranked_by_name.get(reporter_name) or {
+            "total_issue": 0,
+            "duplicate": 0,
+            "not_a_bug": 0,
+            "definite_problem": 0,
+            "mistake_rate": 0.0,
+            "highest": 0.0,
+            "high": 0.0,
+            "medium": 0.0,
+            "low": 0.0,
+            "lowest": 0.0,
+            "score": 0.0,
+            "rank": 0,
+        }
+        meta = member_meta_map.get(reporter_name) or {"latest_created_at": "", "recent_titles": []}
+        total_issue_member = int(rec.get("total_issue", 0) or 0)
+        duplicate_member = int(rec.get("duplicate", 0) or 0)
+        not_a_bug_member = int(rec.get("not_a_bug", 0) or 0)
+        definite_member = int(rec.get("definite_problem", 0) or 0)
+        mistake_member = float(rec.get("mistake_rate", 0.0) or 0.0)
+        highest_member = float(rec.get("highest", 0.0) or 0.0)
+        high_member = float(rec.get("high", 0.0) or 0.0)
+        medium_member = float(rec.get("medium", 0.0) or 0.0)
+        low_member = float(rec.get("low", 0.0) or 0.0)
+        lowest_member = float(rec.get("lowest", 0.0) or 0.0)
+        score_member = float(rec.get("score", 0.0) or 0.0)
+        rank_member = int(rec.get("rank", 0) or 0)
+
+        member_items.append(
+            {
+                "reporter": reporter_name,
+                "total_issue": total_issue_member,
+                "duplicate": duplicate_member,
+                "not_a_bug": not_a_bug_member,
+                "definite_problem": definite_member,
+                "mistake_rate": mistake_member,
+                "highest": highest_member,
+                "high": high_member,
+                "medium": medium_member,
+                "low": low_member,
+                "lowest": lowest_member,
+                "score": score_member,
+                "rank": rank_member,
+                "latest_created_at": str(meta.get("latest_created_at", "") or ""),
+                "recent_titles": list(meta.get("recent_titles") or []),
+                "total_count": total_issue_member,
+                "open_count": definite_member,
+                "in_progress_count": 0,
+                "closed_count": duplicate_member + not_a_bug_member,
+            }
+        )
+
+    if normalized_sort == "name_asc":
+        member_items.sort(key=lambda row: str(row.get("reporter", "") or "").lower())
+    elif normalized_sort == "latest_desc":
+        member_items.sort(key=lambda row: str(row.get("latest_created_at", "") or ""), reverse=True)
+    elif normalized_sort == "total_desc":
+        member_items.sort(
+            key=lambda row: (int(row.get("total_issue", 0) or 0), float(row.get("score", 0.0) or 0.0)),
+            reverse=True,
+        )
+    elif normalized_sort == "rank_asc":
+        member_items.sort(key=lambda row: (int(row.get("rank", 9999) or 9999), str(row.get("reporter", "") or "").lower()))
+    else:
+        member_items.sort(
+            key=lambda row: (float(row.get("score", 0.0) or 0.0), int(row.get("definite_problem", 0) or 0)),
+            reverse=True,
+        )
+
+    total_issue = sum(int(x.get("total_issue", 0) or 0) for x in member_items)
+    duplicate_total = sum(int(x.get("duplicate", 0) or 0) for x in member_items)
+    not_a_bug_total = sum(int(x.get("not_a_bug", 0) or 0) for x in member_items)
+    definite_problem_total = sum(int(x.get("definite_problem", 0) or 0) for x in member_items)
+    mistake_rate_total = round((duplicate_total / total_issue) * 100.0, 1) if total_issue else 0.0
+    highest_total = round(sum(float(x.get("highest", 0.0) or 0.0) for x in member_items), 1)
+    high_total = round(sum(float(x.get("high", 0.0) or 0.0) for x in member_items), 1)
+    medium_total = round(sum(float(x.get("medium", 0.0) or 0.0) for x in member_items), 1)
+    low_total = round(sum(float(x.get("low", 0.0) or 0.0) for x in member_items), 1)
+    lowest_total = round(sum(float(x.get("lowest", 0.0) or 0.0) for x in member_items), 1)
+    score_total = round(sum(float(x.get("score", 0.0) or 0.0) for x in member_items), 1)
+
+    created_dates = [str(item.get("created_date", "") or "") for item in filtered_items if str(item.get("created_date", "") or "")]
+    period_start = str(start_date or "").strip() or (min(created_dates) if created_dates else "")
+    period_end = str(end_date or "").strip() or (max(created_dates) if created_dates else "")
+
+    stats = {
+        "total_tickets": len(filtered_items),
+        "member_count": len(member_items),
+        "total_issue": total_issue,
+        "duplicate": duplicate_total,
+        "not_a_bug": not_a_bug_total,
+        "definite_problem": definite_problem_total,
+        "mistake_rate": mistake_rate_total,
+        "highest": highest_total,
+        "high": high_total,
+        "medium": medium_total,
+        "low": low_total,
+        "lowest": lowest_total,
+        "score": score_total,
+        "open_count": definite_problem_total,
+        "in_progress_count": 0,
+        "closed_count": duplicate_total + not_a_bug_total,
+    }
+
+    payload = {
+        "ok": True,
+        "source": raw_data.get("source", ""),
+        "sheet": raw_data.get("sheet", GOOGLE_DEFECT_SHEET_NAME),
+        "range": raw_data.get("range", GOOGLE_RAW_STATUS_RANGE),
+        "updated_at": raw_data.get("updated_at", ""),
+        "source_fingerprint": source_fingerprint,
+        "period": {
+            "start": period_start,
+            "end": period_end,
+        },
+        "stats": stats,
+        "member_items": member_items,
+        "items": [_public_admin_member_issue_item(item) for item in visible_items],
+        "detail_total_count": total_filtered_items,
+        "detail_returned_count": len(visible_items),
+        "detail_shown_count": shown_count,
+        "detail_limit": detail_limit_value,
+        "detail_offset": detail_offset_value,
+        "detail_has_more": total_filtered_items > shown_count,
+        "author_options": list(base_data.get("author_options") or []),
+        "status_options": list(base_data.get("status_options") or []),
+        "data_health": {
+            "fallback_used": bool(fallback_reason),
+            "fallback_reason": fallback_reason,
+            "raw_issue_count": len(list(raw_data.get("issues") or [])),
+            "prepared_item_count": len(prepared_items),
+            "reporter_filter_relaxed": bool(base_data.get("reporter_filter_relaxed", False)),
+        },
+        "filters": {
+            "reporter": reporter_filter,
+            "status": status_filter,
+            "start_date": str(start_date or ""),
+            "end_date": str(end_date or ""),
+            "search": str(search or ""),
+            "sort_by": normalized_sort,
+            "detail_limit": detail_limit_value,
+            "detail_offset": detail_offset_value,
+        },
+    }
+    with ADMIN_MEMBER_ISSUES_CACHE_LOCK:
+        ADMIN_MEMBER_ISSUES_CACHE_DATA[cache_key] = {
+            "ts": time.monotonic(),
+            "payload": payload,
+        }
+    return payload
+
+
+def _log_admin_member_issues_perf(
+    endpoint: str,
+    started_at: float,
+    payload: dict | None = None,
+    detail_limit: int = 0,
+    detail_offset: int = 0,
+    cache_hit: bool | None = None,
+) -> None:
+    elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+    with ADMIN_MEMBER_ISSUES_PERF_LOCK:
+        ADMIN_MEMBER_ISSUES_PERF_SAMPLES.append(
+            {
+                "ts": time.time(),
+                "endpoint": str(endpoint or ""),
+                "elapsed_ms": float(elapsed_ms),
+                "cache_hit": bool(cache_hit) if cache_hit is not None else None,
+            }
+        )
+    level = None
+    if elapsed_ms >= ADMIN_MEMBER_ISSUES_PERF_WARN_MS:
+        level = "warning"
+    elif elapsed_ms >= ADMIN_MEMBER_ISSUES_PERF_INFO_MS:
+        level = "info"
+    if not level:
+        return
+
+    stats = payload or {}
+    total_count = int(stats.get("detail_total_count", 0) or 0)
+    returned_count = int(stats.get("detail_returned_count", 0) or 0)
+    shown_count = int(stats.get("detail_shown_count", 0) or 0)
+    member_count = int((stats.get("stats") or {}).get("member_count", 0) or 0)
+    getattr(logger, level)(
+        "member_issues_perf endpoint=%s elapsed_ms=%.2f total=%s returned=%s shown=%s members=%s limit=%s offset=%s cache_hit=%s",
+        endpoint,
+        elapsed_ms,
+        total_count,
+        returned_count,
+        shown_count,
+        member_count,
+        int(detail_limit or 0),
+        int(detail_offset or 0),
+        cache_hit,
+    )
+
+
+def _percentile(values: list[float], q: float) -> float:
+    if not values:
+        return 0.0
+    sorted_values = sorted(values)
+    if len(sorted_values) == 1:
+        return round(sorted_values[0], 2)
+    pos = max(0.0, min(1.0, q)) * (len(sorted_values) - 1)
+    lo = int(pos)
+    hi = min(lo + 1, len(sorted_values) - 1)
+    if lo == hi:
+        return round(sorted_values[lo], 2)
+    frac = pos - lo
+    return round(sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * frac, 2)
+
+
+def _build_admin_member_issues_perf_snapshot(window_sec: int | None = None) -> dict:
+    selected_window_sec = int(window_sec or ADMIN_MEMBER_ISSUES_PERF_WINDOW_SEC)
+    selected_window_sec = max(10, min(3600, selected_window_sec))
+    now_ts = time.time()
+    cutoff = now_ts - float(selected_window_sec)
+    with ADMIN_MEMBER_ISSUES_PERF_LOCK:
+        samples = [x for x in list(ADMIN_MEMBER_ISSUES_PERF_SAMPLES) if float(x.get("ts", 0.0) or 0.0) >= cutoff]
+    elapsed_values = [float(x.get("elapsed_ms", 0.0) or 0.0) for x in samples]
+    by_endpoint: dict[str, list[float]] = {}
+    cache_hits = 0
+    cache_misses = 0
+    unknown_cache = 0
+    for s in samples:
+        endpoint = str(s.get("endpoint", "") or "unknown")
+        by_endpoint.setdefault(endpoint, []).append(float(s.get("elapsed_ms", 0.0) or 0.0))
+        hit_val = s.get("cache_hit", None)
+        if hit_val is True:
+            cache_hits += 1
+        elif hit_val is False:
+            cache_misses += 1
+        else:
+            unknown_cache += 1
+
+    endpoint_summary = {
+        ep: {
+            "count": len(vals),
+            "p95_ms": _percentile(vals, 0.95),
+            "p99_ms": _percentile(vals, 0.99),
+            "max_ms": round(max(vals), 2) if vals else 0.0,
+        }
+        for ep, vals in by_endpoint.items()
+    }
+
+    return {
+        "ok": True,
+        "window_sec": selected_window_sec,
+        "sample_count": len(samples),
+        "p50_ms": _percentile(elapsed_values, 0.50),
+        "p95_ms": _percentile(elapsed_values, 0.95),
+        "p99_ms": _percentile(elapsed_values, 0.99),
+        "max_ms": round(max(elapsed_values), 2) if elapsed_values else 0.0,
+        "thresholds": {
+            "info_ms": round(float(ADMIN_MEMBER_ISSUES_PERF_INFO_MS), 2),
+            "warn_ms": round(float(ADMIN_MEMBER_ISSUES_PERF_WARN_MS), 2),
+        },
+        "cache": {
+            "hits": cache_hits,
+            "misses": cache_misses,
+            "unknown": unknown_cache,
+            "hit_rate": round((cache_hits / (cache_hits + cache_misses)) * 100.0, 1) if (cache_hits + cache_misses) else 0.0,
+        },
+        "endpoints": endpoint_summary,
+    }
+
+
+@app.get("/api/admin/board/member-issues")
+def admin_board_member_issues(
+    request: Request,
+    reporter: str = "",
+    author_email: str = "",
+    status: str = "all",
+    start_date: str = "",
+    end_date: str = "",
+    search: str = "",
+    sort_by: str = "total_desc",
+    detail_limit: int = 120,
+    detail_offset: int = 0,
+):
+    started_at = time.perf_counter()
+    perf_meta: dict = {}
+    _require_admin(request)
+    payload = _build_admin_board_member_issues_payload(
+        reporter,
+        author_email,
+        status,
+        start_date,
+        end_date,
+        search,
+        sort_by,
+        detail_limit,
+        detail_offset,
+        perf_meta,
+    )
+    _log_admin_member_issues_perf("combined", started_at, payload, detail_limit, detail_offset, perf_meta.get("cache_hit"))
+    return {"ok": True, **payload}
+
+
+@app.get("/api/admin/board/member-issues/summary")
+def admin_board_member_issues_summary(
+    request: Request,
+    reporter: str = "",
+    author_email: str = "",
+    status: str = "all",
+    start_date: str = "",
+    end_date: str = "",
+    search: str = "",
+    sort_by: str = "total_desc",
+):
+    started_at = time.perf_counter()
+    perf_meta: dict = {}
+    _require_admin(request)
+    # Summary endpoint intentionally avoids returning full detail rows to keep first paint fast.
+    payload = _build_admin_board_member_issues_payload(
+        reporter,
+        author_email,
+        status,
+        start_date,
+        end_date,
+        search,
+        sort_by,
+        1,
+        0,
+        perf_meta,
+    )
+    payload["items"] = []
+    payload["detail_returned_count"] = 0
+    payload["detail_has_more"] = bool(payload.get("detail_total_count", 0))
+    payload["detail_deferred"] = True
+    _log_admin_member_issues_perf("summary", started_at, payload, 1, 0, perf_meta.get("cache_hit"))
+    return {"ok": True, **payload}
+
+
+@app.get("/api/admin/board/member-issues/detail")
+def admin_board_member_issues_detail(
+    request: Request,
+    reporter: str = "",
+    author_email: str = "",
+    status: str = "all",
+    start_date: str = "",
+    end_date: str = "",
+    search: str = "",
+    sort_by: str = "total_desc",
+    detail_limit: int = 120,
+    detail_offset: int = 0,
+):
+    started_at = time.perf_counter()
+    perf_meta: dict = {}
+    _require_admin(request)
+    payload = _build_admin_board_member_issues_payload(
+        reporter,
+        author_email,
+        status,
+        start_date,
+        end_date,
+        search,
+        sort_by,
+        detail_limit,
+        detail_offset,
+        perf_meta,
+    )
+    detail_payload = {
+        "ok": True,
+        "source": payload.get("source", ""),
+        "sheet": payload.get("sheet", GOOGLE_DEFECT_SHEET_NAME),
+        "range": payload.get("range", GOOGLE_RAW_STATUS_RANGE),
+        "updated_at": payload.get("updated_at", ""),
+        "source_fingerprint": payload.get("source_fingerprint", ""),
+        "period": payload.get("period", {"start": "", "end": ""}),
+        "items": payload.get("items", []),
+        "detail_total_count": payload.get("detail_total_count", 0),
+        "detail_returned_count": payload.get("detail_returned_count", 0),
+        "detail_shown_count": payload.get("detail_shown_count", 0),
+        "detail_limit": payload.get("detail_limit", detail_limit),
+        "detail_offset": payload.get("detail_offset", detail_offset),
+        "detail_has_more": payload.get("detail_has_more", False),
+        "filters": payload.get("filters", {}),
+    }
+    _log_admin_member_issues_perf("detail", started_at, detail_payload, detail_limit, detail_offset, perf_meta.get("cache_hit"))
+    return detail_payload
+
+
+@app.get("/api/admin/board/member-issues/perf")
+def admin_board_member_issues_perf(request: Request, window_sec: int = 0):
+    _require_admin(request)
+    selected = int(window_sec or ADMIN_MEMBER_ISSUES_PERF_WINDOW_SEC)
+    return _build_admin_member_issues_perf_snapshot(selected)
+
+
+@app.get("/api/admin/board/member-issues/export")
+def admin_board_member_issues_export(
+    request: Request,
+    reporter: str = "",
+    author_email: str = "",
+    status: str = "all",
+    start_date: str = "",
+    end_date: str = "",
+    search: str = "",
+    sort_by: str = "total_desc",
+):
+    _require_admin(request)
+    payload = _build_admin_board_member_issues_payload(reporter, author_email, status, start_date, end_date, search, sort_by, 0)
+
+    workbook = Workbook()
+    summary_sheet = workbook.active
+    summary_sheet.title = "인원별 요약"
+    summary_headers = [
+        "리포터", "Total issue", "Duplicate", "Not a Bug", "Definite problem", "Mistake rate(%)",
+        "Highest", "High", "Medium", "Low", "Lowest", "Score", "Rank", "최근 등록일", "최근 이슈",
+    ]
+    summary_sheet.append(summary_headers)
+    for row in payload.get("member_items", []):
+        summary_sheet.append([
+            str(row.get("reporter", "") or ""),
+            int(row.get("total_issue", 0) or 0),
+            int(row.get("duplicate", 0) or 0),
+            int(row.get("not_a_bug", 0) or 0),
+            int(row.get("definite_problem", 0) or 0),
+            float(row.get("mistake_rate", 0.0) or 0.0),
+            float(row.get("highest", 0.0) or 0.0),
+            float(row.get("high", 0.0) or 0.0),
+            float(row.get("medium", 0.0) or 0.0),
+            float(row.get("low", 0.0) or 0.0),
+            float(row.get("lowest", 0.0) or 0.0),
+            float(row.get("score", 0.0) or 0.0),
+            int(row.get("rank", 0) or 0),
+            str(row.get("latest_created_at", "") or ""),
+            ", ".join(row.get("recent_titles", []) or []),
+        ])
+
+    detail_sheet = workbook.create_sheet("티켓 상세")
+    detail_headers = [
+        "Key", "Reporter", "Status", "Priority", "Resolution", "Summary", "Region", "OS", "Components",
+        "Brand", "Affects Version/s", "Fix Version/s", "Assignee", "Created", "Labels", "Links", "비고",
+    ]
+    detail_sheet.append(detail_headers)
+    for row in payload.get("items", []):
+        detail_sheet.append([
+            str(row.get("key", "") or ""),
+            str(row.get("reporter", "") or ""),
+            str(row.get("status", "") or ""),
+            str(row.get("priority", "") or ""),
+            str(row.get("resolution", "") or ""),
+            str(row.get("summary", "") or ""),
+            str(row.get("region", "") or ""),
+            str(row.get("os", "") or ""),
+            str(row.get("components", "") or ""),
+            str(row.get("brand", "") or ""),
+            str(row.get("affects_versions", "") or ""),
+            str(row.get("fix_versions", "") or ""),
+            str(row.get("assignee", "") or ""),
+            str(row.get("created", "") or ""),
+            str(row.get("labels", "") or ""),
+            str(row.get("links", "") or ""),
+            str(row.get("remarks", "") or ""),
+        ])
+
+    for sheet in workbook.worksheets:
+        for row in sheet.iter_rows():
+            for cell in row:
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+        for column_cells in sheet.columns:
+            max_length = 0
+            column_letter = column_cells[0].column_letter
+            for cell in column_cells:
+                value_length = len(str(cell.value or ""))
+                if value_length > max_length:
+                    max_length = value_length
+            sheet.column_dimensions[column_letter].width = min(max(max_length + 2, 12), 42)
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    filename = f"admin_member_issues_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
+@app.get("/api/board/posts/{post_id}/files/{file_idx}/download")
+def board_download_file(post_id: str, file_idx: int, request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login required")
+
+    posts = _load_json_array(BOARD_POSTS_FILE)
+    post = next((p for p in posts if p.get("id") == post_id), None)
+    if not post:
+        raise HTTPException(status_code=404, detail="post not found")
+    if not _can_view_board_post(post, user):
+        raise HTTPException(status_code=403, detail="not allowed")
+
+    files = list(post.get("files") or [])
+    if file_idx < 0 or file_idx >= len(files):
+        raise HTTPException(status_code=404, detail="file not found")
+
+    file_row = files[file_idx] if isinstance(files[file_idx], dict) else {}
+    web_path = str(file_row.get("path", "") or "").strip()
+    if not web_path:
+        raise HTTPException(status_code=404, detail="file path missing")
+
+    if web_path.startswith("/uploads/board/"):
+        local_path = BOARD_UPLOAD_DIR / Path(web_path).name
+    else:
+        local_path = BOARD_UPLOAD_DIR / Path(web_path).name
+
+    if not local_path.exists() or not local_path.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
+
+    original_name = str(file_row.get("original_name", "") or local_path.name).strip() or local_path.name
+    return FileResponse(
+        path=str(local_path),
+        filename=original_name,
+        media_type="application/octet-stream",
+    )
+
+
 @app.get("/api/board/urgent")
 def board_urgent(request: Request):
     """High priority + approved posts for floating indicator and overview widget."""
@@ -3335,7 +4908,16 @@ def board_overview(request: Request):
 def dashboard(request: Request):
     _sync_android_devices_from_adb()
     data = orchestrator.get_dashboard_data()
-    return templates.TemplateResponse("overview.html", {"request": request, "data": data})
+    return templates.TemplateResponse(request, "overview.html", {"request": request, "data": data})
+
+
+@app.get("/shortcuts", response_class=HTMLResponse)
+def shortcuts_page(request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        return RedirectResponse(url="/auth/login?next=/shortcuts", status_code=303)
+    # Shortcut view is rendered from overview template and does not require heavy dashboard sync.
+    return templates.TemplateResponse(request, "overview.html", {"request": request, "data": {}})
 
 
 @app.get("/static/company_logo.png")
@@ -3492,19 +5074,19 @@ async def groupware_proxy(request: Request, proxy_path: str = ""):
 
 @app.get("/excel", response_class=HTMLResponse)
 def excel_center(request: Request):
-    return templates.TemplateResponse("excel_center.html", {"request": request})
+    return templates.TemplateResponse(request, "excel_center.html", {"request": request})
 
 
 @app.get("/upload/defectlist-raw", response_class=HTMLResponse)
 def upload_defectlist_raw_page(request: Request):
     _require_admin(request)
-    return templates.TemplateResponse("upload_defectlist_raw.html", {"request": request})
+    return templates.TemplateResponse(request, "upload_defectlist_raw.html", {"request": request})
 
 
 @app.get("/upload/full-tc", response_class=HTMLResponse)
 def upload_full_tc_page(request: Request):
     _require_admin(request)
-    return templates.TemplateResponse("upload_full_tc.html", {"request": request})
+    return templates.TemplateResponse(request, "upload_full_tc.html", {"request": request})
 
 
 @app.get("/live", response_class=HTMLResponse)
@@ -3521,10 +5103,14 @@ def remote_control(request: Request):
 def qa_dashboard(request: Request):
     _sync_android_devices_from_adb()
     data = orchestrator.get_dashboard_data()
-    return templates.TemplateResponse("qa_dashboard.html", {"request": request, "data": data})
+    return templates.TemplateResponse(request, "qa_dashboard.html", {"request": request, "data": data})
+
+
+@app.get("/qa/full-tc", response_class=HTMLResponse)
+def qa_full_tc_dashboard(request: Request):
+    return templates.TemplateResponse(request, "qa_full_tc.html", {"request": request})
 
 # QA Summary API (프론트엔드 404 대응용 예시)
-from datetime import datetime
 @app.get("/qa/summary")
 def qa_summary():
     """
@@ -3549,12 +5135,12 @@ def qa_summary():
 def qa_defectlist_editor_page(request: Request):
     _sync_android_devices_from_adb()
     data = orchestrator.get_dashboard_data()
-    return templates.TemplateResponse("qa_defectlist_editor.html", {"request": request, "data": data})
+    return templates.TemplateResponse(request, "qa_defectlist_editor.html", {"request": request, "data": data})
 
 
 @app.get("/defects", response_class=HTMLResponse)
 def defects_page(request: Request):
-    return templates.TemplateResponse("defects_detail.html", {"request": request})
+    return templates.TemplateResponse(request, "defects_detail.html", {"request": request})
 
 
 @app.get("/api/dashboard")
@@ -3575,6 +5161,16 @@ def _extract_google_sheet_id(sheet_url: str) -> str:
     m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", text)
     if m:
         return m.group(1)
+    return ""
+
+
+def _extract_google_sheet_gid(sheet_url: str) -> str:
+    text = str(sheet_url or "").strip()
+    if not text:
+        return ""
+    m = re.search(r"(?:[?&#]gid=)(\d+)", text)
+    if m:
+        return str(m.group(1) or "").strip()
     return ""
 
 
@@ -3651,7 +5247,8 @@ def _append_manual_overview_update(item: dict) -> None:
 
     try:
         OVERVIEW_UPDATES_FILE.parent.mkdir(parents=True, exist_ok=True)
-        OVERVIEW_UPDATES_FILE.write_text(
+        _write_text_atomic(
+            OVERVIEW_UPDATES_FILE,
             json.dumps(updates, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
@@ -3714,7 +5311,8 @@ def _load_overview_update_state() -> dict:
 def _save_overview_update_state(state: dict) -> None:
     try:
         OVERVIEW_UPDATE_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        OVERVIEW_UPDATE_STATE_FILE.write_text(
+        _write_text_atomic(
+            OVERVIEW_UPDATE_STATE_FILE,
             json.dumps(state, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
@@ -3976,13 +5574,51 @@ def _parse_a1_range(cell_range: str) -> tuple[int, int, int | None, int | None]:
     return start_col, start_row, end_col, end_row
 
 
+def _normalize_sheet_name(text: str) -> str:
+    # Make sheet matching resilient to spaces, slashes and punctuation variants.
+    return re.sub(r"[^0-9a-zA-Z가-힣]+", "", str(text or "").strip().lower())
+
+
+def _resolve_sheet_name(sheet_names: list[str], wanted_name: str, default_to_first: bool = False) -> str:
+    wanted = str(wanted_name or "").strip()
+    if not sheet_names:
+        return ""
+    if not wanted:
+        return (str(sheet_names[0] or "").strip() if sheet_names else "") if default_to_first else ""
+
+    exact = {str(name or "").strip().lower(): str(name or "").strip() for name in sheet_names}
+    found = exact.get(wanted.lower())
+    if found:
+        return found
+
+    wanted_norm = _normalize_sheet_name(wanted)
+    if not wanted_norm:
+        return (str(sheet_names[0] or "").strip() if sheet_names else "") if default_to_first else ""
+
+    normalized = {
+        _normalize_sheet_name(str(name or "").strip()): str(name or "").strip()
+        for name in sheet_names
+        if str(name or "").strip()
+    }
+    found = normalized.get(wanted_norm)
+    if found:
+        return found
+
+    for norm_name, original in normalized.items():
+        if wanted_norm in norm_name or norm_name in wanted_norm:
+            return original
+
+    return (str(sheet_names[0] or "").strip() if sheet_names else "") if default_to_first else ""
+
+
 def _read_uploaded_excel_range_rows(file_path: Path, sheet_name: str, cell_range: str) -> list[list[str]]:
     if not file_path.exists():
         return []
     start_col, start_row, end_col, end_row = _parse_a1_range(cell_range)
     wb = load_workbook(str(file_path), data_only=True, read_only=True)
     try:
-        ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb[wb.sheetnames[0]]
+        resolved_sheet = _resolve_sheet_name(list(wb.sheetnames), sheet_name, default_to_first=True)
+        ws = wb[resolved_sheet] if resolved_sheet in wb.sheetnames else wb[wb.sheetnames[0]]
         max_row = int(end_row or ws.max_row or start_row)
         rows: list[list[str]] = []
         for raw in ws.iter_rows(
@@ -4002,12 +5638,33 @@ def _read_uploaded_excel_range_rows(file_path: Path, sheet_name: str, cell_range
         wb.close()
 
 
+def _read_uploaded_excel_sheet_rows(file_path: Path, sheet_name: str) -> list[list[str]]:
+    if not file_path.exists():
+        return []
+    wb = load_workbook(str(file_path), data_only=True, read_only=True)
+    try:
+        resolved_sheet = _resolve_sheet_name(list(wb.sheetnames), sheet_name, default_to_first=True)
+        ws = wb[resolved_sheet] if resolved_sheet in wb.sheetnames else wb[wb.sheetnames[0]]
+        rows: list[list[str]] = []
+        max_col = int(ws.max_column or 1)
+        for raw in ws.iter_rows(min_row=1, max_row=int(ws.max_row or 1), min_col=1, max_col=max_col, values_only=True):
+            cells = ["" if val is None else str(val).strip() for val in list(raw)]
+            while cells and not cells[-1]:
+                cells.pop()
+            if any(cells):
+                rows.append(cells)
+        return rows
+    finally:
+        wb.close()
+
+
 def _fetch_uploaded_defect_rows_if_available(sheet_name: str, cell_range: str) -> list[list[str]] | None:
     wanted = str(sheet_name or "").strip().lower()
     raw_name = str(GOOGLE_DEFECT_SHEET_NAME or "").strip().lower()
     if wanted != raw_name:
         return None
-    # DefectList_Raw is now upload-only. If no file exists, do not fall back to Google.
+
+    # DefectList_Raw는 업로드 파일만 사용한다.
     if not UPLOADED_DEFECT_RAW_FILE.exists():
         return []
     try:
@@ -4031,9 +5688,10 @@ def _read_uploaded_full_tc_sheet_rows(sheet_name: str, max_rows: int) -> list[li
         return []
     wb = load_workbook(str(UPLOADED_FULL_TC_FILE), data_only=True, read_only=True)
     try:
-        if sheet_name not in wb.sheetnames:
+        resolved_sheet = _resolve_sheet_name(list(wb.sheetnames), sheet_name, default_to_first=False)
+        if not resolved_sheet or resolved_sheet not in wb.sheetnames:
             return []
-        ws = wb[sheet_name]
+        ws = wb[resolved_sheet]
         out: list[list[str]] = []
         row_limit = max(1, int(max_rows))
         for idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
@@ -4053,6 +5711,7 @@ def _reset_defect_source_caches() -> None:
     global GOOGLE_DEFECT_CACHE_TS, GOOGLE_DEFECT_CACHE_DATA
     global COMPANY_DEFECT_CACHE_TS, COMPANY_DEFECT_CACHE_DATA
     global RAW_DEFECT_ISSUES_CACHE_TS, RAW_DEFECT_ISSUES_CACHE_DATA
+    global ADMIN_MEMBER_ISSUES_PREPARED_CACHE
 
     with GOOGLE_DEFECT_CACHE_LOCK:
         GOOGLE_DEFECT_CACHE_TS = 0.0
@@ -4063,6 +5722,9 @@ def _reset_defect_source_caches() -> None:
     with RAW_DEFECT_ISSUES_CACHE_LOCK:
         RAW_DEFECT_ISSUES_CACHE_TS = 0.0
         RAW_DEFECT_ISSUES_CACHE_DATA = {}
+    with ADMIN_MEMBER_ISSUES_CACHE_LOCK:
+        ADMIN_MEMBER_ISSUES_CACHE_DATA.clear()
+        ADMIN_MEMBER_ISSUES_PREPARED_CACHE = {"source_fingerprint": "", "data": {}}
 
 
 def _reset_full_tc_caches() -> None:
@@ -4070,6 +5732,9 @@ def _reset_full_tc_caches() -> None:
         FULL_TC_SHEET_LIST_CACHE["ts"] = 0.0
         FULL_TC_SHEET_LIST_CACHE["data"] = None
         FULL_TC_SHEET_DATA_CACHE.clear()
+    FULL_TC_SUMMARY_CACHE["ts"] = 0.0
+    FULL_TC_SUMMARY_CACHE["uploaded_at"] = ""
+    FULL_TC_SUMMARY_CACHE["data"] = {}
 
 
 def _load_defect_raw_upload_history() -> list[dict]:
@@ -4105,8 +5770,11 @@ def _append_defect_raw_upload_history(
         history.insert(0, entry)
         history = history[:MAX_DEFECT_RAW_UPLOAD_HISTORY]
         try:
-            with DEFECT_RAW_UPLOAD_HISTORY_FILE.open("w", encoding="utf-8") as f:
-                json.dump(history, f, ensure_ascii=False, indent=2)
+            _write_text_atomic(
+                DEFECT_RAW_UPLOAD_HISTORY_FILE,
+                json.dumps(history, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
         except Exception:
             pass
 
@@ -4115,6 +5783,7 @@ def _fetch_google_sheet_rows(range_ref: str) -> list[list[str]]:
     sheet_id = _extract_google_sheet_id(GOOGLE_DEFECT_SHEET_URL)
     if not sheet_id:
         return []
+    sheet_gid = str(GOOGLE_DEFECT_SHEET_GID or _extract_google_sheet_gid(GOOGLE_DEFECT_SHEET_URL) or "").strip()
 
     text_ref = str(range_ref or "").strip()
     sheet_name = GOOGLE_DEFECT_SHEET_NAME
@@ -4146,14 +5815,21 @@ def _fetch_google_sheet_rows(range_ref: str) -> list[list[str]]:
                 return [[str(x).strip() for x in row] for row in values]
 
         gviz_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq"
-        r = requests.get(
-            gviz_url,
-            params={"tqx": "out:json", "sheet": sheet_name, "range": cell_range},
-            timeout=8,
-        )
-        if r.status_code != 200:
-            return []
-        return _parse_gviz_json_rows(r.text)
+        gviz_param_candidates: list[dict[str, str]] = [
+            {"tqx": "out:json", "sheet": sheet_name, "range": cell_range},
+        ]
+        if sheet_gid:
+            gviz_param_candidates.append({"tqx": "out:json", "gid": sheet_gid, "range": cell_range})
+            gviz_param_candidates.append({"tqx": "out:json", "gid": sheet_gid})
+
+        for params in gviz_param_candidates:
+            r = requests.get(gviz_url, params=params, timeout=8)
+            if r.status_code != 200:
+                continue
+            parsed = _parse_gviz_json_rows(r.text)
+            if parsed:
+                return parsed
+        return []
     except Exception:
         return []
 
@@ -4596,6 +6272,1236 @@ def full_tc_sheet_data(sheet: str, max_rows: int = 350, force: bool = False):
     return _get_full_tc_sheet_data(sheet=target, max_rows=max_rows, force=bool(force))
 
 
+FULL_TC_COMPONENT_SPECS = [
+    {"key": "Control", "aliases": ["Control"], "start_row": 21},
+    {"key": "Map", "aliases": ["Map"], "start_row": 29},
+    {"key": "MyCar", "aliases": ["MyCar", "My Car"], "start_row": 22},
+    {"key": "Home/HL", "aliases": ["Home/HL", "Home / HL", "HomeHL", "Handle Layer / Home", "Handle Layer/Home", "HandleLayer/Home", "Handle Layer Home", "Home", "HL"], "start_row": 19},
+    {"key": "Widget", "aliases": ["Widget"], "start_row": 19},
+    {"key": "Watch", "aliases": ["Watch"], "start_row": 19},
+    {"key": "Common UI", "aliases": ["Common UI", "Common", "CommonUI"], "start_row": 19},
+]
+
+FULL_TC_SUMMARY_CACHE: dict[str, dict] = {"ts": 0.0, "uploaded_at": "", "data": {}}
+FULL_TC_SUMMARY_CACHE_TTL_SEC = 20.0
+FULL_TC_AGENT_STATUS_LOCK = threading.Lock()
+FULL_TC_AGENT_STATUS: dict[str, dict] = {
+    "server": {"last_run_at": "", "last_ok": False, "elapsed_ms": 0.0},
+    "backend": {"last_run_at": "", "last_ok": False, "elapsed_ms": 0.0},
+    "frontend": {"last_run_at": "", "last_ok": False, "elapsed_ms": 0.0},
+    "design": {"last_run_at": "", "last_ok": False, "elapsed_ms": 0.0},
+    "warmup": {"last_run_at": "", "last_ok": False, "elapsed_ms": 0.0},
+}
+
+
+def _full_tc_uploaded_at_text() -> str:
+    return _uploaded_file_datetime_text(UPLOADED_FULL_TC_FILE) if UPLOADED_FULL_TC_FILE.exists() else ""
+
+
+def _find_full_tc_sheet_name(sheet_names: list[str], aliases: list[str]) -> str:
+    for alias in aliases:
+        found = _resolve_sheet_name(sheet_names, str(alias or "").strip(), default_to_first=False)
+        if found:
+            return found
+    return ""
+
+
+def _cell_text_from_tuple(row: tuple, col_index_1_based: int) -> str:
+    idx = int(col_index_1_based) - 1
+    if idx < 0:
+        return ""
+    if idx >= len(row):
+        return ""
+    value = row[idx]
+    return "" if value is None else str(value).strip()
+
+
+def _is_n_result(value: str) -> bool:
+    return str(value or "").strip().upper() == "N"
+
+
+def _normalize_full_tc_result(value: str) -> str:
+    text = re.sub(r"\s+", " ", str(value or "").strip()).upper()
+    compact = text.replace(" ", "")
+    if not text:
+        return ""
+    if text in {"P", "PASS", "OK"}:
+        return "pass"
+    if text in {"N", "FAIL", "F"}:
+        return "fail"
+    if compact in {"NT", "N/T", "NOTTESTED"}:
+        return "nt"
+    if compact in {"NA", "N/A", "NOTAPPLICABLE"}:
+        return "na"
+    return "other"
+
+
+def _is_closed_defect_status(status: str) -> bool:
+    text = re.sub(r"\s+", " ", str(status or "").strip()).lower()
+    return "closed" in text
+
+
+def _defect_policy_bucket(status: str, resolution: str = "") -> str:
+    status_text = str(status or "").strip()
+    resolution_text = str(resolution or "").strip()
+    # Duplicate / Not a Bug 는 status가 아니라 resolution에 주로 기재되므로 둘 다 반영한다.
+    if _is_duplicate_issue(resolution_text, status_text):
+        return "duplicate"
+    if _is_not_a_bug(resolution_text, status_text):
+        return "not_a_bug"
+    if _is_closed_defect_status(status_text):
+        return "closed"
+    return "active"
+
+
+def _looks_like_issue_key(text: str) -> bool:
+    value = _normalize_issue_key_token(text)
+    if not value:
+        return False
+    return bool(re.match(r"^[A-Za-z][A-Za-z0-9_]+-\d+$", value))
+
+
+def _extract_issue_key_number(text: str) -> int | None:
+    value = _normalize_issue_key_token(text)
+    if not value:
+        return None
+    match = re.search(r"-(\d+)$", value)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+def _split_full_tc_labels(value: str) -> list[str]:
+    text = str(value or "").strip()
+    if not text:
+        return []
+    parts = [str(x or "").strip() for x in re.split(r"[,/|;\n]+", text) if str(x or "").strip()]
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in parts:
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def _normalize_issue_key_token(text: str) -> str:
+    raw = str(text or "").strip().upper().replace(" ", "")
+    if not raw:
+        return ""
+    # 문자열 내 포함된 Jira key 패턴을 우선 추출한다.
+    matched = re.search(r"([A-Z][A-Z0-9_]+-\d+)", raw)
+    if matched:
+        return matched.group(1)
+    return raw
+
+
+def _extract_issue_key_tokens(text: str) -> list[str]:
+    raw = str(text or "").upper()
+    if not raw:
+        return []
+    tokens = re.findall(r"([A-Z][A-Z0-9_]+-\d+)", raw)
+    if not tokens:
+        normalized = _normalize_issue_key_token(raw)
+        return [normalized] if normalized else []
+    seen: set[str] = set()
+    out: list[str] = []
+    for token in tokens:
+        if token in seen:
+            continue
+        seen.add(token)
+        out.append(token)
+    return out
+
+
+def _full_tc_slot_label(slot: str) -> str:
+    normalized = str(slot or "").strip().upper()
+    if normalized == "X":
+        return "Closed 지라"
+    if normalized == "Y":
+        return "지라 NO."
+    if normalized == "X+Y":
+        return "Closed 지라 + 지라 NO."
+    if normalized == "금지":
+        return "반영 금지"
+    return "미반영"
+
+
+def _build_full_tc_summary_data(force: bool = False) -> dict:
+    uploaded_at = _full_tc_uploaded_at_text()
+    now = time.monotonic()
+    if not force and uploaded_at:
+        cached = FULL_TC_SUMMARY_CACHE.get("data") or {}
+        cached_ts = float(FULL_TC_SUMMARY_CACHE.get("ts") or 0.0)
+        cached_uploaded_at = str(FULL_TC_SUMMARY_CACHE.get("uploaded_at") or "")
+        if cached and cached_uploaded_at == uploaded_at and (now - cached_ts) < FULL_TC_SUMMARY_CACHE_TTL_SEC:
+            return cached
+
+    if not UPLOADED_FULL_TC_FILE.exists():
+        return {
+            "ok": False,
+            "detail": "업로드된 Full_TC 파일이 없습니다.",
+            "source_type": "uploaded_excel",
+            "source": UPLOADED_FULL_TC_FILE.name,
+            "uploaded_at": "",
+            "components": [],
+            "group_rows": [],
+            "brand_group_rows": [],
+            "label_rows": [],
+            "detail_rows": [],
+        }
+
+    wb = load_workbook(str(UPLOADED_FULL_TC_FILE), data_only=True, read_only=True)
+    try:
+        sheet_names = list(wb.sheetnames)
+        component_items: list[dict] = []
+        group_map: dict[tuple[str, str, str, str, str], dict] = {}
+        brand_group_map: dict[tuple[str, str, str, str, str, str], dict] = {}
+        label_map: dict[str, dict] = {}
+        brand_result_map: dict[str, dict] = {}
+        detail_rows: list[dict] = []
+        total_counts = Counter()
+        result_fields = (
+            "base_result",
+            "koa_result",
+            "koa_android",
+            "koa_ios",
+            "hoa_result",
+            "hoa_android",
+            "hoa_ios",
+            "goa_result",
+            "goa_android",
+            "goa_ios",
+        )
+
+        for spec in FULL_TC_COMPONENT_SPECS:
+            component_key = str(spec.get("key", "")).strip()
+            aliases = list(spec.get("aliases") or [])
+            start_row = int(spec.get("start_row") or 1)
+            sheet_name = _find_full_tc_sheet_name(sheet_names, aliases)
+            if not sheet_name or sheet_name not in wb.sheetnames:
+                component_items.append(
+                    {
+                        "component": component_key,
+                        "sheet_name": "",
+                        "start_row": start_row,
+                        "row_count": 0,
+                        "matched_sheet": False,
+                        "counts": {},
+                        "label_count": 0,
+                    }
+                )
+                continue
+
+            ws = wb[sheet_name]
+            component_counts = Counter()
+            component_label_set: set[str] = set()
+            component_row_count = 0
+
+            for row_idx, row in enumerate(ws.iter_rows(min_row=start_row, values_only=True), start=start_row):
+                tc_id = _cell_text_from_tuple(row, 2)
+                category = _cell_text_from_tuple(row, 3)
+                depth1 = _cell_text_from_tuple(row, 4)
+                depth2 = _cell_text_from_tuple(row, 5)
+                depth3 = _cell_text_from_tuple(row, 6)
+                direction = _cell_text_from_tuple(row, 7)
+                brand = _cell_text_from_tuple(row, 8)
+                priority = _cell_text_from_tuple(row, 9)
+                pre_condition = _cell_text_from_tuple(row, 10)
+                tc_procedure = _cell_text_from_tuple(row, 12)
+                expected_result = _cell_text_from_tuple(row, 13)
+                base_result = _cell_text_from_tuple(row, 14)
+                koa_result = _cell_text_from_tuple(row, 15)
+                koa_android = _cell_text_from_tuple(row, 16)
+                koa_ios = _cell_text_from_tuple(row, 17)
+                hoa_result = _cell_text_from_tuple(row, 18)
+                hoa_android = _cell_text_from_tuple(row, 19)
+                hoa_ios = _cell_text_from_tuple(row, 20)
+                goa_result = _cell_text_from_tuple(row, 21)
+                goa_android = _cell_text_from_tuple(row, 22)
+                goa_ios = _cell_text_from_tuple(row, 23)
+                closed_jira_no = _cell_text_from_tuple(row, 24)
+                jira_no = _cell_text_from_tuple(row, 25)
+                nt_na_reason = _cell_text_from_tuple(row, 26)
+                nt_na_filter = _cell_text_from_tuple(row, 27)
+                label_text = _cell_text_from_tuple(row, 28)
+
+                has_payload = any(
+                    [
+                        tc_id,
+                        category,
+                        depth1,
+                        depth2,
+                        depth3,
+                        direction,
+                        brand,
+                        priority,
+                        pre_condition,
+                        tc_procedure,
+                        expected_result,
+                        base_result,
+                        koa_result,
+                        koa_android,
+                        koa_ios,
+                        hoa_result,
+                        hoa_android,
+                        hoa_ios,
+                        goa_result,
+                        goa_android,
+                        goa_ios,
+                        closed_jira_no,
+                        jira_no,
+                        nt_na_reason,
+                        nt_na_filter,
+                        label_text,
+                    ]
+                )
+                if not has_payload:
+                    continue
+
+                component_row_count += 1
+                row_item = {
+                    "component": component_key,
+                    "sheet_name": sheet_name,
+                    "sheet_row": row_idx,
+                    "tc_id": tc_id,
+                    "category": category,
+                    "depth1": depth1,
+                    "depth2": depth2,
+                    "depth3": depth3,
+                    "direction": direction,
+                    "brand": brand,
+                    "priority": priority,
+                    "pre_condition": pre_condition,
+                    "tc_procedure": tc_procedure,
+                    "expected_result": expected_result,
+                    "base_result": base_result,
+                    "koa_result": koa_result,
+                    "koa_android": koa_android,
+                    "koa_ios": koa_ios,
+                    "hoa_result": hoa_result,
+                    "hoa_android": hoa_android,
+                    "hoa_ios": hoa_ios,
+                    "goa_result": goa_result,
+                    "goa_android": goa_android,
+                    "goa_ios": goa_ios,
+                    "closed_jira_no": closed_jira_no,
+                    "jira_no": jira_no,
+                    "nt_na_reason": nt_na_reason,
+                    "nt_na_filter": nt_na_filter,
+                    "label": label_text,
+                }
+                detail_rows.append(row_item)
+
+                brand_key = brand or "-"
+                brand_entry = brand_result_map.get(brand_key)
+                if brand_entry is None:
+                    brand_entry = {
+                        "brand": brand_key,
+                        "row_count": 0,
+                        "cell_count": 0,
+                        "pass_count": 0,
+                        "fail_count": 0,
+                        "nt_count": 0,
+                        "na_count": 0,
+                        "other_count": 0,
+                        "components": set(),
+                    }
+                    brand_result_map[brand_key] = brand_entry
+                brand_entry["row_count"] += 1
+                brand_entry["components"].add(component_key)
+
+                count_fields = {
+                    "base_n": _is_n_result(base_result),
+                    "koa_n": _is_n_result(koa_result),
+                    "koa_android_n": _is_n_result(koa_android),
+                    "koa_ios_n": _is_n_result(koa_ios),
+                    "hoa_n": _is_n_result(hoa_result),
+                    "hoa_android_n": _is_n_result(hoa_android),
+                    "hoa_ios_n": _is_n_result(hoa_ios),
+                    "goa_n": _is_n_result(goa_result),
+                    "goa_android_n": _is_n_result(goa_android),
+                    "goa_ios_n": _is_n_result(goa_ios),
+                }
+                for field_name, enabled in count_fields.items():
+                    if enabled:
+                        component_counts[field_name] += 1
+                        total_counts[field_name] += 1
+                for field_name in result_fields:
+                    bucket = _normalize_full_tc_result(row_item.get(field_name, ""))
+                    if not bucket:
+                        continue
+                    brand_entry["cell_count"] += 1
+                    brand_entry[f"{bucket}_count"] += 1
+                    component_counts[f"result_{bucket}_count"] += 1
+                    total_counts[f"result_{bucket}_count"] += 1
+
+                    brand_group_key = (brand_key, component_key, category, depth1, depth2, depth3)
+                    brand_group_entry = brand_group_map.get(brand_group_key)
+                    if brand_group_entry is None:
+                        brand_group_entry = {
+                            "brand": brand_key,
+                            "component": component_key,
+                            "category": category,
+                            "depth1": depth1,
+                            "depth2": depth2,
+                            "depth3": depth3,
+                            "cell_count": 0,
+                            "pass_count": 0,
+                            "fail_count": 0,
+                            "nt_count": 0,
+                            "na_count": 0,
+                            "other_count": 0,
+                        }
+                        brand_group_map[brand_group_key] = brand_group_entry
+                    brand_group_entry["cell_count"] += 1
+                    brand_group_entry[f"{bucket}_count"] += 1
+                if jira_no:
+                    component_counts["jira_count"] += 1
+                    total_counts["jira_count"] += 1
+                if closed_jira_no:
+                    component_counts["closed_jira_count"] += 1
+                    total_counts["closed_jira_count"] += 1
+                if nt_na_filter or nt_na_reason:
+                    component_counts["nt_na_count"] += 1
+                    total_counts["nt_na_count"] += 1
+
+                group_key = (component_key, category, depth1, depth2, depth3, brand)
+                group_entry = group_map.get(group_key)
+                if group_entry is None:
+                    group_entry = {
+                        "component": component_key,
+                        "category": category,
+                        "depth1": depth1,
+                        "depth2": depth2,
+                        "depth3": depth3,
+                        "brand": brand,
+                        "row_count": 0,
+                        "base_n": 0,
+                        "koa_n": 0,
+                        "koa_android_n": 0,
+                        "koa_ios_n": 0,
+                        "hoa_n": 0,
+                        "hoa_android_n": 0,
+                        "hoa_ios_n": 0,
+                        "goa_n": 0,
+                        "goa_android_n": 0,
+                        "goa_ios_n": 0,
+                        "jira_count": 0,
+                        "closed_jira_count": 0,
+                        "nt_na_count": 0,
+                        "labels": set(),
+                    }
+                    group_map[group_key] = group_entry
+                group_entry["row_count"] += 1
+                if jira_no:
+                    group_entry["jira_count"] += 1
+                if closed_jira_no:
+                    group_entry["closed_jira_count"] += 1
+                if nt_na_filter or nt_na_reason:
+                    group_entry["nt_na_count"] += 1
+                for field_name, enabled in count_fields.items():
+                    if enabled:
+                        group_entry[field_name] += 1
+
+                labels = _split_full_tc_labels(label_text)
+                for label in labels:
+                    component_label_set.add(label)
+                    group_entry["labels"].add(label)
+                    label_key = label.lower()
+                    label_entry = label_map.get(label_key)
+                    if label_entry is None:
+                        label_entry = {
+                            "label": label,
+                            "count": 0,
+                            "components": set(),
+                            "task_keys": set(),
+                            "jira_count": 0,
+                            "closed_jira_count": 0,
+                            "nt_na_count": 0,
+                            "base_n": 0,
+                            "koa_n": 0,
+                            "hoa_n": 0,
+                            "goa_n": 0,
+                        }
+                        label_map[label_key] = label_entry
+                    label_entry["count"] += 1
+                    label_entry["components"].add(component_key)
+                    label_entry["task_keys"].add((component_key, tc_id or f"row:{row_idx}"))
+                    if jira_no:
+                        label_entry["jira_count"] += 1
+                    if closed_jira_no:
+                        label_entry["closed_jira_count"] += 1
+                    if nt_na_filter or nt_na_reason:
+                        label_entry["nt_na_count"] += 1
+                    if count_fields["base_n"]:
+                        label_entry["base_n"] += 1
+                    if count_fields["koa_n"]:
+                        label_entry["koa_n"] += 1
+                    if count_fields["hoa_n"]:
+                        label_entry["hoa_n"] += 1
+                    if count_fields["goa_n"]:
+                        label_entry["goa_n"] += 1
+
+            component_items.append(
+                {
+                    "component": component_key,
+                    "sheet_name": sheet_name,
+                    "start_row": start_row,
+                    "row_count": component_row_count,
+                    "matched_sheet": True,
+                    "counts": dict(component_counts),
+                    "label_count": len(component_label_set),
+                }
+            )
+
+        group_rows = []
+        for entry in group_map.values():
+            group_rows.append(
+                {
+                    **{k: v for k, v in entry.items() if k != "labels"},
+                    "label_count": len(entry.get("labels") or set()),
+                    "labels_preview": ", ".join(sorted(list(entry.get("labels") or set()))[:4]),
+                }
+            )
+        group_rows.sort(key=lambda item: (str(item.get("component", "")), str(item.get("category", "")), str(item.get("depth1", "")), str(item.get("depth2", "")), str(item.get("depth3", "")), str(item.get("brand", ""))))
+
+        label_rows = []
+        for entry in label_map.values():
+            label_rows.append(
+                {
+                    "label": entry.get("label", ""),
+                    "count": int(entry.get("count", 0)),
+                    "task_count": len(entry.get("task_keys") or set()),
+                    "components": ", ".join(sorted(list(entry.get("components") or set()))),
+                    "component_count": len(entry.get("components") or set()),
+                    "jira_count": int(entry.get("jira_count", 0)),
+                    "closed_jira_count": int(entry.get("closed_jira_count", 0)),
+                    "nt_na_count": int(entry.get("nt_na_count", 0)),
+                    "base_n": int(entry.get("base_n", 0)),
+                    "koa_n": int(entry.get("koa_n", 0)),
+                    "hoa_n": int(entry.get("hoa_n", 0)),
+                    "goa_n": int(entry.get("goa_n", 0)),
+                }
+            )
+        label_rows.sort(key=lambda item: (-int(item.get("count", 0)), str(item.get("label", ""))))
+
+        brand_rows = []
+        for entry in brand_result_map.values():
+            cell_count = int(entry.get("cell_count", 0) or 0)
+            fail_count = int(entry.get("fail_count", 0) or 0)
+            brand_rows.append(
+                {
+                    "brand": entry.get("brand", "-"),
+                    "row_count": int(entry.get("row_count", 0) or 0),
+                    "cell_count": cell_count,
+                    "pass_count": int(entry.get("pass_count", 0) or 0),
+                    "fail_count": fail_count,
+                    "nt_count": int(entry.get("nt_count", 0) or 0),
+                    "na_count": int(entry.get("na_count", 0) or 0),
+                    "other_count": int(entry.get("other_count", 0) or 0),
+                    "fail_rate": round((fail_count / cell_count) * 100.0, 1) if cell_count else 0.0,
+                    "components": ", ".join(sorted(list(entry.get("components") or set()))),
+                }
+            )
+        brand_rows.sort(key=lambda item: (-int(item.get("fail_count", 0)), str(item.get("brand", ""))))
+
+        brand_group_rows = []
+        for entry in brand_group_map.values():
+            cell_count = int(entry.get("cell_count", 0) or 0)
+            pass_count = int(entry.get("pass_count", 0) or 0)
+            brand_group_rows.append(
+                {
+                    "brand": entry.get("brand", "-"),
+                    "component": entry.get("component", ""),
+                    "category": entry.get("category", ""),
+                    "depth1": entry.get("depth1", ""),
+                    "depth2": entry.get("depth2", ""),
+                    "depth3": entry.get("depth3", ""),
+                    "cell_count": cell_count,
+                    "pass_count": pass_count,
+                    "fail_count": int(entry.get("fail_count", 0) or 0),
+                    "nt_count": int(entry.get("nt_count", 0) or 0),
+                    "na_count": int(entry.get("na_count", 0) or 0),
+                    "other_count": int(entry.get("other_count", 0) or 0),
+                    "pass_rate": round((pass_count / cell_count) * 100.0, 1) if cell_count else 0.0,
+                }
+            )
+        brand_group_rows.sort(key=lambda item: (-int(item.get("pass_count", 0)), str(item.get("brand", "")), str(item.get("component", "")), str(item.get("category", "")), str(item.get("depth1", "")), str(item.get("depth2", "")), str(item.get("depth3", ""))))
+
+        data = {
+            "ok": True,
+            "detail": "ok",
+            "source_type": "uploaded_excel",
+            "source": UPLOADED_FULL_TC_FILE.name,
+            "uploaded_at": uploaded_at,
+            "components": component_items,
+            "group_rows": group_rows,
+            "brand_group_rows": brand_group_rows,
+            "label_rows": label_rows,
+            "brand_rows": brand_rows,
+            "detail_rows": detail_rows,
+            "totals": {
+                "row_count": len(detail_rows),
+                "component_count": len([x for x in component_items if x.get("matched_sheet")]),
+                "label_count": len(label_rows),
+                "brand_count": len(brand_rows),
+                **{k: int(v) for k, v in total_counts.items()},
+            },
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
+    finally:
+        wb.close()
+
+    FULL_TC_SUMMARY_CACHE["ts"] = time.monotonic()
+    FULL_TC_SUMMARY_CACHE["uploaded_at"] = uploaded_at
+    FULL_TC_SUMMARY_CACHE["data"] = data
+    return data
+
+
+@app.get("/api/qa/full-tc/summary")
+def qa_full_tc_summary(force: bool = False):
+    return _build_full_tc_summary_data(force=bool(force))
+
+
+def _record_full_tc_bridge_sample(elapsed_ms: float, summary_ok: bool, defect_ok: bool) -> None:
+    with FULL_TC_BRIDGE_PERF_LOCK:
+        FULL_TC_BRIDGE_PERF_SAMPLES.append(
+            {
+                "ts": time.time(),
+                "elapsed_ms": float(elapsed_ms),
+                "summary_ok": bool(summary_ok),
+                "defect_ok": bool(defect_ok),
+            }
+        )
+
+
+def _build_full_tc_bridge_perf_snapshot(window_sec: int = 300) -> dict:
+    selected = max(30, min(3600, int(window_sec or 300)))
+    cutoff = time.time() - float(selected)
+    with FULL_TC_BRIDGE_PERF_LOCK:
+        samples = [s for s in list(FULL_TC_BRIDGE_PERF_SAMPLES) if float(s.get("ts", 0.0) or 0.0) >= cutoff]
+    elapsed_values = [float(s.get("elapsed_ms", 0.0) or 0.0) for s in samples]
+    summary_ok_count = sum(1 for s in samples if bool(s.get("summary_ok", False)))
+    defect_ok_count = sum(1 for s in samples if bool(s.get("defect_ok", False)))
+    full_ok_count = sum(1 for s in samples if bool(s.get("summary_ok", False)) and bool(s.get("defect_ok", False)))
+    total = len(samples)
+    return {
+        "ok": True,
+        "window_sec": selected,
+        "sample_count": total,
+        "p50_ms": _percentile(elapsed_values, 0.50),
+        "p95_ms": _percentile(elapsed_values, 0.95),
+        "p99_ms": _percentile(elapsed_values, 0.99),
+        "max_ms": round(max(elapsed_values), 2) if elapsed_values else 0.0,
+        "summary_ok_rate": round((summary_ok_count / total) * 100.0, 1) if total else 0.0,
+        "defect_ok_rate": round((defect_ok_count / total) * 100.0, 1) if total else 0.0,
+        "full_ok_rate": round((full_ok_count / total) * 100.0, 1) if total else 0.0,
+    }
+
+
+@app.get("/api/qa/full-tc/bridge")
+def qa_full_tc_bridge(force: bool = False, include_defect: bool = True):
+    started_at = time.perf_counter()
+    summary = _build_full_tc_summary_data(force=bool(force))
+    defect = _build_defect_match_data(force=bool(force), summary_data=summary) if include_defect else None
+    summary_ok = bool(summary.get("ok", False))
+    defect_ok = bool(defect.get("ok", False)) if isinstance(defect, dict) else True
+    elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+    _record_full_tc_bridge_sample(elapsed_ms, summary_ok, defect_ok)
+    return {
+        "ok": bool(summary_ok and defect_ok),
+        "summary": summary,
+        "defect": defect,
+        "health": {
+            "summary_ok": summary_ok,
+            "defect_ok": defect_ok,
+            "summary_rows": int((summary.get("totals") or {}).get("row_count", 0) or 0),
+            "defect_rows": int((defect or {}).get("total_defects", 0) or 0) if isinstance(defect, dict) else 0,
+            "elapsed_ms": round(elapsed_ms, 2),
+            "bridge_updated_at": datetime.now().isoformat(timespec="seconds"),
+        },
+    }
+
+
+@app.get("/api/qa/full-tc/bridge/perf")
+def qa_full_tc_bridge_perf(window_sec: int = 300):
+    return _build_full_tc_bridge_perf_snapshot(window_sec)
+
+
+def _set_full_tc_agent_status(agent_name: str, ok: bool, elapsed_ms: float, detail: str = "") -> None:
+    key = str(agent_name or "").strip().lower()
+    if not key:
+        return
+    with FULL_TC_AGENT_STATUS_LOCK:
+        FULL_TC_AGENT_STATUS[key] = {
+            "last_run_at": datetime.now().isoformat(timespec="seconds"),
+            "last_ok": bool(ok),
+            "elapsed_ms": round(float(elapsed_ms or 0.0), 2),
+            "detail": str(detail or ""),
+        }
+
+
+def _run_full_tc_agent(agent_name: str, force: bool = False) -> dict:
+    name = str(agent_name or "").strip().lower()
+    if name not in {"server", "backend", "frontend", "design", "warmup"}:
+        raise HTTPException(status_code=400, detail="지원하지 않는 agent 입니다. (server/backend/frontend/design/warmup)")
+
+    started = time.perf_counter()
+    try:
+        if name == "server":
+            bridge = qa_full_tc_bridge(force=bool(force), include_defect=True)
+            ok = bool(bridge.get("ok", False))
+            result = {
+                "ok": ok,
+                "agent": name,
+                "mode": "bridge_full",
+                "summary_rows": int(((bridge.get("summary") or {}).get("totals") or {}).get("row_count", 0) or 0),
+                "defect_rows": int((bridge.get("defect") or {}).get("total_defects", 0) or 0),
+            }
+        elif name == "backend":
+            summary = _build_full_tc_summary_data(force=bool(force))
+            defect = _build_defect_match_data(force=bool(force), summary_data=summary)
+            ok = bool(summary.get("ok", False) and defect.get("ok", False))
+            result = {
+                "ok": ok,
+                "agent": name,
+                "mode": "summary_plus_defect",
+                "summary_rows": int((summary.get("totals") or {}).get("row_count", 0) or 0),
+                "defect_rows": int(defect.get("total_defects", 0) or 0),
+            }
+        elif name == "frontend":
+            summary = _build_full_tc_summary_data(force=bool(force))
+            totals = summary.get("totals") or {}
+            result = {
+                "ok": bool(summary.get("ok", False)),
+                "agent": name,
+                "mode": "ui_payload_prefetch",
+                "ui_payload": {
+                    "row_count": int(totals.get("row_count", 0) or 0),
+                    "component_count": int(totals.get("component_count", 0) or 0),
+                    "label_count": int(totals.get("label_count", 0) or 0),
+                    "brand_count": int(totals.get("brand_count", 0) or 0),
+                    "updated_at": str(summary.get("updated_at", "")),
+                },
+            }
+        elif name == "design":
+            summary = _build_full_tc_summary_data(force=bool(force))
+            label_rows = list(summary.get("label_rows") or [])[:8]
+            top_labels = [
+                {"label": str(x.get("label", "")), "count": int(x.get("count", 0) or 0)}
+                for x in label_rows
+            ]
+            result = {
+                "ok": bool(summary.get("ok", False)),
+                "agent": name,
+                "mode": "visual_priority_metrics",
+                "top_labels": top_labels,
+                "component_rows": int(len(summary.get("components") or [])),
+            }
+        else:
+            tasks = (
+                ("summary", lambda: _build_full_tc_summary_data(force=bool(force))),
+                ("defect", lambda: _build_defect_match_data(force=bool(force))),
+                ("bridge", lambda: qa_full_tc_bridge(force=bool(force), include_defect=True)),
+            )
+            task_results: dict[str, dict] = {}
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = {executor.submit(fn): task_name for task_name, fn in tasks}
+                for future in as_completed(futures):
+                    task_name = futures[future]
+                    task_results[task_name] = future.result()
+            summary_ok = bool((task_results.get("summary") or {}).get("ok", False))
+            defect_ok = bool((task_results.get("defect") or {}).get("ok", False))
+            bridge_ok = bool((task_results.get("bridge") or {}).get("ok", False))
+            result = {
+                "ok": bool(summary_ok and defect_ok and bridge_ok),
+                "agent": name,
+                "mode": "parallel_warmup",
+                "summary_ok": summary_ok,
+                "defect_ok": defect_ok,
+                "bridge_ok": bridge_ok,
+            }
+
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        _set_full_tc_agent_status(name, bool(result.get("ok", False)), elapsed_ms)
+        result["elapsed_ms"] = round(elapsed_ms, 2)
+        result["ran_at"] = datetime.now().isoformat(timespec="seconds")
+        return result
+    except Exception as exc:
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        _set_full_tc_agent_status(name, False, elapsed_ms, detail=str(exc))
+        raise
+
+
+@app.get("/api/qa/full-tc/agents/run")
+def qa_full_tc_agents_run(agent: str = "server", force: bool = False):
+    return _run_full_tc_agent(agent_name=agent, force=bool(force))
+
+
+@app.get("/api/qa/full-tc/agents/status")
+def qa_full_tc_agents_status():
+    with FULL_TC_AGENT_STATUS_LOCK:
+        agent_status = {k: dict(v) for k, v in FULL_TC_AGENT_STATUS.items()}
+    now = time.monotonic()
+    summary_age = round(max(0.0, now - float(FULL_TC_SUMMARY_CACHE.get("ts") or 0.0)), 2)
+    defect_age = round(max(0.0, now - float(DEFECT_MATCH_CACHE.get("ts") or 0.0)), 2)
+    summary_rows = int((((FULL_TC_SUMMARY_CACHE.get("data") or {}).get("totals") or {}).get("row_count", 0) or 0))
+    defect_rows = int(((DEFECT_MATCH_CACHE.get("data") or {}).get("total_defects", 0) or 0))
+    return {
+        "ok": True,
+        "agents": agent_status,
+        "cache": {
+            "summary_age_sec": summary_age,
+            "defect_age_sec": defect_age,
+            "summary_rows": summary_rows,
+            "defect_rows": defect_rows,
+        },
+        "bridge_perf": _build_full_tc_bridge_perf_snapshot(FULL_TC_BRIDGE_PERF_WINDOW_SEC),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+# ─── Defect 대조 API ──────────────────────────────────────────────────────────
+
+DEFECT_MATCH_CACHE: dict = {"ts": 0.0, "data": {}}
+DEFECT_MATCH_CACHE_TTL_SEC = 30.0
+
+
+def _build_defect_match_data(force: bool = False, summary_data: dict | None = None) -> dict:
+    now = time.monotonic()
+    cached = DEFECT_MATCH_CACHE.get("data") or {}
+    cached_ts = float(DEFECT_MATCH_CACHE.get("ts") or 0.0)
+    if not force and cached and (now - cached_ts) < DEFECT_MATCH_CACHE_TTL_SEC:
+        return cached
+
+    # 1. Full_TC 지라 키 수집 (jira_no + closed_jira_no)
+    summary = dict(summary_data or {}) if isinstance(summary_data, dict) else _build_full_tc_summary_data(force=False)
+    if not summary.get("ok"):
+        result = {
+            "ok": False,
+            "detail": "Full_TC 데이터가 없습니다. 먼저 Full_TC 파일을 업로드해주세요.",
+            "defect_source_ok": False,
+            "total_defects": 0,
+            "matched_count": 0,
+            "unmatched_count": 0,
+            "match_rate": 0.0,
+            "rows": [],
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        return result
+
+    open_key_refs: dict[str, list[dict]] = {}
+    closed_key_refs: dict[str, list[dict]] = {}
+    full_tc_key_rows: dict[str, list[dict]] = {}
+    for row in summary.get("detail_rows", []):
+        for field, label, target_map in (
+            ("jira_no", "지라 NO.", open_key_refs),
+            ("closed_jira_no", "Closed 지라", closed_key_refs),
+        ):
+            raw_cell = str(row.get(field, "") or "")
+            for val in _extract_issue_key_tokens(raw_cell):
+                if not val:
+                    continue
+                if val not in target_map:
+                    target_map[val] = []
+                ref_item = {
+                    "component": str(row.get("component", "")),
+                    "tc_id": str(row.get("tc_id", "")),
+                    "sheet_row": row.get("sheet_row", ""),
+                    "field_label": label,
+                }
+                target_map[val].append(ref_item)
+                if val not in full_tc_key_rows:
+                    full_tc_key_rows[val] = []
+                full_tc_key_rows[val].append(
+                    {
+                        **ref_item,
+                        "category": str(row.get("category", "")),
+                        "depth1": str(row.get("depth1", "")),
+                        "depth2": str(row.get("depth2", "")),
+                        "depth3": str(row.get("depth3", "")),
+                        "brand": str(row.get("brand", "")),
+                        "label": str(row.get("label", "")),
+                    }
+                )
+
+    # 2. DefectList_Raw 키 읽기
+    defect_source_ok = UPLOADED_DEFECT_RAW_FILE.exists()
+    defect_source = UPLOADED_DEFECT_RAW_FILE.name if defect_source_ok else ""
+    defect_uploaded_at = _uploaded_file_datetime_text(UPLOADED_DEFECT_RAW_FILE) if defect_source_ok else ""
+
+    if not defect_source_ok:
+        result = {
+            "ok": True,
+            "detail": "DefectList_Raw 파일이 없습니다. /upload/defectlist-raw 에서 업로드해주세요.",
+            "defect_source_ok": False,
+            "defect_source": "",
+            "defect_uploaded_at": "",
+            "full_tc_source": summary.get("source", ""),
+            "total_defects": 0,
+            "matched_count": 0,
+            "unmatched_count": 0,
+            "match_rate": 0.0,
+            "rows": [],
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        return result
+
+    raw_rows = _read_uploaded_excel_sheet_rows(UPLOADED_DEFECT_RAW_FILE, GOOGLE_DEFECT_SHEET_NAME)
+    range_start_col, _range_start_row, _range_end_col, _range_end_row = _parse_a1_range(GOOGLE_RAW_STATUS_RANGE)
+    col_offset = max(0, int(range_start_col) - 1)
+
+    # 헤더 행 스킵 + 컬럼 인덱스 탐지
+    data_rows = raw_rows
+    has_header = bool(raw_rows and _looks_like_header_list(raw_rows[0]))
+    key_idx = col_offset + 0
+    status_idx = col_offset + 1
+    resolution_idx = col_offset + 2
+    priority_idx = col_offset + 3
+    summary_idx = col_offset + 8
+    reporter_idx = col_offset + 11
+    assignee_idx = col_offset + 12
+    created_idx = col_offset + 13
+    labels_idx = col_offset + 14
+    raw_headers: list[str] = []
+    if has_header:
+        headers = [str(x or "").strip() for x in raw_rows[0]]
+        raw_headers = list(headers)
+        detected_key_idx = _find_col_index(headers, ["issue key", "key", "jira", "ticket", "id", "결함", "키"])
+        detected_status_idx = _find_col_index(headers, ["status", "state", "진행상태", "결함상태", "상태"])
+        detected_resolution_idx = _find_col_index(headers, ["resolution", "해결", "해결상태"])
+        detected_priority_idx = _find_col_index(headers, ["priority", "severity", "심각도", "우선순위"])
+        detected_summary_idx = _find_col_index(headers, ["summary", "title", "요약", "제목"])
+        detected_reporter_idx = _find_col_index(headers, ["reporter", "작성자", "제보자"])
+        detected_assignee_idx = _find_col_index(headers, ["assignee", "담당자"])
+        detected_created_idx = _find_col_index(headers, ["created", "등록일", "생성일"])
+        detected_labels_idx = _find_col_index(headers, ["labels", "label", "라벨"])
+        if detected_key_idx >= 0:
+            key_idx = detected_key_idx
+        if detected_status_idx >= 0:
+            status_idx = detected_status_idx
+        if detected_resolution_idx >= 0:
+            resolution_idx = detected_resolution_idx
+        if detected_priority_idx >= 0:
+            priority_idx = detected_priority_idx
+        if detected_summary_idx >= 0:
+            summary_idx = detected_summary_idx
+        if detected_reporter_idx >= 0:
+            reporter_idx = detected_reporter_idx
+        if detected_assignee_idx >= 0:
+            assignee_idx = detected_assignee_idx
+        if detected_created_idx >= 0:
+            created_idx = detected_created_idx
+        if detected_labels_idx >= 0:
+            labels_idx = detected_labels_idx
+        data_rows = raw_rows[1:]
+    else:
+        header_width = max((len(row) for row in raw_rows), default=0)
+        raw_headers = [f"COL_{idx + 1}" for idx in range(header_width)]
+
+    rows: list[dict] = []
+    audit_counts = Counter()
+    violation_rows: list[dict] = []
+    seen_keys: set[str] = set()
+    data_start_row = 2 if has_header else 1
+    for raw_idx, raw in enumerate(data_rows):
+        key = str(raw[key_idx] if len(raw) > key_idx else "").strip()
+        if not key:
+            # Some files shift columns unexpectedly; try to recover Jira-like key token.
+            candidates = [str(v or "").strip() for v in raw if str(v or "").strip()]
+            guessed = next((v for v in candidates if _looks_like_issue_key(v)), "")
+            key = guessed
+        if not key:
+            continue
+        normalized_key = _normalize_issue_key_token(key)
+        if not normalized_key:
+            continue
+        if normalized_key in seen_keys:
+            continue
+        seen_keys.add(normalized_key)
+        key_number = _extract_issue_key_number(key)
+        status = str(raw[status_idx] if len(raw) > status_idx else "").strip()
+        resolution = str(raw[resolution_idx] if len(raw) > resolution_idx else "").strip()
+        priority = str(raw[priority_idx] if len(raw) > priority_idx else "").strip()
+        summary_text = str(raw[summary_idx] if len(raw) > summary_idx else "").strip()
+        reporter_text = str(raw[reporter_idx] if len(raw) > reporter_idx else "").strip()
+        assignee_text = str(raw[assignee_idx] if len(raw) > assignee_idx else "").strip()
+        created_text = str(raw[created_idx] if len(raw) > created_idx else "").strip()
+        labels_text = str(raw[labels_idx] if len(raw) > labels_idx else "").strip()
+        raw_sheet_row = data_start_row + raw_idx
+        jira_refs = open_key_refs.get(normalized_key, [])
+        closed_refs = closed_key_refs.get(normalized_key, [])
+        tc_refs = jira_refs + closed_refs
+        policy_bucket = _defect_policy_bucket(status, resolution)
+        in_y = bool(jira_refs)
+        in_x = bool(closed_refs)
+        placement_actual = "X+Y" if in_x and in_y else "X" if in_x else "Y" if in_y else "-"
+        if policy_bucket == "duplicate":
+            audit_code = "banned_duplicate_in_full_tc" if tc_refs else "banned_duplicate_ok"
+            expected_slot = "금지"
+        elif policy_bucket == "not_a_bug":
+            audit_code = "banned_not_a_bug_in_full_tc" if tc_refs else "banned_not_a_bug_ok"
+            expected_slot = "금지"
+        elif policy_bucket == "closed":
+            expected_slot = "X"
+            if in_x and not in_y:
+                audit_code = "closed_ok"
+            elif not in_x and not in_y:
+                audit_code = "closed_missing_x"
+            elif in_y and not in_x:
+                audit_code = "closed_in_y_only"
+            else:
+                audit_code = "closed_mixed"
+        else:
+            expected_slot = "Y"
+            if in_y and not in_x:
+                audit_code = "active_ok"
+            elif not in_y and not in_x:
+                audit_code = "active_missing_y"
+            elif in_x and not in_y:
+                audit_code = "active_in_x_only"
+            else:
+                audit_code = "active_mixed"
+        audit_counts[audit_code] += 1
+        violation = audit_code not in {
+            "active_ok",
+            "closed_ok",
+            "banned_duplicate_ok",
+            "banned_not_a_bug_ok",
+        }
+        row_item = {
+            "key": key,
+            "key_number": key_number,
+            "status": status,
+            "resolution": resolution,
+            "policy_bucket": policy_bucket,
+            "priority": priority,
+            "summary": summary_text,
+            "reporter": reporter_text,
+            "assignee": assignee_text,
+            "created": created_text,
+            "labels": labels_text,
+            "raw_sheet_row": raw_sheet_row,
+            "in_full_tc": bool(tc_refs),
+            "in_jira_no": in_y,
+            "in_closed_jira_no": in_x,
+            "closed_in_y_only": bool(policy_bucket == "closed" and in_y and not in_x),
+            "expected_slot": expected_slot,
+            "expected_slot_label": _full_tc_slot_label(expected_slot),
+            "actual_slot": placement_actual,
+            "actual_slot_label": _full_tc_slot_label(placement_actual),
+            "audit_code": audit_code,
+            "violation": violation,
+            "jira_refs": jira_refs[:5],
+            "closed_refs": closed_refs[:5],
+            "tc_refs": tc_refs[:5],
+            "raw_values": [str(v or "").strip() for v in raw],
+        }
+        rows.append(row_item)
+        if violation:
+            violation_rows.append(row_item)
+
+    matched = sum(1 for r in rows if r["in_full_tc"])
+    unmatched = len(rows) - matched
+    match_rate = round(matched / len(rows) * 100, 1) if rows else 0.0
+    key_numbers = sorted(n for n in (r.get("key_number") for r in rows) if isinstance(n, int))
+    violation_rows.sort(key=lambda item: (0 if item.get("policy_bucket") in {"duplicate", "not_a_bug"} else 1, str(item.get("key", ""))))
+    raw_key_set = set(seen_keys)
+    missing_tc_rows: list[dict] = []
+    for issue_key, refs in full_tc_key_rows.items():
+        if issue_key in raw_key_set:
+            continue
+        key_number = _extract_issue_key_number(issue_key)
+        for ref in refs:
+            missing_tc_rows.append(
+                {
+                    "key": issue_key,
+                    "key_number": key_number,
+                    "component": ref.get("component", ""),
+                    "tc_id": ref.get("tc_id", ""),
+                    "sheet_row": ref.get("sheet_row", ""),
+                    "field_label": ref.get("field_label", ""),
+                    "category": ref.get("category", ""),
+                    "depth1": ref.get("depth1", ""),
+                    "depth2": ref.get("depth2", ""),
+                    "depth3": ref.get("depth3", ""),
+                    "brand": ref.get("brand", ""),
+                    "label": ref.get("label", ""),
+                }
+            )
+    missing_tc_rows.sort(
+        key=lambda item: (
+            str(item.get("component", "")),
+            str(item.get("tc_id", "")),
+            int(item.get("sheet_row", 0) or 0),
+            str(item.get("field_label", "")),
+        )
+    )
+
+    data = {
+        "ok": True,
+        "detail": "ok",
+        "defect_source_ok": True,
+        "defect_source": defect_source,
+        "defect_uploaded_at": defect_uploaded_at,
+        "full_tc_source": summary.get("source", ""),
+        "total_defects": len(rows),
+        "matched_count": matched,
+        "unmatched_count": unmatched,
+        "match_rate": match_rate,
+        "key_range": {
+            "min": key_numbers[0] if key_numbers else None,
+            "max": key_numbers[-1] if key_numbers else None,
+            "count_with_number": len(key_numbers),
+        },
+        "column_labels": {
+            "closed_jira_no": "Closed 지라",
+            "jira_no": "지라 NO.",
+            "excluded": "반영 금지",
+        },
+        "defect_raw_columns": {
+            "key": key_idx,
+            "status": status_idx,
+            "resolution": resolution_idx,
+            "priority": priority_idx,
+            "summary": summary_idx,
+            "reporter": reporter_idx,
+            "assignee": assignee_idx,
+            "created": created_idx,
+            "labels": labels_idx,
+        },
+        "defect_raw_headers": raw_headers,
+        "audit_totals": {
+            "active_total": int(audit_counts.get("active_ok", 0) + audit_counts.get("active_missing_y", 0) + audit_counts.get("active_in_x_only", 0) + audit_counts.get("active_mixed", 0)),
+            "active_ok": int(audit_counts.get("active_ok", 0)),
+            "active_missing_y": int(audit_counts.get("active_missing_y", 0)),
+            "active_wrong_slot": int(audit_counts.get("active_in_x_only", 0) + audit_counts.get("active_mixed", 0)),
+            "closed_total": int(audit_counts.get("closed_ok", 0) + audit_counts.get("closed_missing_x", 0) + audit_counts.get("closed_in_y_only", 0) + audit_counts.get("closed_mixed", 0)),
+            "closed_ok": int(audit_counts.get("closed_ok", 0)),
+            "closed_missing_x": int(audit_counts.get("closed_missing_x", 0)),
+            "closed_in_y_only": int(audit_counts.get("closed_in_y_only", 0)),
+            "closed_wrong_slot": int(audit_counts.get("closed_in_y_only", 0) + audit_counts.get("closed_mixed", 0)),
+            "banned_total": int(audit_counts.get("banned_duplicate_ok", 0) + audit_counts.get("banned_not_a_bug_ok", 0) + audit_counts.get("banned_duplicate_in_full_tc", 0) + audit_counts.get("banned_not_a_bug_in_full_tc", 0)),
+            "banned_linked": int(audit_counts.get("banned_duplicate_in_full_tc", 0) + audit_counts.get("banned_not_a_bug_in_full_tc", 0)),
+            "duplicate_linked": int(audit_counts.get("banned_duplicate_in_full_tc", 0)),
+            "not_a_bug_linked": int(audit_counts.get("banned_not_a_bug_in_full_tc", 0)),
+            "violation_count": len(violation_rows),
+            "missing_tc_count": len(missing_tc_rows),
+        },
+        "missing_tc_rows": missing_tc_rows,
+        "violation_rows": violation_rows[:300],
+        "rows": rows,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+    DEFECT_MATCH_CACHE["ts"] = time.monotonic()
+    DEFECT_MATCH_CACHE["data"] = data
+    return data
+
+
+def _looks_like_header_list(row: list[str]) -> bool:
+    if not row:
+        return False
+    text_cells = sum(1 for v in row if re.search(r"[A-Za-z가-힣]", str(v or "")))
+    return text_cells >= max(2, len(row) // 3)
+
+
+@app.get("/api/qa/full-tc/defect-match")
+def qa_full_tc_defect_match(force: bool = False):
+    return _build_defect_match_data(force=bool(force))
+
+
+def _safe_export_text(value) -> str:
+    return str(value or "").strip()
+
+
+@app.post("/api/qa/full-tc/defect-export")
+async def qa_full_tc_defect_export(request: Request):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="invalid payload")
+
+    export_format = str(payload.get("format") or "").strip().lower()
+    columns = payload.get("columns") or []
+    rows = payload.get("rows") or []
+    title = _safe_export_text(payload.get("title") or "Defect 대조 결과")
+
+    if export_format not in {"xlsx", "html"}:
+        raise HTTPException(status_code=400, detail="unsupported format")
+    if not isinstance(columns, list) or not columns:
+        raise HTTPException(status_code=400, detail="columns required")
+    if not isinstance(rows, list):
+        raise HTTPException(status_code=400, detail="rows required")
+
+    safe_columns = [_safe_export_text(col) for col in columns]
+    safe_rows: list[list[str]] = []
+    for row in rows:
+        if not isinstance(row, list):
+            continue
+        normalized = [_safe_export_text(cell) for cell in row[: len(safe_columns)]]
+        if len(normalized) < len(safe_columns):
+            normalized.extend([""] * (len(safe_columns) - len(normalized)))
+        safe_rows.append(normalized)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    if export_format == "xlsx":
+        workbook = Workbook()
+        ws = workbook.active
+        ws.title = "Defect Compare"
+        ws.append(safe_columns)
+        for row in safe_rows:
+            ws.append(row)
+        for cell in ws[1]:
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for row in ws.iter_rows(min_row=2):
+            for cell in row:
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+        for col_idx, header in enumerate(safe_columns, start=1):
+            max_len = len(header)
+            for row in safe_rows:
+                max_len = max(max_len, len(str(row[col_idx - 1] or "")))
+            ws.column_dimensions[get_column_letter(col_idx)].width = min(max(max_len + 2, 12), 60)
+        output = BytesIO()
+        workbook.save(output)
+        output.seek(0)
+        filename = f"defect_compare_{timestamp}.xlsx"
+        headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+        return Response(
+            content=output.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers,
+        )
+
+    table_head = "".join(f"<th>{html_lib.escape(col)}</th>" for col in safe_columns)
+    table_body = "".join(
+        "<tr>" + "".join(f"<td>{html_lib.escape(cell)}</td>" for cell in row) + "</tr>"
+        for row in safe_rows
+    )
+    html_text = (
+        "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\">"
+        f"<title>{html_lib.escape(title)}</title>"
+        "<style>body{font-family:Segoe UI,Arial,sans-serif;padding:24px;color:#1f2937;}"
+        "h1{margin:0 0 16px;font-size:22px;}"
+        "table{border-collapse:collapse;width:100%;font-size:13px;}"
+        "th,td{border:1px solid #cfd8e3;padding:8px 10px;vertical-align:top;word-break:break-word;}"
+        "th{background:#eef5fb;position:sticky;top:0;}"
+        "tbody tr:nth-child(even){background:#fafcff;}"
+        "</style></head><body>"
+        f"<h1>{html_lib.escape(title)}</h1>"
+        f"<table><thead><tr>{table_head}</tr></thead><tbody>{table_body}</tbody></table>"
+        "</body></html>"
+    )
+    filename = f"defect_compare_{timestamp}.html"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(content=html_text, media_type="text/html; charset=utf-8", headers=headers)
+
+
 def _looks_like_header(row: list[str]) -> bool:
     if not row:
         return False
@@ -4823,7 +7729,7 @@ def _ensure_company_members_file() -> None:
     if COMPANY_MEMBERS_FILE.exists():
         return
     COMPANY_MEMBERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    COMPANY_MEMBERS_FILE.write_text(json.dumps(COMPANY_DEFAULT_MEMBERS, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_text_atomic(COMPANY_MEMBERS_FILE, json.dumps(COMPANY_DEFAULT_MEMBERS, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _load_company_members() -> list[str]:
@@ -4849,7 +7755,7 @@ def _load_company_members() -> list[str]:
 
 def _save_company_members(members: list[str]) -> None:
     COMPANY_MEMBERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    COMPANY_MEMBERS_FILE.write_text(json.dumps(members, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_text_atomic(COMPANY_MEMBERS_FILE, json.dumps(members, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _is_duplicate_issue(resolution: str, issue_type: str) -> bool:
@@ -4869,6 +7775,30 @@ def _severity_bucket(priority: str) -> str:
     if p in SEVERITY_SCORE:
         return p
     return ""
+
+
+def _normalize_company_member_name(value: str) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    text = re.sub(r"\s+", "", text)
+    text = text.replace("(협력사)", "")
+    text = text.replace("/협력사", "")
+    text = text.replace("협력사", "")
+    text = text.replace("/", "")
+    return text
+
+
+def _resolve_company_member_alias_map(members: list[str]) -> dict[str, str]:
+    alias_map: dict[str, str] = {}
+    for member in members:
+        display = str(member or "").strip()
+        if not display:
+            continue
+        normalized = _normalize_company_member_name(display)
+        if normalized and normalized not in alias_map:
+            alias_map[normalized] = display
+    return alias_map
 
 
 def _extract_created_date(v: str) -> date | None:
@@ -4978,9 +7908,108 @@ def _normalize_defect_status(v: str) -> str:
     return text.title()
 
 
+def _normalize_defect_header_cell(value: str) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    text = text.replace("/s", "s")
+    text = re.sub(r"[\s_\-/]+", "", text)
+    return text
+
+
+def _find_defect_header_index_map(rows: list[list[str]]) -> tuple[dict[str, int], int] | None:
+    alias_map: dict[str, set[str]] = {
+        "key": {"key", "issuekey", "ticketkey"},
+        "status": {"status"},
+        "resolution": {"resolution"},
+        "priority": {"p", "priority"},
+        "region": {"region"},
+        "os": {"os"},
+        "components": {"components", "component"},
+        "brand": {"brand"},
+        "summary": {"summary", "title"},
+        "affects_versions": {"affectsversion", "affectsversions", "affectversion", "affectversions"},
+        "fix_versions": {"fixversion", "fixversions"},
+        "reporter": {"reporter"},
+        "assignee": {"assignee"},
+        "created": {"created", "createdat"},
+        "labels": {"labels", "label"},
+        "remarks": {"비고", "remarks", "remark", "note"},
+        "links": {"links", "link", "url"},
+    }
+
+    required = {"key", "status", "reporter", "summary", "created"}
+    for row_idx, row in enumerate(rows):
+        norm_cells = [_normalize_defect_header_cell(cell) for cell in row]
+        header_index_map: dict[str, int] = {}
+        for idx, norm_cell in enumerate(norm_cells):
+            if not norm_cell:
+                continue
+            for canonical, aliases in alias_map.items():
+                if norm_cell in aliases and canonical not in header_index_map:
+                    header_index_map[canonical] = idx
+
+        if len(header_index_map) >= 10 and required.issubset(set(header_index_map.keys())):
+            return header_index_map, row_idx
+    return None
+
+
 def _build_defect_issue_rows(rows: list[list[str]], members: list[str] | None = None) -> list[dict]:
-    member_set = {str(x or "").strip() for x in (members or []) if str(x or "").strip()}
-    member_filter_enabled = bool(member_set)
+    member_alias_map = _resolve_company_member_alias_map(list(members or []))
+    member_filter_enabled = bool(member_alias_map)
+    header_info = _find_defect_header_index_map(rows)
+
+    if header_info is not None:
+        header_index_map, header_row_idx = header_info
+        issue_rows = []
+        for row in rows[header_row_idx + 1:]:
+            def _pick(name: str) -> str:
+                idx = header_index_map.get(name, -1)
+                if idx < 0 or idx >= len(row):
+                    return ""
+                return str(row[idx] or "").strip()
+
+            key = _pick("key")
+            status = _pick("status")
+            resolution = _pick("resolution")
+            priority = _pick("priority")
+            reporter = _pick("reporter")
+            if not key:
+                continue
+            if _normalize_defect_header_cell(key) == "key":
+                continue
+            if member_filter_enabled:
+                normalized_reporter = _normalize_company_member_name(reporter)
+                if normalized_reporter not in member_alias_map:
+                    continue
+                reporter = member_alias_map[normalized_reporter]
+
+            if not reporter:
+                continue
+
+            issue_rows.append(
+                {
+                    "type": "",
+                    "key": key,
+                    "status": status,
+                    "resolution": resolution,
+                    "priority": priority,
+                    "region": _pick("region"),
+                    "os": _pick("os"),
+                    "components": _pick("components"),
+                    "brand": _pick("brand"),
+                    "summary": _pick("summary"),
+                    "affects_versions": _pick("affects_versions"),
+                    "fix_versions": _pick("fix_versions"),
+                    "reporter": reporter,
+                    "assignee": _pick("assignee"),
+                    "created": _pick("created"),
+                    "labels": _pick("labels"),
+                    "remarks": _pick("remarks"),
+                    "links": _pick("links"),
+                }
+            )
+        return issue_rows
 
     issue_rows = []
     for row in rows:
@@ -5002,7 +8031,13 @@ def _build_defect_issue_rows(rows: list[list[str]], members: list[str] | None = 
         reporter = _cell(11)       # M: Reporter
         if not key:
             continue
-        if member_filter_enabled and reporter not in member_set:
+        if member_filter_enabled:
+            normalized_reporter = _normalize_company_member_name(reporter)
+            if normalized_reporter not in member_alias_map:
+                continue
+            reporter = member_alias_map[normalized_reporter]
+
+        if not reporter:
             continue
 
         issue_rows.append(
@@ -5023,6 +8058,7 @@ def _build_defect_issue_rows(rows: list[list[str]], members: list[str] | None = 
                 "assignee": _cell(12),             # N: Assignee
                 "created": _cell(13),              # O: Created
                 "labels": _cell(14),               # P: Labels
+                "remarks": _cell(15),              # Q: 비고
                 "links": _cell(16),                # R: Links
             }
         )
@@ -5031,6 +8067,7 @@ def _build_defect_issue_rows(rows: list[list[str]], members: list[str] | None = 
 
 def _build_member_summary_from_issue_rows(issue_rows: list[dict], members: list[str]) -> list[dict]:
     stats_by_member: dict[str, dict] = {}
+    alias_map = _resolve_company_member_alias_map(members)
     for name in members:
         stats_by_member[name] = {
             "name": name,
@@ -5047,16 +8084,16 @@ def _build_member_summary_from_issue_rows(issue_rows: list[dict], members: list[
             "score": 0.0,
             "rank": 0,
         }
-
-    member_set = set(members)
     for row in issue_rows:
         reporter = str(row.get("reporter", "")).strip()
-        if reporter not in member_set:
+        reporter_key = _normalize_company_member_name(reporter)
+        canonical_reporter = alias_map.get(reporter_key, reporter)
+        if canonical_reporter not in stats_by_member:
             continue
         issue_type = str(row.get("type", "")).strip()
         resolution = str(row.get("resolution", "")).strip()
         priority = str(row.get("priority", "")).strip()
-        rec = stats_by_member[reporter]
+        rec = stats_by_member[canonical_reporter]
         rec["total_issue"] += 1
         if _is_duplicate_issue(resolution, issue_type):
             rec["duplicate"] += 1
@@ -5122,7 +8159,11 @@ def _get_cached_raw_defect_issue_stats(force: bool = False) -> dict:
     try:
         rows = _fetch_google_sheet_rows(f"{GOOGLE_DEFECT_SHEET_NAME}!{GOOGLE_RAW_STATUS_RANGE}")
         issues = _build_defect_issue_rows(rows)
-        raw_fingerprint_src = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
+        if source_type == "uploaded-excel" and UPLOADED_DEFECT_RAW_FILE.exists():
+            stat = UPLOADED_DEFECT_RAW_FILE.stat()
+            raw_fingerprint_src = f"{UPLOADED_DEFECT_RAW_FILE.name}:{stat.st_size}:{int(stat.st_mtime)}"
+        else:
+            raw_fingerprint_src = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
         stats = {
             "ok": True,
             "source": source_value,
@@ -5157,6 +8198,174 @@ def _get_cached_raw_defect_issue_stats(force: bool = False) -> dict:
         "total_rows": 0,
         "issues": [],
     }
+
+
+def _prepare_admin_member_issue_item(raw_item: dict) -> dict | None:
+    reporter_name = str(raw_item.get("reporter", "") or "").strip() or "미지정"
+    if "협력사" not in reporter_name:
+        return None
+    normalized_status = _normalize_defect_status(str(raw_item.get("status", "") or "")) or "미지정"
+    created_text = str(raw_item.get("created", "") or "").strip()
+    created_date = _extract_created_date(created_text)
+    item = {
+        "id": str(raw_item.get("key", "") or "").strip() or "-",
+        "key": str(raw_item.get("key", "") or "").strip() or "-",
+        "reporter": reporter_name,
+        "reporter_key": reporter_name.lower(),
+        "status": normalized_status,
+        "status_key": normalized_status.lower(),
+        "status_group": _admin_defect_status_group(normalized_status),
+        "resolution": str(raw_item.get("resolution", "") or "").strip() or "-",
+        "priority": str(raw_item.get("priority", "") or "").strip() or "-",
+        "region": str(raw_item.get("region", "") or "").strip() or "-",
+        "os": str(raw_item.get("os", "") or "").strip() or "-",
+        "components": str(raw_item.get("components", "") or "").strip() or "-",
+        "brand": str(raw_item.get("brand", "") or "").strip() or "-",
+        "summary": str(raw_item.get("summary", "") or "").strip() or "-",
+        "affects_versions": str(raw_item.get("affects_versions", "") or "").strip() or "-",
+        "fix_versions": str(raw_item.get("fix_versions", "") or "").strip() or "-",
+        "assignee": str(raw_item.get("assignee", "") or "").strip() or "-",
+        "created": created_text,
+        "created_date": created_date.isoformat() if created_date else "",
+        "labels": str(raw_item.get("labels", "") or "").strip() or "-",
+        "links": str(raw_item.get("links", "") or "").strip() or "-",
+        "link_url": _extract_first_http_url(str(raw_item.get("links", "") or "")),
+        "remarks": str(raw_item.get("remarks", "") or "").strip() or "-",
+    }
+    item["search_blob"] = " ".join([
+        str(item.get("id", "") or ""),
+        str(item.get("key", "") or ""),
+        str(item.get("reporter", "") or ""),
+        str(item.get("status", "") or ""),
+        str(item.get("resolution", "") or ""),
+        str(item.get("priority", "") or ""),
+        str(item.get("region", "") or ""),
+        str(item.get("os", "") or ""),
+        str(item.get("components", "") or ""),
+        str(item.get("brand", "") or ""),
+        str(item.get("summary", "") or ""),
+        str(item.get("affects_versions", "") or ""),
+        str(item.get("fix_versions", "") or ""),
+        str(item.get("assignee", "") or ""),
+        str(item.get("labels", "") or ""),
+        str(item.get("links", "") or ""),
+        str(item.get("remarks", "") or ""),
+    ]).lower()
+    return item
+
+
+def _public_admin_member_issue_item(item: dict) -> dict:
+    return {k: v for k, v in item.items() if k != "search_blob"}
+
+
+def _get_prepared_admin_member_issue_base(raw_data: dict) -> dict:
+    global ADMIN_MEMBER_ISSUES_PREPARED_CACHE
+    source_fingerprint = str(raw_data.get("source_fingerprint", "") or "")
+    with ADMIN_MEMBER_ISSUES_CACHE_LOCK:
+        cached_fingerprint = str(ADMIN_MEMBER_ISSUES_PREPARED_CACHE.get("source_fingerprint", "") or "")
+        cached_data = ADMIN_MEMBER_ISSUES_PREPARED_CACHE.get("data") or {}
+        cached_items = list(cached_data.get("prepared_items") or []) if isinstance(cached_data, dict) else []
+        raw_items = list(raw_data.get("issues") or [])
+        if cached_data and cached_fingerprint == source_fingerprint and (cached_items or not raw_items):
+            return cached_data
+
+    reporter_options_map: dict[str, dict] = {}
+    status_options_map: dict[str, dict] = {}
+    prepared_items: list[dict] = []
+    company_members = _load_company_members()
+    member_alias_map = _resolve_company_member_alias_map(company_members)
+    member_keys = set(member_alias_map.keys())
+
+    for raw_item in list(raw_data.get("issues") or []):
+        item = _prepare_admin_member_issue_item_without_partner_filter(raw_item)
+        if item is None:
+            continue
+        normalized_reporter = _normalize_company_member_name(str(item.get("reporter", "") or ""))
+        if normalized_reporter not in member_keys:
+            continue
+        item["reporter"] = member_alias_map[normalized_reporter]
+        item["reporter_key"] = normalized_reporter
+        prepared_items.append(item)
+
+    reporter_filter_relaxed = False
+
+    for item in prepared_items:
+        if item is None:
+            continue
+        reporter_key = str(item.get("reporter_key", "") or "")
+        status_key = str(item.get("status_key", "") or "")
+        status_label = str(item.get("status", "") or "")
+        reporter_name = str(item.get("reporter", "") or "")
+        if reporter_key and reporter_key not in reporter_options_map:
+            reporter_options_map[reporter_key] = {"value": reporter_name, "name": reporter_name}
+        if status_key and status_key not in status_options_map:
+            status_options_map[status_key] = {"value": status_key, "label": status_label}
+
+    status_sort_order = {"open": 1, "in progress": 2, "reopened": 3, "pending": 4, "new": 5, "resolved": 6, "close": 7, "closed": 8, "done": 9, "미지정": 99}
+    data = {
+        "prepared_items": prepared_items,
+        "reporter_filter_relaxed": reporter_filter_relaxed,
+        "author_options": sorted(reporter_options_map.values(), key=lambda row: str(row.get("name", "") or "").lower()),
+        "status_options": sorted(
+            status_options_map.values(),
+            key=lambda row: (status_sort_order.get(str(row.get("value", "") or "").lower(), 50), str(row.get("label", "") or "").lower()),
+        ),
+    }
+    with ADMIN_MEMBER_ISSUES_CACHE_LOCK:
+        ADMIN_MEMBER_ISSUES_PREPARED_CACHE = {"source_fingerprint": source_fingerprint, "data": data}
+    return data
+
+
+def _prepare_admin_member_issue_item_without_partner_filter(raw_item: dict) -> dict | None:
+    reporter_name = str(raw_item.get("reporter", "") or "").strip() or "미지정"
+    normalized_status = _normalize_defect_status(str(raw_item.get("status", "") or "")) or "미지정"
+    created_text = str(raw_item.get("created", "") or "").strip()
+    created_date = _extract_created_date(created_text)
+    item = {
+        "id": str(raw_item.get("key", "") or "").strip() or "-",
+        "key": str(raw_item.get("key", "") or "").strip() or "-",
+        "reporter": reporter_name,
+        "reporter_key": reporter_name.lower(),
+        "status": normalized_status,
+        "status_key": normalized_status.lower(),
+        "status_group": _admin_defect_status_group(normalized_status),
+        "resolution": str(raw_item.get("resolution", "") or "").strip() or "-",
+        "priority": str(raw_item.get("priority", "") or "").strip() or "-",
+        "region": str(raw_item.get("region", "") or "").strip() or "-",
+        "os": str(raw_item.get("os", "") or "").strip() or "-",
+        "components": str(raw_item.get("components", "") or "").strip() or "-",
+        "brand": str(raw_item.get("brand", "") or "").strip() or "-",
+        "summary": str(raw_item.get("summary", "") or "").strip() or "-",
+        "affects_versions": str(raw_item.get("affects_versions", "") or "").strip() or "-",
+        "fix_versions": str(raw_item.get("fix_versions", "") or "").strip() or "-",
+        "assignee": str(raw_item.get("assignee", "") or "").strip() or "-",
+        "created": created_text,
+        "created_date": created_date.isoformat() if created_date else "",
+        "labels": str(raw_item.get("labels", "") or "").strip() or "-",
+        "links": str(raw_item.get("links", "") or "").strip() or "-",
+        "link_url": _extract_first_http_url(str(raw_item.get("links", "") or "")),
+        "remarks": str(raw_item.get("remarks", "") or "").strip() or "-",
+    }
+    item["search_blob"] = " ".join([
+        str(item.get("id", "") or ""),
+        str(item.get("key", "") or ""),
+        str(item.get("reporter", "") or ""),
+        str(item.get("status", "") or ""),
+        str(item.get("resolution", "") or ""),
+        str(item.get("priority", "") or ""),
+        str(item.get("region", "") or ""),
+        str(item.get("os", "") or ""),
+        str(item.get("components", "") or ""),
+        str(item.get("brand", "") or ""),
+        str(item.get("summary", "") or ""),
+        str(item.get("affects_versions", "") or ""),
+        str(item.get("fix_versions", "") or ""),
+        str(item.get("assignee", "") or ""),
+        str(item.get("labels", "") or ""),
+        str(item.get("links", "") or ""),
+        str(item.get("remarks", "") or ""),
+    ]).lower()
+    return item
 
 
 def _split_release_versions(*values: str) -> list[str]:
@@ -5483,7 +8692,37 @@ def _get_cached_company_defect_stats(force: bool = False) -> dict:
         stats["source_fingerprint"] = hashlib.sha1(raw_fingerprint_src.encode("utf-8")).hexdigest()
         _record_defectlist_refresh_update(stats)
     except Exception:
-        pass
+        # Team range 조회가 실패해도 Raw 기반 통계로 UI를 유지한다.
+        try:
+            members = _load_company_members()
+            raw_data = _get_cached_raw_defect_issue_stats(force=bool(force))
+            raw_issues = list(raw_data.get("issues") or [])
+            ranked = _build_member_summary_from_issue_rows(raw_issues, members)
+            raw_fp = str(raw_data.get("source_fingerprint", "") or "")
+            if not raw_fp:
+                raw_fp = hashlib.sha1(
+                    json.dumps(raw_issues, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+                ).hexdigest()
+            stats = {
+                "ok": True,
+                "source": raw_data.get("source", ""),
+                "source_type": str(raw_data.get("source_type", "") or "") or "raw-fallback",
+                "uploaded_at": raw_data.get("uploaded_at", ""),
+                "sheet": raw_data.get("sheet", GOOGLE_DEFECT_SHEET_NAME),
+                "range": raw_data.get("range", GOOGLE_RAW_STATUS_RANGE),
+                "updated_at": raw_data.get("updated_at", datetime.now().isoformat(timespec="seconds")),
+                "total_rows": len(raw_issues),
+                "all_total_rows": len(raw_issues),
+                "fingerprint": raw_fp,
+                "source_fingerprint": raw_fp,
+                "members": ranked,
+                "all_issues": raw_issues,
+                "issues": raw_issues,
+                "fallback_used": True,
+                "fallback_reason": "team_range_fetch_failed",
+            }
+        except Exception:
+            pass
     finally:
         with COMPANY_DEFECT_CACHE_LOCK:
             COMPANY_DEFECT_CACHE_FETCHING = False
@@ -5590,7 +8829,11 @@ def company_defect_detail(name: str, force: bool = False, start_date: str = "", 
         raise HTTPException(status_code=400, detail="name is required")
     data = _get_cached_company_defect_stats(force=bool(force))
     filtered = _filter_issue_rows_by_date(data.get("issues", []), start_date=start_date, end_date=end_date)
-    rows = [x for x in filtered if str(x.get("reporter", "")).strip() == target]
+    target_key = _normalize_company_member_name(target)
+    rows = [
+        x for x in filtered
+        if _normalize_company_member_name(str(x.get("reporter", "")).strip()) == target_key
+    ]
     return {
         "ok": True,
         "name": target,
@@ -5905,7 +9148,8 @@ def _load_device_memory_cache() -> None:
 
 def _flush_device_memory_cache() -> None:
     DEVICE_MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    DEVICE_MEMORY_FILE.write_text(
+    _write_text_atomic(
+        DEVICE_MEMORY_FILE,
         json.dumps(DEVICE_MEMORY_CACHE, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
@@ -6720,8 +9964,15 @@ async def upload_defectlist_raw_file(request: Request, file: UploadFile = File(.
     temp_path = UPLOAD_DIR / temp_name
     with temp_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
-    # 이전 파일 백업 후 새 파일로 교체 (이전 데이터 완전 삭제)
-    shutil.copyfile(str(temp_path), str(UPLOADED_DEFECT_RAW_FILE))
+    # 이전 파일 백업 후 새 파일 원자적 교체
+    with UPLOAD_LOCK:
+        backup_path = UPLOADED_DEFECT_RAW_FILE.with_suffix(UPLOADED_DEFECT_RAW_FILE.suffix + ".bak")
+        if UPLOADED_DEFECT_RAW_FILE.exists():
+            try:
+                shutil.copy2(UPLOADED_DEFECT_RAW_FILE, backup_path)
+            except Exception:
+                pass
+        os.replace(str(temp_path), str(UPLOADED_DEFECT_RAW_FILE))
 
     # 모든 관련 캐시 초기화 (이전 데이터 완전 제거)
     _reset_defect_source_caches()
@@ -6735,6 +9986,7 @@ async def upload_defectlist_raw_file(request: Request, file: UploadFile = File(.
     defect = _get_cached_google_defect_stats(force=True)
     company = _get_cached_company_defect_stats(force=True)
     raw = _get_cached_raw_defect_issue_stats(force=True)
+    _get_prepared_admin_member_issue_base(raw)
 
     defect_rows = int(defect.get("total_rows", 0) or 0)
     raw_rows = int(raw.get("total_rows", 0) or 0)
@@ -6772,14 +10024,35 @@ def upload_defectlist_raw_history(request: Request):
 async def upload_full_tc_file(request: Request, file: UploadFile = File(...)):
     _require_admin(request)
     filename = str(file.filename or "").strip()
-    if not filename.lower().endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail=".xlsx 파일만 업로드할 수 있습니다.")
+    lower = filename.lower()
+    if not (lower.endswith(".xlsx") or lower.endswith(".csv")):
+        raise HTTPException(status_code=400, detail=".xlsx 또는 .csv 파일만 업로드할 수 있습니다.")
 
-    temp_name = f"full_tc_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    temp_ext = ".csv" if lower.endswith(".csv") else ".xlsx"
+    temp_name = f"full_tc_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}{temp_ext}"
     temp_path = UPLOAD_DIR / temp_name
     with temp_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
-    shutil.copyfile(str(temp_path), str(UPLOADED_FULL_TC_FILE))
+
+    with UPLOAD_LOCK:
+        # overwrite 전에 백업 파일을 유지해 데이터 손실 가능성을 최소화
+        backup_path = UPLOADED_FULL_TC_FILE.with_suffix(UPLOADED_FULL_TC_FILE.suffix + ".bak")
+        if UPLOADED_FULL_TC_FILE.exists():
+            try:
+                shutil.copy2(UPLOADED_FULL_TC_FILE, backup_path)
+            except Exception:
+                pass
+
+        if lower.endswith(".csv"):
+            temp_xlsx_path = UPLOAD_DIR / f"full_tc_converted_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            try:
+                df = pd.read_csv(str(temp_path), dtype=str, encoding="utf-8-sig")
+            except UnicodeDecodeError:
+                df = pd.read_csv(str(temp_path), dtype=str, encoding="cp949")
+            df.to_excel(str(temp_xlsx_path), index=False)
+            os.replace(str(temp_xlsx_path), str(UPLOADED_FULL_TC_FILE))
+        else:
+            os.replace(str(temp_path), str(UPLOADED_FULL_TC_FILE))
 
     _reset_full_tc_caches()
     sheets_data = _get_full_tc_sheet_list(force=True)
@@ -6789,6 +10062,7 @@ async def upload_full_tc_file(request: Request, file: UploadFile = File(...)):
         "ok": True,
         "uploaded": filename,
         "stored_as": UPLOADED_FULL_TC_FILE.name,
+        "stored_format": "xlsx",
         "uploaded_at": _uploaded_file_datetime_text(UPLOADED_FULL_TC_FILE),
         "sheet_count": len(sheets),
         "sheets": sheets[:60],

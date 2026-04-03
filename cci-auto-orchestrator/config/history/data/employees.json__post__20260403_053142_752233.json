@@ -1,0 +1,73 @@
+[
+  {
+    "id": "emp-sue",
+    "name": "장수경",
+    "birth": "1004",
+    "title": "차장",
+    "employee_no": "230103",
+    "account_email": "sue@poliot.co.kr",
+    "google_email": "sue@poliot.co.kr",
+    "phone": "010-4785-1003",
+    "remote_id": "hae\\9452861",
+    "remote_password": "Poliot12!@",
+    "address": ""
+  },
+  {
+    "id": "emp-hiss",
+    "name": "우형일",
+    "birth": "2001.07.23",
+    "title": "SW품질/책임",
+    "employee_no": "240130",
+    "account_email": "hiss0723@poliot.co.kr",
+    "google_email": "hiss0723@poliot.co.kr",
+    "phone": "010-8326-5491",
+    "remote_id": "hae\\9477402",
+    "remote_password": "Poliot12!@",
+    "address": ""
+  },
+  {
+    "id": "emp-9d6142563b",
+    "name": "기가연지",
+    "title": "",
+    "account_email": "jy.lee@poliot.co.kr",
+    "phone": "01052713459",
+    "birth": "19990618",
+    "address": "전라남도 여수시 소라면 사곡리 산94"
+  },
+  {
+    "id": "emp-bfad89f64c",
+    "name": "유승훈",
+    "title": "QA품질팀/책임",
+    "account_email": "aj7592@poliot.co.kr",
+    "phone": "01063926528",
+    "birth": "1996-11-11",
+    "address": "서울시관악구형일로"
+  },
+  {
+    "id": "emp-8cea48dc87",
+    "name": "나덕윤",
+    "title": "QA",
+    "account_email": "hey6410@poliot.co.kr",
+    "phone": "010-40057-2524",
+    "birth": "19921113",
+    "address": "서울"
+  },
+  {
+    "id": "emp-d81ed3334b",
+    "name": "이주원",
+    "title": "QA개발팀/책임",
+    "account_email": "sadltkdahr12@gmail.com",
+    "phone": "01051800359",
+    "birth": "1996-07-29",
+    "address": "인천 계양구 새벌로 112번길 12"
+  },
+  {
+    "id": "emp-c467462e6b",
+    "name": "윤지은",
+    "title": "SW품질/책임",
+    "account_email": "yunjieun.poliot@gmail.com",
+    "phone": "01091481495",
+    "birth": "2000-06-08",
+    "address": ""
+  }
+]

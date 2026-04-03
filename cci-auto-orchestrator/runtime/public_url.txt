@@ -1,1 +1,1 @@
-﻿https://cci-dashboard.serveousercontent.com
+http://serveousercontent.com:8000

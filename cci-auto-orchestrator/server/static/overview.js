@@ -772,12 +772,33 @@ function shouldOpenShortcutExternally(url) {
   return !isSameOriginShortcut(url);
 }
 
+function toEmbeddedShortcutUrl(rawUrl) {
+  const text = String(rawUrl || "").trim();
+  if (!text) return "";
+  try {
+    const u = new URL(text, window.location.origin);
+    const host = String(u.hostname || "").toLowerCase();
+    const path = String(u.pathname || "");
+    // Try edit-mode first so user can work with their own Google account in-webview.
+    if (host === "docs.google.com" && path.startsWith("/spreadsheets/d/")) {
+      const gid = u.searchParams.get("gid") || (u.hash.startsWith("#gid=") ? u.hash.slice(5) : "");
+      const parts = path.split("/").filter(Boolean);
+      const sheetId = parts.length >= 3 ? parts[2] : "";
+      if (sheetId) {
+        return gid
+          ? `https://docs.google.com/spreadsheets/d/${sheetId}/edit?gid=${encodeURIComponent(gid)}`
+          : `https://docs.google.com/spreadsheets/d/${sheetId}/edit`;
+      }
+    }
+    return u.toString();
+  } catch {
+    return text;
+  }
+}
+
 function launchShortcut(item, preferWebView) {
   if (!item || !item.url) return;
-  if (!preferWebView && !item.webview && shouldOpenShortcutExternally(item.url)) {
-    window.open(item.url, "_blank", "noopener,noreferrer");
-    return;
-  }
+  // Always prefer in-app webview by default; explicit new-tab action remains available.
   openShortcutWindow(item);
 }
 
@@ -832,6 +853,18 @@ function withRequiredShortcuts(items) {
 async function loadShortcutState() {
   let localItems = [];
   let localWindows = [];
+  let sessionWindows = [];
+
+  // 먼저 sessionStorage의 windows를 읽되, items는 별도로 반드시 복원한다.
+  const sessionKey = "cci_shortcut_session_windows";
+  try {
+    const sessionRaw = sessionStorage.getItem(sessionKey);
+    if (sessionRaw) {
+      const parsed = JSON.parse(sessionRaw);
+      if (Array.isArray(parsed)) sessionWindows = parsed;
+    }
+  } catch {}
+
   try {
     const raw = localStorage.getItem(getShortcutStorageKey());
     if (raw) {
@@ -846,16 +879,20 @@ async function loadShortcutState() {
     const res = await fetch("/api/user/shortcut-state", { credentials: "same-origin" });
     if (res.ok) {
       const data = await res.json();
+      const serverWindows = Array.isArray(data?.windows) ? data.windows : [];
+      const resolvedWindows = sessionWindows.length > 0
+        ? sessionWindows
+        : (serverWindows.length === 0 && localWindows.length > 0 ? localWindows : serverWindows);
       return {
         items: withRequiredShortcuts(data?.items || localItems),
-        windows: Array.isArray(data?.windows) ? data.windows : localWindows,
+        windows: resolvedWindows,
       };
     }
   } catch {}
 
   return {
     items: withRequiredShortcuts(localItems),
-    windows: Array.isArray(localWindows) ? localWindows : [],
+    windows: sessionWindows.length > 0 ? sessionWindows : (Array.isArray(localWindows) ? localWindows : []),
   };
 }
 
@@ -866,6 +903,7 @@ function serializeShortcutWindows() {
     if (!el) return;
     rows.push({
       id,
+      current_url: entry._currentUrl || null,
       left: el.style.left || "",
       top: el.style.top || "",
       width: el.style.width || "",
@@ -874,6 +912,8 @@ function serializeShortcutWindows() {
       is_maximized: el.classList.contains("is-maximized"),
       is_snapped_left: el.classList.contains("is-snapped-left"),
       is_snapped_right: el.classList.contains("is-snapped-right"),
+      is_snapped_top: el.classList.contains("is-snapped-top"),
+      is_snapped_bottom: el.classList.contains("is-snapped-bottom"),
     });
   });
   return rows;
@@ -890,12 +930,26 @@ async function saveShortcutStateToServer() {
   } catch {}
 }
 
+// navigator.sendBeacon: 페이지 언로드 후에도 전송 보장
+function saveShortcutStateOnUnload() {
+  const payload = JSON.stringify({ items: shortcutState.items, windows: serializeShortcutWindows() });
+  try {
+    const blob = new Blob([payload], { type: "application/json" });
+    navigator.sendBeacon("/api/user/shortcut-state-beacon", blob);
+  } catch {}
+}
+
 function saveShortcutItems(immediateServerSync) {
   const payload = {
     items: shortcutState.items,
     windows: serializeShortcutWindows(),
   };
   localStorage.setItem(getShortcutStorageKey(), JSON.stringify(payload));
+  // sessionStorage에도 저장: 다른 탭 이동 후 돌아올 때 창 상태 복원용
+  try {
+    sessionStorage.setItem("cci_shortcut_session_windows", JSON.stringify(payload.windows));
+  } catch {}
+  
   if (shortcutState.serverSaveTimer) {
     clearTimeout(shortcutState.serverSaveTimer);
     shortcutState.serverSaveTimer = null;
@@ -914,8 +968,7 @@ function renderShortcutToolbar() {
   const root = document.getElementById("shortcutToolbarList");
   if (!root) return;
   root.innerHTML = shortcutState.items.map(function (item) {
-    const isExternal = shouldOpenShortcutExternally(item.url);
-    const suffix = item.webview ? "웹뷰 열기" : (isExternal ? "새 탭 열기" : "웹뷰 열기");
+    const suffix = "웹뷰 열기";
     return `<button type="button" class="sc-tb-shortcut-btn" data-shortcut-action="launch" data-shortcut-id="${esc(item.id)}" title="${esc(item.url)} (${suffix})">${esc(item.name)}</button>`;
   }).join("");
 }
@@ -940,8 +993,8 @@ function renderShortcutList() {
             ${item.webview
               ? `<button type="button" data-shortcut-action="launch" data-shortcut-id="${esc(item.id)}">웹뷰로 열기</button>
             <button type="button" class="btn-secondary" data-shortcut-action="open-newtab" data-shortcut-id="${esc(item.id)}">새 탭으로 열기</button>`
-              : `<button type="button" data-shortcut-action="launch" data-shortcut-id="${esc(item.id)}">${shouldOpenShortcutExternally(item.url) ? "새 탭으로 열기" : "열기"}</button>
-            <button type="button" class="btn-secondary" data-shortcut-action="open-webview" data-shortcut-id="${esc(item.id)}">웹뷰로 열기</button>`}
+              : `<button type="button" data-shortcut-action="launch" data-shortcut-id="${esc(item.id)}">웹뷰로 열기</button>
+            <button type="button" class="btn-secondary" data-shortcut-action="open-newtab" data-shortcut-id="${esc(item.id)}">새 탭으로 열기</button>`}
             ${item.fixed ? '<span class="hint">고정 링크</span>' : `<button type="button" class="btn-secondary" data-shortcut-action="edit" data-shortcut-id="${esc(item.id)}">수정</button>
             <button type="button" class="btn-ghost" data-shortcut-action="delete" data-shortcut-id="${esc(item.id)}">삭제</button>`}
           </div>
@@ -968,10 +1021,14 @@ function openShortcutWindow(item, restoreState) {
   const desktop = document.getElementById("shortcutDesktop");
   if (!desktop) return;
 
+  const frameUrl = (restoreState && typeof restoreState === "object" && restoreState.current_url)
+    ? String(restoreState.current_url)
+    : toEmbeddedShortcutUrl(item.url);
+
   const existing = shortcutState.windows.get(item.id);
   if (existing) {
     const winEl = existing.el;
-    winEl.classList.remove("is-minimized", "is-maximized", "is-snapped-left", "is-snapped-right");
+    winEl.classList.remove("is-minimized", "is-maximized", "is-snapped-left", "is-snapped-right", "is-snapped-top", "is-snapped-bottom");
     if (existing._savedRect) {
       winEl.style.left = existing._savedRect.left;
       winEl.style.top = existing._savedRect.top;
@@ -1000,13 +1057,16 @@ function openShortcutWindow(item, restoreState) {
         <button type="button" class="sc-win-btn" data-win-action="external" title="새 탭으로 열기">&#11040;</button>
         <button type="button" class="sc-win-btn" data-win-action="snap-left"  title="왼쪽 반반">&#9001;</button>
         <button type="button" class="sc-win-btn" data-win-action="snap-right" title="오른쪽 반반">&#9002;</button>
+        <button type="button" class="sc-win-btn" data-win-action="snap-top" title="위쪽 반반">&#8593;</button>
+        <button type="button" class="sc-win-btn" data-win-action="snap-bottom" title="아래쪽 반반">&#8595;</button>
         <button type="button" class="sc-win-btn" data-win-action="maximize"   title="최대화">&#9633;</button>
         <button type="button" class="sc-win-btn" data-win-action="minimize"   title="최소화">_</button>
         <button type="button" class="sc-win-btn sc-win-close" data-win-action="close" title="닫기">&times;</button>
       </div>
     </header>
     <div class="shortcut-window-body">
-      <iframe src="${esc(item.url)}" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock allow-top-navigation"></iframe>
+      <iframe src="${esc(frameUrl)}" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+      <div class="win-iframe-shield"></div>
     </div>
   `;
 
@@ -1025,14 +1085,33 @@ function openShortcutWindow(item, restoreState) {
     el.classList.toggle("is-maximized", !!restoreState.is_maximized);
     el.classList.toggle("is-snapped-left", !!restoreState.is_snapped_left);
     el.classList.toggle("is-snapped-right", !!restoreState.is_snapped_right);
+    el.classList.toggle("is-snapped-top", !!restoreState.is_snapped_top);
+    el.classList.toggle("is-snapped-bottom", !!restoreState.is_snapped_bottom);
     const minBtn = el.querySelector('[data-win-action="minimize"]');
     if (minBtn) minBtn.textContent = restoreState.is_minimized ? "\u25A1" : "_";
+    updateSnapHandle();
+    if (restoreState.current_url) entry._currentUrl = String(restoreState.current_url);
+  }
+
+  // iframe 내부 탐색 URL 추적 (같은 오리진만 접근 가능, 크로스 오리진은 무시)
+  const iframeEl = el.querySelector("iframe");
+  if (iframeEl) {
+    iframeEl.addEventListener("load", function () {
+      try {
+        const href = iframeEl.contentWindow?.location?.href;
+        if (href && href !== "about:blank") entry._currentUrl = href;
+      } catch {
+        // cross-origin: 접근 불가, 기존 URL 유지
+      }
+    });
   }
 
   function saveCurRect() {
     if (el.classList.contains("is-maximized") ||
         el.classList.contains("is-snapped-left") ||
-        el.classList.contains("is-snapped-right")) return;
+        el.classList.contains("is-snapped-right") ||
+        el.classList.contains("is-snapped-top") ||
+        el.classList.contains("is-snapped-bottom")) return;
     entry._savedRect = {
       left: el.style.left, top: el.style.top,
       width: el.style.width || "", height: el.style.height || ""
@@ -1040,7 +1119,8 @@ function openShortcutWindow(item, restoreState) {
   }
 
   function restoreSaved() {
-    el.classList.remove("is-maximized", "is-snapped-left", "is-snapped-right");
+    el.querySelector(".snap-edge-handle")?.remove();
+    el.classList.remove("is-maximized", "is-snapped-left", "is-snapped-right", "is-snapped-top", "is-snapped-bottom");
     el.style.resize = "";
     if (entry._savedRect) {
       el.style.left   = entry._savedRect.left;
@@ -1048,6 +1128,75 @@ function openShortcutWindow(item, restoreState) {
       el.style.width  = entry._savedRect.width;
       el.style.height = entry._savedRect.height;
     }
+  }
+
+  // 스냅 에지 드래그 핸들: 현재 스냅 방향에 따라 크기 조절 핸들을 주입
+  function updateSnapHandle() {
+    el.querySelector(".snap-edge-handle")?.remove();
+    let edge = null;
+    if (el.classList.contains("is-snapped-left"))   edge = "right";
+    if (el.classList.contains("is-snapped-right"))  edge = "left";
+    if (el.classList.contains("is-snapped-top"))    edge = "bottom";
+    if (el.classList.contains("is-snapped-bottom")) edge = "top";
+    if (!edge) return;
+
+    const handle = document.createElement("div");
+    handle.className = "snap-edge-handle snap-edge-" + edge;
+    el.appendChild(handle);
+
+    handle.addEventListener("mousedown", function (ev) {
+      ev.stopPropagation();
+      ev.preventDefault();
+      bringWindowToFront(el);
+      handle.classList.add("dragging");
+      const hostRect = desktop.getBoundingClientRect();
+      const startX = ev.clientX;
+      const startY = ev.clientY;
+      const startW = el.offsetWidth;
+      const startH = el.offsetHeight;
+      const hostW = hostRect.width;
+      const hostH = hostRect.height;
+
+      function onMove(mv) {
+        const dx = mv.clientX - startX;
+        const dy = mv.clientY - startY;
+        if (edge === "right") {
+          const newW = Math.max(280, Math.min(hostW - 40, startW + dx));
+          el.style.width = newW + "px";
+          el.style.height = hostH + "px";
+          el.style.left = "0px";
+          el.style.top = "0px";
+        } else if (edge === "left") {
+          const newW = Math.max(280, Math.min(hostW - 40, startW - dx));
+          el.style.width = newW + "px";
+          el.style.height = hostH + "px";
+          el.style.left = (hostW - newW) + "px";
+          el.style.top = "0px";
+        } else if (edge === "bottom") {
+          const newH = Math.max(180, Math.min(hostH - 40, startH + dy));
+          el.style.height = newH + "px";
+          el.style.width = hostW + "px";
+          el.style.left = "0px";
+          el.style.top = "0px";
+        } else if (edge === "top") {
+          const newH = Math.max(180, Math.min(hostH - 40, startH - dy));
+          el.style.height = newH + "px";
+          el.style.width = hostW + "px";
+          el.style.left = "0px";
+          el.style.top = (hostH - newH) + "px";
+        }
+      }
+
+      function onUp() {
+        handle.classList.remove("dragging");
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        saveShortcutItems();
+      }
+
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
   }
 
   el.addEventListener("mousedown", function () { bringWindowToFront(el); });
@@ -1074,7 +1223,7 @@ function openShortcutWindow(item, restoreState) {
       btn.title = "최대화";
     } else {
       saveCurRect();
-      el.classList.remove("is-snapped-left", "is-snapped-right", "is-minimized");
+      el.classList.remove("is-snapped-left", "is-snapped-right", "is-snapped-top", "is-snapped-bottom", "is-minimized");
       el.classList.add("is-maximized");
       btn.title = "복원";
     }
@@ -1084,16 +1233,56 @@ function openShortcutWindow(item, restoreState) {
   el.querySelector('[data-win-action="snap-left"]')?.addEventListener("click", function () {
     if (el.classList.contains("is-snapped-left")) { restoreSaved(); return; }
     saveCurRect();
-    el.classList.remove("is-maximized", "is-snapped-right", "is-minimized");
+    el.classList.remove("is-maximized", "is-snapped-right", "is-snapped-top", "is-snapped-bottom", "is-minimized");
+    const hw = desktop.getBoundingClientRect();
+    el.style.width = Math.round(hw.width / 2) + "px";
+    el.style.height = hw.height + "px";
+    el.style.left = "0px";
+    el.style.top = "0px";
     el.classList.add("is-snapped-left");
+    updateSnapHandle();
     saveShortcutItems();
   });
 
   el.querySelector('[data-win-action="snap-right"]')?.addEventListener("click", function () {
     if (el.classList.contains("is-snapped-right")) { restoreSaved(); return; }
     saveCurRect();
-    el.classList.remove("is-maximized", "is-snapped-left", "is-minimized");
+    el.classList.remove("is-maximized", "is-snapped-left", "is-snapped-top", "is-snapped-bottom", "is-minimized");
+    const hw = desktop.getBoundingClientRect();
+    el.style.width = Math.round(hw.width / 2) + "px";
+    el.style.height = hw.height + "px";
+    el.style.left = Math.round(hw.width / 2) + "px";
+    el.style.top = "0px";
     el.classList.add("is-snapped-right");
+    updateSnapHandle();
+    saveShortcutItems();
+  });
+
+  el.querySelector('[data-win-action="snap-top"]')?.addEventListener("click", function () {
+    if (el.classList.contains("is-snapped-top")) { restoreSaved(); return; }
+    saveCurRect();
+    el.classList.remove("is-maximized", "is-snapped-left", "is-snapped-right", "is-snapped-bottom", "is-minimized");
+    const hw = desktop.getBoundingClientRect();
+    el.style.width = hw.width + "px";
+    el.style.height = Math.round(hw.height / 2) + "px";
+    el.style.left = "0px";
+    el.style.top = "0px";
+    el.classList.add("is-snapped-top");
+    updateSnapHandle();
+    saveShortcutItems();
+  });
+
+  el.querySelector('[data-win-action="snap-bottom"]')?.addEventListener("click", function () {
+    if (el.classList.contains("is-snapped-bottom")) { restoreSaved(); return; }
+    saveCurRect();
+    el.classList.remove("is-maximized", "is-snapped-left", "is-snapped-right", "is-snapped-top", "is-minimized");
+    const hw = desktop.getBoundingClientRect();
+    el.style.width = hw.width + "px";
+    el.style.height = Math.round(hw.height / 2) + "px";
+    el.style.left = "0px";
+    el.style.top = Math.round(hw.height / 2) + "px";
+    el.classList.add("is-snapped-bottom");
+    updateSnapHandle();
     saveShortcutItems();
   });
 
@@ -1107,7 +1296,9 @@ function openShortcutWindow(item, restoreState) {
     // 최대화/스냅 상태에서 드래그 시작하면 일반 모드로 복원
     if (el.classList.contains("is-maximized") ||
         el.classList.contains("is-snapped-left") ||
-        el.classList.contains("is-snapped-right")) {
+        el.classList.contains("is-snapped-right") ||
+        el.classList.contains("is-snapped-top") ||
+        el.classList.contains("is-snapped-bottom")) {
       restoreSaved();
       el.querySelector('[data-win-action="maximize"]') && (el.querySelector('[data-win-action="maximize"]').title = "최대화");
     }
@@ -1139,6 +1330,68 @@ function openShortcutWindow(item, restoreState) {
     if (!dragging) return;
     dragging = false;
     saveShortcutItems();
+  });
+
+  // ── 커스텀 리사이즈 핸들 (8방향) ──────────────────────────────
+  const RESIZE_DIRS = ["n","ne","e","se","s","sw","w","nw"];
+  RESIZE_DIRS.forEach(function (dir) {
+    const h = document.createElement("div");
+    h.className = "win-resize-handle " + dir;
+    el.appendChild(h);
+
+    h.addEventListener("mousedown", function (ev) {
+      if (el.classList.contains("is-maximized") ||
+          el.classList.contains("is-snapped-left") ||
+          el.classList.contains("is-snapped-right") ||
+          el.classList.contains("is-snapped-top") ||
+          el.classList.contains("is-snapped-bottom")) return;
+      ev.stopPropagation();
+      ev.preventDefault();
+      bringWindowToFront(el);
+      document.body.classList.add("win-resizing");
+
+      const startX = ev.clientX;
+      const startY = ev.clientY;
+      const startW = el.offsetWidth;
+      const startH = el.offsetHeight;
+      const startLeft = el.offsetLeft;
+      const startTop  = el.offsetTop;
+      const MIN_W = 320, MIN_H = 180;
+
+      function onMove(mv) {
+        const dx = mv.clientX - startX;
+        const dy = mv.clientY - startY;
+        let newW = startW, newH = startH, newL = startLeft, newT = startTop;
+        if (dir.includes("e")) newW = Math.max(MIN_W, startW + dx);
+        if (dir.includes("s")) newH = Math.max(MIN_H, startH + dy);
+        if (dir.includes("w")) {
+          newW = Math.max(MIN_W, startW - dx);
+          newL = startLeft + startW - newW;
+          newL = Math.max(0, newL);
+          newW = startLeft + startW - newL;
+        }
+        if (dir.includes("n")) {
+          newH = Math.max(MIN_H, startH - dy);
+          newT = startTop + startH - newH;
+          newT = Math.max(0, newT);
+          newH = startTop + startH - newT;
+        }
+        el.style.width  = newW + "px";
+        el.style.height = newH + "px";
+        el.style.left   = newL + "px";
+        el.style.top    = newT + "px";
+      }
+
+      function onUp() {
+        document.body.classList.remove("win-resizing");
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        saveShortcutItems();
+      }
+
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
   });
 
   saveShortcutItems();
@@ -1311,7 +1564,24 @@ bindOverviewRecentRangeControls();
 bindNoticeTabControls();
 setInterval(refreshOverviewQaPies, 60000);
 setInterval(refreshNoticeCard, 60000);
-window.addEventListener("beforeunload", function () { saveShortcutItems(true); });
+// beforeunload 는 bfcache 를 비활성화하므로 제거 — pagehide 가 대신 처리
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "hidden") { 
+    saveShortcutItems(true); 
+    saveShortcutStateOnUnload();
+    try { sessionStorage.setItem("cci_shortcut_session_windows", JSON.stringify(serializeShortcutWindows())); } catch {}
+  }
+});
+window.addEventListener("pagehide", function () { 
+  saveShortcutItems(true); 
+  saveShortcutStateOnUnload();
+  try { sessionStorage.setItem("cci_shortcut_session_windows", JSON.stringify(serializeShortcutWindows())); } catch {}
+});
+// bfcache 복원 감지: DOM·iframe 이 그대로 살아있으므로 재초기화 불필요, 뷰 상태만 보정
+window.addEventListener("pageshow", function (ev) {
+  if (!ev.persisted) return;
+  if (location.hash === "#shortcutManagerSection") showView("shortcuts");
+});
 
 // ── 뷰 전환: 개요 ↔ 바로가기 ──────────────────────────────
 function showView(view) {
@@ -1320,11 +1590,17 @@ function showView(view) {
   if (view === "shortcuts") {
     if (mainContent) mainContent.hidden = true;
     if (shortcutPage) shortcutPage.hidden = false;
-    history.replaceState(null, "", "/#shortcutManagerSection");
+    document.body.classList.add("shortcut-fullscreen");
+    if (location.pathname !== "/shortcuts" || location.hash) {
+      history.replaceState(null, "", "/shortcuts");
+    }
   } else {
     if (mainContent) mainContent.hidden = false;
     if (shortcutPage) shortcutPage.hidden = true;
-    history.replaceState(null, "", "/");
+    document.body.classList.remove("shortcut-fullscreen");
+    if (location.pathname !== "/" || location.hash) {
+      history.replaceState(null, "", "/");
+    }
   }
 }
 
@@ -1339,6 +1615,6 @@ document.getElementById("shortcutBackBtn")?.addEventListener("click", function (
   showView("overview");
 });
 
-if (location.hash === "#shortcutManagerSection") {
+if (location.pathname === "/shortcuts" || location.hash === "#shortcutManagerSection") {
   showView("shortcuts");
 }

@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QA Full_TC 관리</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260330b" />
+</head>
+<body class="has-side-nav qa-full-tc-page">
+  {% include "components/side_nav.html" %}
+  <main class="container">
+    <header class="topbar topbar-brand">
+      <div class="brand-left">
+        <div class="brand-mark" aria-hidden="true">
+          <span class="dot dot-a"></span><span class="dot dot-b"></span><span class="dot dot-c"></span>
+        </div>
+        <div>
+          <p class="eyebrow">Enterprise QA Orchestration</p>
+          <h1>Full_TC 관리</h1>
+        </div>
+      </div>
+      <nav class="topnav">
+        <span id="topbarUserName" class="topbar-username" hidden></span>
+        <span id="topbarCountdown" class="topbar-countdown" hidden></span>
+        <a class="navlink btn-ghost" href="/qa">QA 대시보드</a>
+        <a class="navlink btn-ghost" href="/upload/full-tc" data-requires-admin="true">Full_TC 업로드</a>
+        <a class="navlink btn-ghost" href="/upload/defectlist-raw" data-requires-admin="true">Defect 업로드</a>
+        <form method="post" action="/auth/logout" style="margin:0;display:contents;">
+          <button class="navlink" type="submit">로그아웃</button>
+        </form>
+      </nav>
+    </header>
+
+    <!-- 데이터 소스 + 새로고침 바 -->
+    <div class="ftc-source-bar card">
+      <div class="ftc-source-info">
+        <i class="fa fa-database" style="color:#6b91c0;"></i>
+        <span id="qaFullTcHint" class="hint">Full_TC 파일 통계를 불러오는 중...</span>
+        <span id="qaFullTcTransportHint" class="ftc-transport-pill">연결 준비중</span>
+      </div>
+      <div class="button-row">
+        <button type="button" id="qaFullTcRefreshBtn" class="btn-secondary btn-sm"><i class="fa fa-rotate-right"></i> 새로고침</button>
+        <a class="navlink btn-ghost btn-sm" href="/upload/full-tc" data-requires-admin="true">업로드</a>
+      </div>
+    </div>
+    <div id="qaFullTcIntegrityAlert" class="ftc-integrity-alert" hidden>데이터 무결성 경고</div>
+    <div id="qaFullTcLoadAlert" class="ftc-load-alert" hidden>데이터 로드 안내</div>
+
+    <!-- ── 탭 패널: 컴포넌트 요약 ── -->
+    <div class="ftc-panel" id="panel-summary">
+      <div class="ftc-summary-layout">
+        <div class="card">
+          <div class="ftc-panel-head">
+            <h2><i class="fa fa-layer-group"></i> 컴포넌트 상태</h2>
+            <span class="hint">컴포넌트별 총량, Fail, 지라 연결 현황</span>
+          </div>
+          <div id="qaFullTcCompCards" class="ftc-comp-cards"></div>
+        </div>
+        <div class="card">
+          <div class="ftc-panel-head">
+            <h2><i class="fa fa-list"></i> 컴포넌트 목차</h2>
+            <span id="qaFullTcComponentTocHint" class="hint"></span>
+          </div>
+          <div id="qaFullTcComponentToc" class="ftc-component-toc"></div>
+        </div>
+        <div class="card card-table">
+          <div class="ftc-panel-head">
+            <h2><i class="fa fa-chart-line"></i> 컴포넌트별 KOA/HOA/GOA 결과 매트릭스</h2>
+            <span id="qaFullTcComponentResultHint" class="hint"></span>
+          </div>
+          <div class="table-wrap">
+            <table class="ftc-table" id="qaFullTcComponentResultTable">
+              <thead>
+                <tr>
+                  <th rowspan="2">컴포넌트</th>
+                  <th colspan="3">KOA</th>
+                  <th colspan="3">HOA</th>
+                  <th colspan="3">GOA</th>
+                </tr>
+                <tr>
+                  <th>결과</th>
+                  <th>AOS</th>
+                  <th>iOS</th>
+                  <th>결과</th>
+                  <th>AOS</th>
+                  <th>iOS</th>
+                  <th>결과</th>
+                  <th>AOS</th>
+                  <th>iOS</th>
+                </tr>
+              </thead>
+              <tbody id="qaFullTcComponentResultBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card card-table">
+          <div class="ftc-panel-head">
+            <h2><i class="fa fa-chart-column"></i> 브랜드별 결과 통계</h2>
+            <span id="qaFullTcBrandHint" class="hint"></span>
+          </div>
+          <div class="table-wrap">
+            <table class="ftc-table" id="qaFullTcBrandTable">
+              <thead>
+                <tr>
+                  <th>브랜드</th>
+                  <th>TC 행 수</th>
+                  <th>결과 셀 수</th>
+                  <th>FAIL</th>
+                  <th>PASS</th>
+                  <th>N/T</th>
+                  <th>N/A</th>
+                  <th>기타</th>
+                  <th>Fail 비율</th>
+                  <th>컴포넌트</th>
+                </tr>
+              </thead>
+              <tbody id="qaFullTcBrandBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card card-table">
+          <div class="ftc-panel-head">
+            <h2><i class="fa fa-sitemap"></i> 브랜드별 PASS 카테고리 현황</h2>
+            <span id="qaFullTcBrandCategoryHint" class="hint"></span>
+          </div>
+          <div class="table-wrap">
+            <table class="ftc-table" id="qaFullTcBrandCategoryTable">
+              <thead>
+                <tr>
+                  <th>브랜드</th>
+                  <th>컴포넌트</th>
+                  <th>카테고리</th>
+                  <th>대분류</th>
+                  <th>중분류</th>
+                  <th>소분류</th>
+                  <th>PASS</th>
+                  <th>FAIL</th>
+                  <th>N/T</th>
+                  <th>N/A</th>
+                  <th>기타</th>
+                  <th>PASS 비율</th>
+                </tr>
+              </thead>
+              <tbody id="qaFullTcBrandCategoryBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 탭 패널: 카테고리 분석 ── -->
+    <div class="ftc-panel ftc-panel-hidden" id="panel-group">
+      <div class="card">
+        <div class="ftc-panel-head">
+          <h2><i class="fa fa-table-cells-large"></i> 컴포넌트 카테고리 한눈표</h2>
+          <span id="qaFullTcGroupHint" class="hint"></span>
+        </div>
+        <div class="ftc-category-toolbar">
+          <label class="ftc-category-search-wrap" for="qaFullTcCategorySearch">
+            <i class="fa fa-magnifying-glass"></i>
+            <input id="qaFullTcCategorySearch" type="text" class="ftc-category-search" placeholder="컴포넌트/대중소분류 검색" />
+          </label>
+          <div class="ftc-category-toolbar-actions">
+            <button type="button" id="qaFullTcCategoryTop100" class="btn-secondary btn-sm"><i class="fa fa-ranking-star"></i> TOP 100</button>
+            <button type="button" id="qaFullTcCategoryShowAll" class="btn-secondary btn-sm"><i class="fa fa-list"></i> 전체 보기</button>
+          </div>
+        </div>
+        <div id="qaFullTcCategoryStats" class="ftc-category-stats"></div>
+        <div id="qaFullTcCategoryComponentCards" class="ftc-category-component-cards"></div>
+        <div class="table-wrap ftc-category-table-wrap">
+          <table class="ftc-table" id="qaFullTcCategoryTable">
+            <thead>
+              <tr>
+                <th>순위</th>
+                <th>컴포넌트</th>
+                <th>대분류</th>
+                <th>중분류</th>
+                <th>소분류</th>
+                <th>건수</th>
+                <th>비중</th>
+              </tr>
+            </thead>
+            <tbody id="qaFullTcCategoryBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 탭 패널: LABEL 통계 ── -->
+    <div class="ftc-panel ftc-panel-hidden" id="panel-label">
+      <div class="card">
+        <div class="ftc-panel-head">
+          <h2><i class="fa fa-bookmark"></i> LABEL 목차</h2>
+          <span id="qaFullTcLabelTocHint" class="hint"></span>
+        </div>
+        <div id="qaFullTcLabelToc" class="ftc-label-toc"></div>
+      </div>
+      <div class="card card-table">
+        <div class="ftc-panel-head">
+          <h2><i class="fa fa-tag"></i> LABEL 통계</h2>
+          <span id="qaFullTcLabelHint" class="hint"></span>
+        </div>
+        <div class="ftc-label-toolbar">
+          <label class="ftc-category-search-wrap" for="qaFullTcLabelSearch">
+            <i class="fa fa-magnifying-glass"></i>
+            <input id="qaFullTcLabelSearch" type="text" class="ftc-category-search" placeholder="LABEL 이름 검색" />
+          </label>
+          <div class="ftc-category-toolbar-actions">
+            <button type="button" id="qaFullTcLabelTop100" class="btn-secondary btn-sm"><i class="fa fa-ranking-star"></i> TOP 100</button>
+            <button type="button" id="qaFullTcLabelShowAll" class="btn-secondary btn-sm"><i class="fa fa-list"></i> 전체 보기</button>
+          </div>
+        </div>
+        <div id="qaFullTcLabelStats" class="ftc-category-stats"></div>
+        <div id="qaFullTcLabelTopCards" class="ftc-label-top-cards"></div>
+        <div class="table-wrap">
+          <table class="ftc-table" id="qaFullTcLabelTable">
+            <thead>
+              <tr>
+                <th>순위</th>
+                <th>LABEL</th>
+                <th>TC 건수</th>
+                <th>Task 건수</th>
+                <th>기본 진행율</th>
+                <th>KOA 결과(건수)</th>
+                <th>HOA 결과(건수)</th>
+                <th>GOA 결과(건수)</th>
+                <th>PASS%</th>
+                <th>FAIL%</th>
+                <th>N/T%</th>
+                <th>N/A%</th>
+                <th>공란%</th>
+                <th>진행률</th>
+                <th>비중</th>
+              </tr>
+            </thead>
+            <tbody id="qaFullTcLabelBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card card-table">
+        <div class="ftc-panel-head">
+          <h2><i class="fa fa-list-check"></i> 선택 LABEL 중/소메뉴 진행율</h2>
+          <span id="qaFullTcLabelRowsHint" class="hint"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="ftc-table" id="qaFullTcLabelRowsTable">
+            <thead>
+              <tr>
+                <th>컴포넌트</th>
+                <th>중분류</th>
+                <th>소분류</th>
+                <th>TC 건수</th>
+                <th>PASS%</th>
+                <th>FAIL%</th>
+                <th>N/T%</th>
+                <th>N/A%</th>
+                <th>공란%</th>
+                <th>진행률</th>
+              </tr>
+            </thead>
+            <tbody id="qaFullTcLabelRowsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 탭 패널: 상세 조회 ── -->
+    <div class="ftc-panel ftc-panel-hidden" id="panel-detail">
+      <div class="card card-table">
+        <div class="ftc-panel-head">
+          <h2><i class="fa fa-table"></i> 원본 상세</h2>
+          <div class="ftc-col-toggles" id="qaDetailColToggles">
+            <span class="ftc-col-toggle-label">열 표시:</span>
+            <label class="ftc-col-toggle-label"><input type="checkbox" data-colgroup="basic" checked /> 기본정보</label>
+            <label class="ftc-col-toggle-label"><input type="checkbox" data-colgroup="tc" /> TC 내용</label>
+            <label class="ftc-col-toggle-label"><input type="checkbox" data-colgroup="result" checked /> 결과값</label>
+            <label class="ftc-col-toggle-label"><input type="checkbox" data-colgroup="issue" checked /> 이슈/LABEL</label>
+          </div>
+          <span id="qaFullTcDetailHint" class="hint"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="ftc-table ftc-detail-table" id="qaFullTcDetailTable">
+            <thead>
+              <tr>
+                <!-- 고정 열 -->
+                <th class="ftc-sticky-col s0">컴포넌트</th>
+                <th class="ftc-sticky-col s1">TC ID</th>
+                <th class="ftc-sticky-col s2">행</th>
+                <!-- 기본정보 그룹 [data-colgroup="basic"] -->
+                <th data-colgroup="basic">카테고리(C)</th>
+                <th data-colgroup="basic">대분류(D)</th>
+                <th data-colgroup="basic">중분류(E)</th>
+                <th data-colgroup="basic">소분류(F)</th>
+                <th data-colgroup="basic">향지</th>
+                <th data-colgroup="basic">브랜드</th>
+                <th data-colgroup="basic">우선순위</th>
+                <!-- TC 내용 그룹 [data-colgroup="tc"] hidden by default -->
+                <th data-colgroup="tc">Pre-condition</th>
+                <th data-colgroup="tc">TC procedure</th>
+                <th data-colgroup="tc">Expected result</th>
+                <!-- 결과값 그룹 [data-colgroup="result"] -->
+                <th data-colgroup="result" class="th-r-base">N(기본)</th>
+                <th data-colgroup="result" class="th-r-koa">KOA</th>
+                <th data-colgroup="result" class="th-r-koa">KOA AOS</th>
+                <th data-colgroup="result" class="th-r-koa">KOA iOS</th>
+                <th data-colgroup="result" class="th-r-hoa">HOA</th>
+                <th data-colgroup="result" class="th-r-hoa">HOA AOS</th>
+                <th data-colgroup="result" class="th-r-hoa">HOA iOS</th>
+                <th data-colgroup="result" class="th-r-goa">GOA</th>
+                <th data-colgroup="result" class="th-r-goa">GOA AOS</th>
+                <th data-colgroup="result" class="th-r-goa">GOA iOS</th>
+                <!-- 이슈/LABEL 그룹 [data-colgroup="issue"] -->
+                <th data-colgroup="issue">Closed 지라</th>
+                <th data-colgroup="issue">지라 NO.</th>
+                <th data-colgroup="issue">NT/NA 사유</th>
+                <th data-colgroup="issue">NT/NA 필터</th>
+                <th data-colgroup="issue">LABEL</th>
+                <th data-colgroup="issue">수정</th>
+              </tr>
+            </thead>
+            <tbody id="qaFullTcDetailBody"></tbody>
+          </table>
+        </div>
+        <div id="qaFullTcDetailPagination" class="ftc-pagination"></div>
+      </div>
+    </div>
+
+    <!-- ── 탭 패널: Defect 대조 ── -->
+    <div class="ftc-panel ftc-panel-hidden" id="panel-defect">
+      <!-- Defect 요약 카드 -->
+      <div id="defectMatchKpi" class="ftc-defect-kpi"></div>
+      <div class="card card-table">
+        <div class="ftc-panel-head">
+          <h2><i class="fa fa-shield-halved"></i> 배치 정책 감사</h2>
+          <span id="defectAuditHint" class="hint"></span>
+        </div>
+        <div id="defectAuditKpi" class="ftc-defect-audit-grid"></div>
+      </div>
+      <!-- Defect 조회 툴바 -->
+      <div class="card ftc-defect-toolbar">
+        <div class="ftc-filter-inline">
+          <input id="defectSearch" type="text" class="ftc-search-input" placeholder="지라 키, 상태, 우선순위 검색" />
+          <input id="defectRangeMin" type="text" class="ftc-search-input ftc-range-input" placeholder="최소 Key (기본: SPAQA-12000)" />
+          <span class="ftc-toolbar-meta">기본 최소 Key: <strong>SPAQA-12000</strong></span>
+          <div class="ftc-defect-status-filter" id="defectStatusFilter">
+            <span class="ftc-col-toggle-label">상태 필터:</span>
+            <button class="ftc-status-chip active" data-status="all">전체</button>
+            <button class="ftc-status-chip is-found" data-status="found">반영됨</button>
+            <button class="ftc-status-chip is-missing" data-status="missing">미반영</button>
+          </div>
+          <div class="ftc-defect-actions">
+            <button id="defectExportXlsxBtn" class="btn-secondary btn-sm"><i class="fa fa-file-excel"></i> XLSX 다운로드</button>
+            <button id="defectExportHtmlBtn" class="btn-secondary btn-sm"><i class="fa fa-file-code"></i> HTML 다운로드</button>
+            <button id="defectResetBtn" class="btn-secondary btn-sm"><i class="fa fa-filter-circle-xmark"></i> 필터 초기화</button>
+            <button id="defectRefreshBtn" class="btn-secondary btn-sm"><i class="fa fa-rotate-right"></i> 조회 새로고침</button>
+          </div>
+        </div>
+        <div id="defectRangeSummary" class="hint ftc-defect-range-summary"></div>
+      </div>
+      <div class="card card-table">
+        <div class="ftc-panel-head">
+          <h2><i class="fa fa-bug"></i> DefectList_Raw × Full_TC 키 대조</h2>
+          <span id="defectTableHint" class="hint"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="ftc-table" id="defectMatchTable">
+            <thead id="defectMatchHead"></thead>
+            <tbody id="defectMatchBody"></tbody>
+          </table>
+        </div>
+        <div id="defectMatchPagination" class="ftc-pagination"></div>
+      </div>
+    </div>
+
+  </main>
+  <div id="toastStack" class="toast-stack"></div>
+  <script src="/static/side_nav.js?v=20260330a"></script>
+  <script src="/static/qa_full_tc.js?v=20260403l"></script>
+</body>
+</html>

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>게임 센터</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260320f" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260324n" />
   <script src="/static/auto_logout.js"></script>
   <style>
     html, body {
@@ -52,6 +52,15 @@
       color: #fff;
       border-color: #0f3b6e;
     }
+    .game-tab-external {
+      border-color: #5c7a3e;
+      color: #2d5016;
+      background: #f0fce8;
+    }
+    .game-tab-external:hover {
+      background: #d8f5b8;
+      border-color: #4a6830;
+    }
     .game-frame-wrap {
       --frame-min-height: 560px;
       --frame-preferred-height: 74vh;
@@ -69,6 +78,16 @@
       --frame-preferred-height: 82vh;
       --frame-max-height: 860px;
     }
+    .game-frame-wrap.game-swipe {
+      --frame-min-height: 620px;
+      --frame-preferred-height: 80vh;
+      --frame-max-height: 820px;
+    }
+    .game-frame-wrap.game-webteam {
+      --frame-min-height: 760px;
+      --frame-preferred-height: 88vh;
+      --frame-max-height: 1200px;
+    }
     .game-frame {
       width: 100%;
       height: clamp(var(--frame-min-height), var(--frame-preferred-height), var(--frame-max-height));
@@ -83,6 +102,16 @@
         --frame-min-height: 600px;
         --frame-preferred-height: 78vh;
         --frame-max-height: 760px;
+      }
+      .game-frame-wrap.game-swipe {
+        --frame-min-height: 560px;
+        --frame-preferred-height: 74vh;
+        --frame-max-height: 740px;
+      }
+      .game-frame-wrap.game-webteam {
+        --frame-min-height: 700px;
+        --frame-preferred-height: 82vh;
+        --frame-max-height: 980px;
       }
     }
     .game-hub-note {
@@ -105,11 +134,9 @@
         </div>
       </div>
       <nav class="topnav">
-        <a class="navlink active" href="/games">게임</a>
-        <a class="navlink" href="/">개요</a>
-        <span class="topbar-nav-sep" aria-hidden="true"></span>
         <span id="topbarUserName" class="topbar-username" hidden></span>
         <span id="topbarCountdown" class="topbar-countdown" hidden></span>
+        <a class="navlink btn-ghost" href="/mypage" style="white-space:nowrap;">마이페이지</a>
         <form method="post" action="/auth/logout" style="margin:0;display:contents;">
           <button class="navlink" type="submit" style="white-space:nowrap;">로그아웃</button>
         </form>
@@ -119,16 +146,19 @@
     <section class="card">
       <h2>미니게임 플레이</h2>
       <div class="game-hub">
-        <h3 class="game-hub-title">yjyoon-dev/javascript-mini-game</h3>
+        <h3 class="game-hub-title">커뮤니티 미니게임 모음</h3>
         <p class="game-hub-desc">아래 탭에서 게임을 선택하면 이 페이지 안에서 바로 플레이할 수 있습니다.</p>
         <div class="game-tabs" role="tablist" aria-label="게임 선택">
           <button class="game-tab active" type="button" data-game-url="https://yjyoon-dev.github.io/games/2048.html">2048</button>
           <button class="game-tab" type="button" data-game-url="https://yjyoon-dev.github.io/games/tetris.html">Tetris</button>
           <button class="game-tab" type="button" data-game-url="https://yjyoon-dev.github.io/games/snake.html">Snake</button>
-          <a class="btn-ghost" href="https://github.com/yjyoon-dev/javascript-mini-game" target="_blank" rel="noopener noreferrer">원본 저장소</a>
+          <button class="game-tab" type="button" data-game-url="https://minseok128.github.io/2020-SwipeBrickBreaker-JS/">Swipe Brick Breaker</button>
+          <button class="game-tab" type="button" data-game-url="https://survivorlike.netlify.app/">Survivor</button>
+          <button class="game-tab" type="button" data-game-url="/static/webteam/index.html">🎮 WebTeam Project</button>
+          <button class="game-tab" type="button" data-game-url="/static/dokdo-public/client/build/index.html?v=20260325b">🏝 Dokdo Public</button>
         </div>
         <div class="game-frame-wrap">
-          <iframe id="gameFrame" class="game-frame" title="Mini game" src="https://yjyoon-dev.github.io/games/2048.html" allow="fullscreen" tabindex="0" scrolling="no"></iframe>
+          <iframe id="gameFrame" class="game-frame" title="Mini game" src="https://yjyoon-dev.github.io/games/2048.html" allow="fullscreen" tabindex="0" scrolling="auto"></iframe>
         </div>
         <p class="game-hub-note">네트워크 환경에 따라 첫 로딩이 수 초 걸릴 수 있습니다.</p>
       </div>
@@ -158,9 +188,19 @@
         return String(currentGameUrl || "").includes("/games/tetris.html");
       }
 
+      function isSwipeBrickBreakerActive() {
+        return String(currentGameUrl || "").includes("/2020-SwipeBrickBreaker-JS/");
+      }
+
+      function isWebTeamActive() {
+        return String(currentGameUrl || "").includes("/static/webteam/index.html");
+      }
+
       function refreshGameFrameMode() {
         if (frameWrap) {
           frameWrap.classList.toggle("game-tetris", isTetrisActive());
+          frameWrap.classList.toggle("game-swipe", isSwipeBrickBreakerActive());
+          frameWrap.classList.toggle("game-webteam", isWebTeamActive());
         }
       }
 

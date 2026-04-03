@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master", "develop"]
+  pull_request:
+    branches: ["main", "master", "develop"]
+  workflow_dispatch:
+
+jobs:
+  backend-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cci-auto-orchestrator
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install ruff
+
+      - name: Lint (ruff)
+        run: |
+          ruff check server/app/main.py tests
+
+      - name: Syntax compile check
+        run: |
+          python -m py_compile server/app/main.py
+
+      - name: Smoke import check
+        run: |
+          python - <<'PY'
+          import importlib
+          m = importlib.import_module('server.app.main')
+          assert hasattr(m, 'app')
+          print('import_ok')
+          PY
+
+      - name: Run tests
+        run: |
+          pytest -q tests

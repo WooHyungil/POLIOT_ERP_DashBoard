@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>마이페이지 | CCI</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260320k" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260324n" />
 </head>
 <body class="has-side-nav">
   {% include "components/side_nav.html" %}
@@ -20,10 +20,6 @@
         </div>
       </div>
       <nav class="topnav">
-        <a class="navlink" href="/">개요</a>
-        <a class="navlink" href="/manage">관리</a>
-        <a class="navlink" href="/qa">QA 대시보드</a>
-        <span class="topbar-nav-sep" aria-hidden="true"></span>
         <span id="topbarUserName" class="topbar-username" hidden></span>
         <span id="topbarCountdown" class="topbar-countdown" hidden></span>
         <a class="navlink active" href="/mypage" style="white-space:nowrap;">마이페이지</a>
@@ -179,9 +175,21 @@
                   이름
                   <input id="mypageName" type="text" placeholder="홍길동" maxlength="60" />
                 </label>
+                <label>
+                  전화번호
+                  <input id="mypagePhone" type="tel" placeholder="010-0000-0000" maxlength="40" pattern="^(?:\+?\d[\d\-\s]{7,18}\d)$" title="전화번호 형식이 올바르지 않습니다. 예: 010-1234-5678" />
+                </label>
+                <label>
+                  직책/소속
+                  <input id="mypageTitle" type="text" placeholder="예: QA개발팀 / 책임" maxlength="60" />
+                </label>
+                <label>
+                  생년월일
+                  <input id="mypageBirth" type="text" placeholder="YYYY-MM-DD" maxlength="30" pattern="^\d{4}-\d{2}-\d{2}$" title="YYYY-MM-DD 형식으로 입력해 주세요." />
+                </label>
                 <label class="full-span">
-                  계정 정보 (소속 / 직책)
-                  <input id="mypageAddress" type="text" placeholder="예: QA개발팀 / 책임" maxlength="200" />
+                  주소
+                  <input id="mypageAddress" type="text" placeholder="서울시 강남구..." maxlength="160" />
                 </label>
               </div>
             </div>
@@ -192,14 +200,14 @@
                 <label>
                   새 비밀번호
                   <div class="mypage-password-wrap">
-                    <input id="mypagePw1" type="password" placeholder="8자 이상" autocomplete="new-password" minlength="8" maxlength="100" />
+                    <input id="mypagePw1" type="password" placeholder="8~100자, 영문/숫자/특수문자 포함" autocomplete="new-password" minlength="8" maxlength="100" pattern="^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$" title="영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~100자로 입력해 주세요." />
                     <button type="button" class="mypage-ghost-icon-btn" id="mypageTogglePw1"><i class="fas fa-eye"></i></button>
                   </div>
                 </label>
                 <label>
                   비밀번호 확인
                   <div class="mypage-password-wrap">
-                    <input id="mypagePw2" type="password" placeholder="동일하게 입력" autocomplete="new-password" minlength="8" maxlength="100" />
+                    <input id="mypagePw2" type="password" placeholder="동일하게 입력" autocomplete="new-password" minlength="8" maxlength="100" pattern="^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$" title="영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~100자로 입력해 주세요." />
                     <button type="button" class="mypage-ghost-icon-btn" id="mypageTogglePw2"><i class="fas fa-eye"></i></button>
                   </div>
                 </label>
@@ -224,6 +232,6 @@
   </main>
 
   <script src="/static/side_nav.js?v=20260319c"></script>
-  <script src="/static/mypage.js?v=20260320a"></script>
+  <script src="/static/mypage.js?v=20260326c"></script>
 </body>
 </html>

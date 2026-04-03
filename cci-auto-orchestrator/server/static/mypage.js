@@ -1,4 +1,21 @@
 (function () {
+  const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$/;
+  const PHONE_REGEX = /^(?:\+?\d[\d\-\s]{7,18}\d)$/;
+  const BIRTH_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+  const PASSWORD_RULE_TEXT = "비밀번호는 8~100자이며, 영문/숫자/특수문자를 각각 1개 이상 포함해야 합니다.";
+
+  function isValidBirthDate(value) {
+    const text = String(value || "").trim();
+    if (!text) return true;
+    if (!BIRTH_REGEX.test(text)) return false;
+    const [yearText, monthText, dayText] = text.split("-");
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
+    const d = new Date(year, month - 1, day);
+    return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day;
+  }
+
   function byId(id) {
     return document.getElementById(id);
   }
@@ -7,11 +24,14 @@
     user: null,
     schedules: [],
     shortcutState: null,
-    initialProfile: { name: "", address: "" },
+    initialProfile: { name: "", phone: "", title: "", birth: "", address: "" },
   };
 
   const emailEl = byId("mypageEmail");
   const nameEl = byId("mypageName");
+  const phoneEl = byId("mypagePhone");
+  const titleEl = byId("mypageTitle");
+  const birthEl = byId("mypageBirth");
   const addressEl = byId("mypageAddress");
   const flashEl = byId("mypageFlash");
   const formEl = byId("mypageForm");
@@ -46,10 +66,20 @@
 
   function computeProfilePercent(user) {
     let score = 0;
-    if (escText(user?.email)) score += 34;
-    if (escText(user?.name)) score += 33;
-    if (escText(user?.address)) score += 33;
-    return Math.min(score, 100);
+    let total = 0;
+    if (escText(user?.email)) score += 20;
+    total += 20;
+    if (escText(user?.name)) score += 20;
+    total += 20;
+    if (escText(user?.phone)) score += 15;
+    total += 15;
+    if (escText(user?.title)) score += 15;
+    total += 15;
+    if (escText(user?.birth)) score += 15;
+    total += 15;
+    if (escText(user?.address)) score += 15;
+    total += 15;
+    return Math.min(Math.round(score / total * 100), 100);
   }
 
   function passwordStrength(password) {
@@ -78,6 +108,9 @@
     const profileUser = state.user || {};
     if (emailEl) emailEl.value = escText(profileUser.email);
     if (nameEl) nameEl.value = escText(profileUser.name);
+    if (phoneEl) phoneEl.value = escText(profileUser.phone);
+    if (titleEl) titleEl.value = escText(profileUser.title);
+    if (birthEl) birthEl.value = escText(profileUser.birth);
     if (addressEl) addressEl.value = escText(profileUser.address);
 
     byId("mypageEmailText").textContent = escText(profileUser.email) || "-";
@@ -110,6 +143,9 @@
 
     state.initialProfile = {
       name: escText(profileUser.name),
+      phone: escText(profileUser.phone),
+      title: escText(profileUser.title),
+      birth: escText(profileUser.birth),
       address: escText(profileUser.address),
     };
     syncSaveButtonState();
@@ -162,6 +198,9 @@
   function syncSaveButtonState() {
     if (!saveBtn) return;
     const changed = escText(nameEl?.value) !== state.initialProfile.name
+      || escText(phoneEl?.value) !== state.initialProfile.phone
+      || escText(titleEl?.value) !== state.initialProfile.title
+      || escText(birthEl?.value) !== state.initialProfile.birth
       || escText(addressEl?.value) !== state.initialProfile.address
       || escText(byId("mypagePw1")?.value)
       || escText(byId("mypagePw2")?.value);
@@ -198,6 +237,23 @@
 
   async function saveProfile(ev) {
     ev.preventDefault();
+    if (!escText(nameEl?.value)) {
+      setFlash("이름은 필수 입력입니다.", "error");
+      nameEl?.focus();
+      return;
+    }
+    const phoneValue = escText(phoneEl?.value);
+    const birthValue = escText(birthEl?.value);
+    if (phoneValue && !PHONE_REGEX.test(phoneValue)) {
+      setFlash("전화번호 형식이 올바르지 않습니다. 예: 010-1234-5678", "error");
+      phoneEl?.focus();
+      return;
+    }
+    if (!isValidBirthDate(birthValue)) {
+      setFlash("생년월일 형식이 올바르지 않습니다. YYYY-MM-DD 형식으로 입력해 주세요.", "error");
+      birthEl?.focus();
+      return;
+    }
     const password1 = byId("mypagePw1").value;
     const password2 = byId("mypagePw2").value;
     if (password1 || password2) {
@@ -205,14 +261,17 @@
         setFlash("비밀번호가 일치하지 않습니다.", "error");
         return;
       }
-      if (password1.length < 8) {
-        setFlash("비밀번호는 8자 이상이어야 합니다.", "error");
+      if (!PASSWORD_REGEX.test(password1)) {
+        setFlash(PASSWORD_RULE_TEXT, "error");
         return;
       }
     }
 
     const payload = {
       name: escText(nameEl.value),
+      phone: escText(phoneEl.value),
+      title: escText(titleEl.value),
+      birth: escText(birthEl.value),
       address: escText(addressEl.value),
     };
     if (password1) payload.password = password1;
@@ -250,6 +309,9 @@
 
   function resetFormToInitial() {
     if (nameEl) nameEl.value = state.initialProfile.name;
+    if (phoneEl) phoneEl.value = state.initialProfile.phone;
+    if (titleEl) titleEl.value = state.initialProfile.title;
+    if (birthEl) birthEl.value = state.initialProfile.birth;
     if (addressEl) addressEl.value = state.initialProfile.address;
     byId("mypagePw1").value = "";
     byId("mypagePw2").value = "";
@@ -269,6 +331,9 @@
   function bindEvents() {
     formEl?.addEventListener("submit", saveProfile);
     nameEl?.addEventListener("input", syncSaveButtonState);
+    phoneEl?.addEventListener("input", syncSaveButtonState);
+    titleEl?.addEventListener("input", syncSaveButtonState);
+    birthEl?.addEventListener("input", syncSaveButtonState);
     addressEl?.addEventListener("input", syncSaveButtonState);
     byId("mypagePw1")?.addEventListener("input", function () {
       updatePasswordStrength();

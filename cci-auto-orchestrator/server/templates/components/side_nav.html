@@ -4,9 +4,13 @@
 	<!-- 주 메뉴 -->
 	<nav class="side-nav-menu">
 		<!-- 개요 -->
-		<a class="side-nav-link" data-path="/" href="/" title="대시보드 개요">
+		<a class="side-nav-link" data-path="/" data-hash="" href="/" title="대시보드 개요">
 			<span class="side-nav-icon">🏠</span>
 			<span class="side-nav-text">개요</span>
+		</a>
+		<a class="side-nav-link" data-path="/shortcuts" href="/shortcuts" title="바로가기 페이지">
+			<span class="side-nav-icon">🗂️</span>
+			<span class="side-nav-text">바로가기</span>
 		</a>
 
 		<!-- 섹션: 테스트 (🧪) -->
@@ -21,6 +25,17 @@
 			<a class="side-nav-sublink" data-path="/qa" data-hash="#closingSummarySection" href="/qa#closingSummarySection">📈 Summary</a>
 			<a class="side-nav-sublink" data-path="/qa" data-hash="#recentIssueChartSection" href="/qa#recentIssueChartSection">📉 최근이슈통계</a>
 			<a class="side-nav-sublink" data-path="/qa" data-hash="#regularReleaseSection" href="/qa#regularReleaseSection">🚀 정기배포현황</a>
+			<button class="side-nav-sublink side-nav-parent side-nav-subparent" type="button" data-path="/qa/full-tc" data-submenu-target="qaFullTcSubmenu" title="Full_TC 소메뉴">
+				<span>📚 Full_TC</span>
+				<span class="side-nav-caret">▼</span>
+			</button>
+			<div class="side-nav-submenu" id="qaFullTcSubmenu">
+				<a class="side-nav-sublink" data-path="/qa/full-tc" data-query="view=summary" href="/qa/full-tc?view=summary">요약</a>
+				<a class="side-nav-sublink" data-path="/qa/full-tc" data-query="view=group" href="/qa/full-tc?view=group">카테고리 분석</a>
+				<a class="side-nav-sublink" data-path="/qa/full-tc" data-query="view=label" href="/qa/full-tc?view=label">LABEL 통계</a>
+				<a class="side-nav-sublink" data-path="/qa/full-tc" data-query="view=detail" href="/qa/full-tc?view=detail">원본 상세</a>
+				<a class="side-nav-sublink" data-path="/qa/full-tc" data-query="view=missing" href="/qa/full-tc?view=missing">Defect Key 누락 보기</a>
+			</div>
 		</div>
 
 		<button class="side-nav-link side-nav-parent" type="button" data-path="/upload" data-submenu-target="uploadSubmenu" data-requires-admin="true" title="업로드 관리">
@@ -73,11 +88,10 @@
 			<span class="side-nav-caret">▼</span>
 		</button>
 		<div class="side-nav-submenu" id="adminSubmenu" data-requires-admin="true">
-			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminIssueTab" href="/admin#adminIssueTab" data-requires-admin="true">📊 통계</a>
 			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminPeopleTab" href="/admin#adminPeopleTab" data-requires-admin="true">👥 인원관리</a>
-			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminAssetDecisionTab" href="/admin#adminAssetDecisionTab" data-requires-admin="true">🧾 승인판단</a>
+			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminIssueTab" href="/admin#adminIssueTab" data-requires-admin="true">📊 인원별 이슈</a>
+			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminAssetApprovalTab" href="/admin#adminAssetApprovalTab" data-requires-admin="true">🧾 승인페이지</a>
 			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminActivityLogTab" href="/admin#adminActivityLogTab" data-requires-admin="true">📋 활동이력</a>
-			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminBoardApprovalTab" href="/admin#adminBoardApprovalTab" data-requires-admin="true">📝 게시판승인</a>
 			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminAssetDeletedTab" href="/admin#adminAssetDeletedTab" data-requires-admin="true">🗑️ 삭제됨</a>
 			<a class="side-nav-sublink" data-path="/admin" data-hash="#adminAssetRejectedTab" href="/admin#adminAssetRejectedTab" data-requires-admin="true">↩️ 반려됨</a>
 		</div>

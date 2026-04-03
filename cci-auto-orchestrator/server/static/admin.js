@@ -22,19 +22,131 @@ function esc(value) {
 	const decisionBulkRejectReasonInput = document.getElementById("decisionBulkRejectReason");
 	const decisionApplyBtn = document.getElementById("decisionApplyBtn");
 	const decisionWithdrawSelectedBtn = document.getElementById("decisionWithdrawSelectedBtn");
+	const memberGameAccessHeader = document.getElementById("memberGameAccessHeader");
+	const memberEditGameAccessField = document.getElementById("memberEditGameAccessField");
+	const memberEditGameAccessInput = document.getElementById("memberEditGameAccess");
+	const memberEditModal = document.getElementById("memberEditModal");
+	const memberEditForm = document.getElementById("memberEditForm");
+	const memberPasswordForm = document.getElementById("memberPasswordForm");
+	const adminMemberSearchInput = document.getElementById("adminMemberSearchInput");
+	const adminMemberStatusFilter = document.getElementById("adminMemberStatusFilter");
+	const adminMemberRefreshBtn = document.getElementById("adminMemberRefreshBtn");
+	const adminMemberResultCount = document.getElementById("adminMemberResultCount");
+	const adminApproveAllPendingBtn = document.getElementById("adminApproveAllPendingBtn");
+	const adminPendingMemberQueue = document.getElementById("adminPendingMemberQueue");
+	const adminMemberStatTotal = document.getElementById("adminMemberStatTotal");
+	const adminMemberStatPending = document.getElementById("adminMemberStatPending");
+	const adminMemberStatApproved = document.getElementById("adminMemberStatApproved");
+	const adminMemberStatBlocked = document.getElementById("adminMemberStatBlocked");
+	const adminCurrentUser = document.getElementById("adminCurrentUser");
+	const adminGameAccess = document.getElementById("adminGameAccess");
 	const adminMainGrid = document.getElementById("adminMainGrid");
 	if (!memberBody) return;
 	const activityLogBody = document.getElementById("activityLogRows");
+	const adminIssueSearchInput = document.getElementById("adminIssueSearchInput");
+	const adminIssueAuthorFilter = document.getElementById("adminIssueAuthorFilter");
+	const adminIssueStatusFilter = document.getElementById("adminIssueStatusFilter");
+	const adminIssueSortFilter = document.getElementById("adminIssueSortFilter");
+	const adminIssueStartDate = document.getElementById("adminIssueStartDate");
+	const adminIssueEndDate = document.getElementById("adminIssueEndDate");
+	const adminIssueRefreshBtn = document.getElementById("adminIssueRefreshBtn");
+	const adminIssueResetBtn = document.getElementById("adminIssueResetBtn");
+	const adminIssueExportBtn = document.getElementById("adminIssueExportBtn");
+	const adminIssueRangeButtons = Array.from(document.querySelectorAll(".admin-issue-range-btn"));
+	const adminIssueResultCount = document.getElementById("adminIssueResultCount");
+	const adminIssuePeriodHint = document.getElementById("adminIssuePeriodHint");
+	const adminIssueSourceHint = document.getElementById("adminIssueSourceHint");
+	const adminIssueUpdatedHint = document.getElementById("adminIssueUpdatedHint");
+	const adminIssuePerfPanel = document.getElementById("adminIssuePerfPanel");
+	const adminIssuePerfLevelBadge = document.getElementById("adminIssuePerfLevelBadge");
+	const adminIssuePerfMeta = document.getElementById("adminIssuePerfMeta");
+	const adminIssuePerfEndpointCards = document.getElementById("adminIssuePerfEndpointCards");
+	const adminIssuePerfWindowButtons = Array.from(document.querySelectorAll(".admin-issue-perf-window-btn"));
+	const adminIssueQuickMembers = document.getElementById("adminIssueQuickMembers");
+	const adminCompanyMemberInput = document.getElementById("adminCompanyMemberInput");
+	const adminCompanyMemberList = document.getElementById("adminCompanyMemberList");
+	const adminCompanyMemberAddBtn = document.getElementById("adminCompanyMemberAddBtn");
+	const adminCompanyMemberRemoveBtn = document.getElementById("adminCompanyMemberRemoveBtn");
+	const adminCompanyMemberHint = document.getElementById("adminCompanyMemberHint");
+	const adminIssuePodium = document.getElementById("adminIssuePodium");
+	const adminIssueSummaryVisual = document.getElementById("adminIssueSummaryVisual");
+	const adminIssueMemberRows = document.getElementById("adminIssueMemberRows");
+	const adminIssueRows = document.getElementById("adminIssueRows");
+	const adminIssueDetailCard = document.getElementById("adminIssueDetailCard");
+	const adminIssueDetailCount = document.getElementById("adminIssueDetailCount");
+	const adminIssueDetailToggleBtn = document.getElementById("adminIssueDetailToggleBtn");
+	const adminIssueLoadMoreBtn = document.getElementById("adminIssueLoadMoreBtn");
+	const adminIssueStatTotal = document.getElementById("adminIssueStatTotal");
+	const adminIssueStatMembers = document.getElementById("adminIssueStatMembers");
+	const adminIssueStatPending = document.getElementById("adminIssueStatPending");
+	const adminIssueStatClosed = document.getElementById("adminIssueStatClosed");
 	const requestDetailModal = document.getElementById("requestDetailModal");
 	const requestDetailTitle = document.getElementById("requestDetailTitle");
 	const requestDetailList = document.getElementById("requestDetailList");
-	const ADMIN_SECTION_IDS = ["adminIssueTab", "adminPeopleTab", "adminAssetDecisionTab", "adminAssetApprovalTab", "adminActivityLogTab", "adminAssetDeletedTab", "adminAssetRejectedTab"];
+	const memberAddModal = document.getElementById("memberAddModal");
+	const memberAddForm = document.getElementById("memberAddForm");
+	const adminMemberAddBtn = document.getElementById("adminMemberAddBtn");
+	const ADMIN_SECTION_IDS = ["adminPeopleTab", "adminIssueTab", "adminAssetApprovalTab", "adminActivityLogTab", "adminAssetDeletedTab", "adminAssetRejectedTab"];
+	const GAME_ACCESS_MANAGER_EMAIL = "hiss0723@poliot.co.kr";
 	let pendingDeleteRequests = [];
 	let activityLogItems = [];
 	let preferredDecisionId = "";
+	let currentAdminEmail = "";
 	let canManageGameAccess = false;
+	let rawMemberItems = [];
+	let adminIssueSearchTimer = 0;
+	let adminIssueDetailLimit = 120;
+	let adminIssueDetailOffset = 0;
+	let adminIssueDetailCollapsed = false;
+	let adminIssueHasLoaded = false;
+	let adminIssueNeedsRefresh = true;
+	let adminIssueLastUpdatedAt = "";
+	let adminIssuePerfBadgeText = "";
+	let adminIssuePerfWindowSec = 60;
+	let adminIssuePerfWarnMs = 800;
+	let adminIssuePerfInfoMs = 250;
+	let adminIssuePerfLevel = "normal";
+	let adminIssueAutoRefreshTimer = 0;
+	let adminIssueSummaryAbortController = null;
+	let adminIssueDetailAbortController = null;
+	let adminIssueRequestToken = 0;
+	let adminIssueRowRenderToken = 0;
+	const ADMIN_ISSUE_RESPONSE_CACHE_TTL_MS = 15000;
+	const ADMIN_ISSUE_DETAIL_STEP = 120;
+	const ADMIN_ISSUE_ROW_CHUNK_SIZE = 40;
+	const ADMIN_ISSUE_POLL_WARN_MS = 20000;
+	const ADMIN_ISSUE_POLL_INFO_MS = 40000;
+	const ADMIN_ISSUE_POLL_NORMAL_MS = 60000;
+	const adminIssueSummaryCache = new Map();
+	const adminIssueDetailCache = new Map();
 
-	const CORE_ADMINS = new Set(["sue@poliot.co.kr", "hiss0723@poliot.co.kr"]);
+	const CORE_ADMINS = new Set(["hiss0723@poliot.co.kr"]);
+	const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+	const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$/;
+	const PHONE_REGEX = /^(?:\+?\d[\d\-\s]{7,18}\d)$/;
+	const BIRTH_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+	const PASSWORD_RULE_TEXT = "비밀번호는 8~100자이며, 영문/숫자/특수문자를 각각 1개 이상 포함해야 합니다.";
+	const PHONE_RULE_TEXT = "전화번호 형식이 올바르지 않습니다. 예: 010-1234-5678";
+	const BIRTH_RULE_TEXT = "생년월일 형식이 올바르지 않습니다. YYYY-MM-DD 형식으로 입력해 주세요.";
+
+	function getMemberTableColumnCount() {
+		return canManageGameAccess ? 9 : 8;
+	}
+
+	function syncGameAccessVisibility() {
+		if (memberGameAccessHeader) {
+			memberGameAccessHeader.hidden = !canManageGameAccess;
+		}
+		if (memberEditGameAccessField) {
+			memberEditGameAccessField.hidden = !canManageGameAccess;
+		}
+		if (memberEditGameAccessInput && !canManageGameAccess) {
+			memberEditGameAccessInput.checked = false;
+			memberEditGameAccessInput.disabled = true;
+		} else if (memberEditGameAccessInput) {
+			memberEditGameAccessInput.disabled = false;
+		}
+	}
 
 	function setDetailSummary(items) {
 		if (!memberDetailBody) return;
@@ -49,6 +161,135 @@ function esc(value) {
 			`<tr><td>로그인 차단 계정 수</td><td>${blocked}</td></tr>`,
 			`<tr><td>관리자 계정 수</td><td>${adminCount}</td></tr>`,
 		].join("");
+	}
+
+	function normalizeMemberText(value) {
+		return String(value || "").trim().toLowerCase();
+	}
+
+	function isValidEmail(value) {
+		return EMAIL_REGEX.test(String(value || "").trim().toLowerCase());
+	}
+
+	function isValidPassword(value) {
+		return PASSWORD_REGEX.test(String(value || ""));
+	}
+
+	function isValidPhone(value) {
+		const text = String(value || "").trim();
+		if (!text) return true;
+		return PHONE_REGEX.test(text);
+	}
+
+	function isValidBirth(value) {
+		const text = String(value || "").trim();
+		if (!text) return true;
+		if (!BIRTH_REGEX.test(text)) return false;
+		const parts = text.split("-");
+		if (parts.length !== 3) return false;
+		const year = Number(parts[0]);
+		const month = Number(parts[1]);
+		const day = Number(parts[2]);
+		const d = new Date(year, month - 1, day);
+		return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day;
+	}
+
+	function getFilteredMembers(items) {
+		const query = normalizeMemberText(adminMemberSearchInput?.value || "");
+		const status = normalizeMemberText(adminMemberStatusFilter?.value || "all") || "all";
+		return (items || []).filter((x) => {
+			const approved = Boolean(x.approved);
+			const canLogin = Boolean(x.can_login);
+			const role = normalizeMemberText(x.role || "user");
+			if (status === "pending" && approved) return false;
+			if (status === "approved" && !approved) return false;
+			if (status === "blocked" && canLogin) return false;
+			if (status === "admin" && role !== "admin") return false;
+
+			if (!query) return true;
+			const haystack = [
+				x.email,
+				x.name,
+				x.title,
+				x.phone,
+				x.birth,
+				x.address,
+			].map(normalizeMemberText).join(" ");
+			return haystack.includes(query);
+		});
+	}
+
+	function updateMemberStatCards(items) {
+		const total = items.length;
+		const pending = items.filter((x) => !Boolean(x.approved)).length;
+		const approved = items.filter((x) => Boolean(x.approved)).length;
+		const blocked = items.filter((x) => !Boolean(x.can_login)).length;
+		if (adminMemberStatTotal) adminMemberStatTotal.textContent = String(total);
+		if (adminMemberStatPending) adminMemberStatPending.textContent = String(pending);
+		if (adminMemberStatApproved) adminMemberStatApproved.textContent = String(approved);
+		if (adminMemberStatBlocked) adminMemberStatBlocked.textContent = String(blocked);
+	}
+
+	function renderPendingMemberQueue(items) {
+		if (!adminPendingMemberQueue) return;
+		const pending = (items || []).filter((x) => !Boolean(x.approved));
+		if (!pending.length) {
+			adminPendingMemberQueue.innerHTML = '<p class="hint">승인 대기 계정이 없습니다.</p>';
+			return;
+		}
+		adminPendingMemberQueue.innerHTML = pending.map((x) => {
+			const email = String(x.email || "").trim().toLowerCase();
+			return `
+				<div class="admin-pending-member-item">
+					<div>
+						<strong>${esc(x.name || "-")}</strong>
+						<p class="hint">${esc(email || "-")} · ${esc(x.title || "직책 미입력")}</p>
+					</div>
+					<button type="button" class="btn-approve" data-approve-member="${esc(email)}">승인</button>
+				</div>
+			`;
+		}).join("");
+	}
+
+	function applyMemberView(items) {
+		const filtered = getFilteredMembers(items);
+		renderMembers(filtered);
+		if (adminMemberResultCount) {
+			adminMemberResultCount.textContent = `조회 결과 ${filtered.length}명`;
+		}
+		updateMemberStatCards(items);
+		renderPendingMemberQueue(items);
+	}
+
+	function findMemberByEmail(email) {
+		const target = normalizeMemberText(email);
+		return rawMemberItems.find((x) => normalizeMemberText(x.email) === target) || null;
+	}
+
+	function openMemberEditModal(member) {
+		if (!memberEditModal || !member) return;
+		document.getElementById("memberEditEmail").value = String(member.email || "").trim().toLowerCase();
+		document.getElementById("memberEditName").value = String(member.name || "");
+		document.getElementById("memberEditRole").value = String(member.role || "user").toLowerCase() === "admin" ? "admin" : "user";
+		document.getElementById("memberEditTitle").value = String(member.title || "");
+		document.getElementById("memberEditPhone").value = String(member.phone || "");
+		document.getElementById("memberEditBirth").value = String(member.birth || "");
+		document.getElementById("memberEditAddress").value = String(member.address || "");
+		document.getElementById("memberEditApproved").checked = Boolean(member.approved);
+		document.getElementById("memberEditCanLogin").checked = Boolean(member.can_login);
+		if (memberEditGameAccessInput) {
+			memberEditGameAccessInput.checked = Boolean(member.game_access);
+		}
+		const passwordInput = document.getElementById("memberPasswordInput");
+		if (passwordInput) passwordInput.value = "";
+		memberEditModal.hidden = false;
+		document.body.classList.add("modal-open");
+	}
+
+	function closeMemberEditModal() {
+		if (!memberEditModal) return;
+		memberEditModal.hidden = true;
+		document.body.classList.remove("modal-open");
 	}
 
 	function formatDisplayDateTime(value) {
@@ -69,6 +310,817 @@ function esc(value) {
 		return text;
 	}
 
+	function formatMultilineText(value) {
+		return esc(String(value || "-")).replace(/\n/g, "<br />");
+	}
+
+	function formatDisplayDate(value) {
+		const text = String(value || "").trim();
+		if (!text) return "-";
+		const match = text.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+		if (!match) return text;
+		return `${match[1]}-${String(match[2]).padStart(2, "0")}-${String(match[3]).padStart(2, "0")}`;
+	}
+
+	function defectPriorityBadge(priority) {
+		const normalized = String(priority || "").trim();
+		const lower = normalized.toLowerCase();
+		if (lower === "highest") return '<span class="board-priority-badge priority-high"><i class="fas fa-angle-double-up"></i> Highest</span>';
+		if (lower === "high") return '<span class="board-priority-badge priority-high"><i class="fas fa-exclamation-circle"></i> High</span>';
+		if (lower === "low") return '<span class="board-priority-badge priority-low"><i class="fas fa-arrow-circle-down"></i> Low</span>';
+		if (lower === "lowest") return '<span class="board-priority-badge priority-low"><i class="fas fa-angle-double-down"></i> Lowest</span>';
+		return '<span class="board-priority-badge priority-medium"><i class="fas fa-minus-circle"></i> Medium</span>';
+	}
+
+	function renderAdminIssueStats(stats) {
+		if (adminIssueStatTotal) adminIssueStatTotal.textContent = String(stats?.total_tickets ?? 0);
+		if (adminIssueStatMembers) adminIssueStatMembers.textContent = String(stats?.definite_problem ?? 0);
+		if (adminIssueStatPending) adminIssueStatPending.textContent = `${Number(stats?.mistake_rate ?? 0).toFixed(1)}%`;
+		if (adminIssueStatClosed) adminIssueStatClosed.textContent = Number(stats?.score ?? 0).toFixed(1);
+	}
+
+	function formatOneDecimal(value) {
+		const num = Number(value ?? 0);
+		if (!Number.isFinite(num)) return "0.0";
+		return num.toFixed(1);
+	}
+
+	function renderAdminIssueAuthorOptions(items) {
+		if (!adminIssueAuthorFilter) return;
+		const currentValue = String(adminIssueAuthorFilter.value || "").trim();
+		const options = Array.isArray(items) ? items : [];
+		adminIssueAuthorFilter.innerHTML = [
+			'<option value="">전체 리포터</option>',
+			...options.map((item) => {
+				const value = String(item?.value || item?.name || "").trim();
+				const name = String(item?.name || value || "-").trim();
+				return `<option value="${esc(value)}">${esc(name)}</option>`;
+			}),
+		].join("");
+		if (currentValue && options.some((item) => String(item?.value || item?.name || "").trim() === currentValue)) {
+			adminIssueAuthorFilter.value = currentValue;
+		}
+	}
+
+	function renderAdminIssueQuickMembers(items) {
+		if (!adminIssueQuickMembers) return;
+		const options = Array.isArray(items) ? items : [];
+		if (!options.length) {
+			adminIssueQuickMembers.innerHTML = '<span class="hint">빠른 선택 리포터가 없습니다.</span>';
+			return;
+		}
+		const activeReporter = String(adminIssueAuthorFilter?.value || "").trim();
+		adminIssueQuickMembers.innerHTML = [
+			`<button type="button" class="admin-issue-chip${activeReporter ? '' : ' active'}" data-reporter="">전체</button>`,
+			...options.map((item) => {
+				const value = String(item?.value || item?.name || "").trim();
+				const name = String(item?.name || value || "-").trim();
+				return `<button type="button" class="admin-issue-chip${activeReporter === value ? ' active' : ''}" data-reporter="${esc(value)}">${esc(name)}</button>`;
+			})
+		].join("");
+	}
+
+	function renderAdminIssuePodium(items) {
+		if (!adminIssuePodium) return;
+		const rows = (Array.isArray(items) ? items : []).filter((item) => Number(item?.rank || 0) > 0).sort((a, b) => Number(a.rank || 999) - Number(b.rank || 999)).slice(0, 3);
+		if (!rows.length) {
+			adminIssuePodium.innerHTML = '<p class="hint">랭킹 데이터를 표시할 수 없습니다.</p>';
+			return;
+		}
+		adminIssuePodium.innerHTML = rows.map((item, index) => {
+			const rank = Number(item?.rank || index + 1);
+			const reporter = String(item?.reporter || '-').trim();
+			return `
+				<button type="button" class="admin-issue-podium-card rank-${rank}" data-reporter="${esc(reporter)}">
+					<span class="admin-issue-podium-rank">#${rank}</span>
+					<strong>${esc(reporter)}</strong>
+					<span>총 ${esc(item?.total_issue ?? 0)}건</span>
+					<span>점수 ${formatOneDecimal(item?.score ?? 0)}</span>
+					<span>Duplicate ${esc(item?.duplicate ?? 0)} · Not a Bug ${esc(item?.not_a_bug ?? 0)}</span>
+				</button>
+			`;
+		}).join('');
+	}
+
+	function renderAdminIssueStatusOptions(items) {
+		if (!adminIssueStatusFilter) return;
+		const currentValue = String(adminIssueStatusFilter.value || "all").trim().toLowerCase();
+		const options = Array.isArray(items) ? items : [];
+		adminIssueStatusFilter.innerHTML = [
+			'<option value="all">전체 상태</option>',
+			...options.map((item) => {
+				const value = String(item?.value || "").trim().toLowerCase();
+				const label = String(item?.label || value || "-").trim();
+				return `<option value="${esc(value)}">${esc(label)}</option>`;
+			}),
+		].join("");
+		if (currentValue !== "all" && options.some((item) => String(item?.value || "").trim().toLowerCase() === currentValue)) {
+			adminIssueStatusFilter.value = currentValue;
+		}
+	}
+
+	function issueStatusBadge(status) {
+		const normalized = String(status || "").trim().toLowerCase();
+		if (normalized === "resolved" || normalized === "close" || normalized === "closed" || normalized === "done") {
+			return `<span class="admin-issue-status-badge approved">${esc(status || "Resolved")}</span>`;
+		}
+		if (normalized === "in progress") {
+			return `<span class="admin-issue-status-badge pending">${esc(status || "In Progress")}</span>`;
+		}
+		if (normalized === "reopened") {
+			return `<span class="admin-issue-status-badge rejected">${esc(status || "Reopened")}</span>`;
+		}
+		return `<span class="admin-issue-status-badge withdrawn">${esc(status || "Open")}</span>`;
+	}
+
+	function applyAdminIssueReporterFilter(reporter) {
+		const normalized = String(reporter || "").trim();
+		if (adminIssueAuthorFilter) {
+			adminIssueAuthorFilter.value = normalized;
+		}
+		adminIssueDetailLimit = 120;
+		adminIssueDetailOffset = 0;
+		refreshAdminIssueManagement();
+	}
+
+	function toLocalDateInputValue(date) {
+		const year = String(date.getFullYear());
+		const month = String(date.getMonth() + 1).padStart(2, "0");
+		const day = String(date.getDate()).padStart(2, "0");
+		return `${year}-${month}-${day}`;
+	}
+
+	function updateAdminIssueRangeButtons() {
+		const today = new Date();
+		const todayText = toLocalDateInputValue(today);
+		const startValue = String(adminIssueStartDate?.value || "").trim();
+		const endValue = String(adminIssueEndDate?.value || "").trim();
+		adminIssueRangeButtons.forEach((button) => {
+			const range = String(button.getAttribute("data-range") || "").trim();
+			let active = false;
+			if (range === "all") {
+				active = !startValue && !endValue;
+			} else if (range === "today") {
+				active = startValue === todayText && endValue === todayText;
+			} else {
+				const days = Number(range || 0);
+				if (days > 0) {
+					const start = new Date(today);
+					start.setDate(today.getDate() - (days - 1));
+					active = startValue === toLocalDateInputValue(start) && endValue === todayText;
+				}
+			}
+			button.classList.toggle("active", active);
+		});
+	}
+
+	function setAdminIssueDateRange(range) {
+		const today = new Date();
+		const todayText = toLocalDateInputValue(today);
+		if (!adminIssueStartDate || !adminIssueEndDate) return;
+		if (range === "all") {
+			adminIssueStartDate.value = "";
+			adminIssueEndDate.value = "";
+		} else if (range === "today") {
+			adminIssueStartDate.value = todayText;
+			adminIssueEndDate.value = todayText;
+		} else {
+			const days = Number(range || 0);
+			const start = new Date(today);
+			start.setDate(today.getDate() - Math.max(days - 1, 0));
+			adminIssueStartDate.value = toLocalDateInputValue(start);
+			adminIssueEndDate.value = todayText;
+		}
+		adminIssueDetailLimit = 120;
+		adminIssueDetailOffset = 0;
+		updateAdminIssueRangeButtons();
+		refreshAdminIssueManagement();
+	}
+
+	function renderIssueLinkCell(item) {
+		const text = String(item?.links || "").trim();
+		const url = String(item?.link_url || "").trim();
+		if (!url) return esc(text || "-");
+		return `<a class="admin-issue-external-link" href="${esc(url)}" target="_blank" rel="noreferrer">${esc(text || url)}</a>`;
+	}
+
+	function issueDonutGradient(totalIssue, definiteProblem, duplicate, notABug) {
+		const total = Math.max(0, Number(totalIssue ?? 0));
+		const important = Math.max(0, Number(definiteProblem ?? 0));
+		const dup = Math.max(0, Number(duplicate ?? 0));
+		const nab = Math.max(0, Number(notABug ?? 0));
+		if (!total) {
+			return "conic-gradient(#d8e0ea 0 360deg)";
+		}
+		const importantDeg = Math.min(360, (important / total) * 360);
+		const dupDeg = Math.min(360 - importantDeg, (dup / total) * 360);
+		const nabDeg = Math.max(0, 360 - importantDeg - dupDeg);
+		const a = importantDeg;
+		const b = importantDeg + dupDeg;
+		const c = b + nabDeg;
+		return `conic-gradient(#0f766e 0 ${a}deg, #f59e0b ${a}deg ${b}deg, #94a3b8 ${b}deg ${c}deg)`;
+	}
+
+	function renderAdminIssueSummaryVisual(items, stats) {
+		if (!adminIssueSummaryVisual) return;
+		const rows = Array.isArray(items) ? items : [];
+		if (!rows.length) {
+			adminIssueSummaryVisual.innerHTML = '<p class="hint">표시할 인원별 요약 데이터가 없습니다.</p>';
+			return;
+		}
+
+		const totalCard = `
+			<div class="admin-issue-summary-card total">
+				<div class="admin-issue-summary-donut" style="background:${issueDonutGradient(stats?.total_issue ?? 0, stats?.definite_problem ?? 0, stats?.duplicate ?? 0, stats?.not_a_bug ?? 0)}">
+					<div class="admin-issue-summary-donut-center">
+						<strong>${esc(stats?.total_issue ?? 0)}</strong>
+						<span>총 티켓</span>
+					</div>
+				</div>
+				<div class="admin-issue-summary-meta">
+					<h4>전체 요약</h4>
+					<p>중요도 건수 ${esc(stats?.definite_problem ?? 0)}건</p>
+					<p>Duplicate ${esc(stats?.duplicate ?? 0)}건 · Not a Bug ${esc(stats?.not_a_bug ?? 0)}건</p>
+				</div>
+			</div>
+		`;
+
+		const memberCards = rows.slice(0, 12).map((item) => {
+			const reporter = String(item?.reporter || "").trim();
+			const rank = Number(item?.rank ?? 0);
+			return `
+				<div class="admin-issue-summary-card" data-reporter="${esc(reporter)}">
+					<div class="admin-issue-summary-rank">#${rank > 0 ? rank : "-"}</div>
+					<div class="admin-issue-summary-donut" style="background:${issueDonutGradient(item?.total_issue ?? 0, item?.definite_problem ?? 0, item?.duplicate ?? 0, item?.not_a_bug ?? 0)}">
+						<div class="admin-issue-summary-donut-center">
+							<strong>${esc(item?.total_issue ?? 0)}</strong>
+							<span>총 갯수</span>
+						</div>
+					</div>
+					<div class="admin-issue-summary-meta">
+						<h4>${esc(reporter || "-")}</h4>
+						<p>중요도 갯수 ${esc(item?.definite_problem ?? 0)}건</p>
+						<p>점수 ${formatOneDecimal(item?.score ?? 0)}</p>
+						<button type="button" class="btn-secondary admin-issue-member-filter-btn" data-reporter="${esc(reporter)}">티켓 보기</button>
+					</div>
+				</div>
+			`;
+		}).join("");
+
+		adminIssueSummaryVisual.innerHTML = totalCard + memberCards;
+	}
+
+	function renderAdminIssueMemberSummary(items, stats) {
+		if (!adminIssueMemberRows) return;
+		const rows = Array.isArray(items) ? items : [];
+		const totals = stats || {};
+		if (!rows.length) {
+			renderAdminIssueSummaryVisual([], totals);
+			adminIssueMemberRows.innerHTML = '<tr><td colspan="16">조회된 인원별 이슈 데이터가 없습니다.</td></tr>';
+			return;
+		}
+		renderAdminIssueSummaryVisual(rows, totals);
+		const totalRow = `
+			<tr class="admin-issue-total-row">
+				<td>총</td>
+				<td>${esc(totals?.total_issue ?? 0)}</td>
+				<td>${esc(totals?.duplicate ?? 0)}</td>
+				<td>${esc(totals?.not_a_bug ?? 0)}</td>
+				<td>${esc(totals?.definite_problem ?? 0)}</td>
+				<td>${formatOneDecimal(totals?.mistake_rate ?? 0)}%</td>
+				<td>${formatOneDecimal(totals?.highest ?? 0)}</td>
+				<td>${formatOneDecimal(totals?.high ?? 0)}</td>
+				<td>${formatOneDecimal(totals?.medium ?? 0)}</td>
+				<td>${formatOneDecimal(totals?.low ?? 0)}</td>
+				<td>${formatOneDecimal(totals?.lowest ?? 0)}</td>
+				<td>${formatOneDecimal(totals?.score ?? 0)}</td>
+				<td>-</td>
+				<td>-</td>
+				<td>-</td>
+				<td>-</td>
+			</tr>
+		`;
+
+		adminIssueMemberRows.innerHTML = totalRow + rows.map((item) => {
+			const titles = Array.isArray(item?.recent_titles) ? item.recent_titles : [];
+			const recentCount = titles.filter((x) => String(x || "").trim()).length;
+			const reporter = String(item?.reporter || "").trim();
+			const rank = Number(item?.rank ?? 0);
+			return `
+				<tr class="admin-issue-summary-row" data-reporter="${esc(reporter)}">
+					<td><button type="button" class="btn-ghost admin-issue-author-link" data-reporter="${esc(reporter)}">${esc(reporter || "-")}</button></td>
+					<td>${esc(item?.total_issue ?? 0)}</td>
+					<td>${esc(item?.duplicate ?? 0)}</td>
+					<td>${esc(item?.not_a_bug ?? 0)}</td>
+					<td>${esc(item?.definite_problem ?? 0)}</td>
+					<td>${formatOneDecimal(item?.mistake_rate ?? 0)}%</td>
+					<td>${formatOneDecimal(item?.highest ?? 0)}</td>
+					<td>${formatOneDecimal(item?.high ?? 0)}</td>
+					<td>${formatOneDecimal(item?.medium ?? 0)}</td>
+					<td>${formatOneDecimal(item?.low ?? 0)}</td>
+					<td>${formatOneDecimal(item?.lowest ?? 0)}</td>
+					<td>${formatOneDecimal(item?.score ?? 0)}</td>
+					<td class="admin-issue-rank-cell ${rank > 0 && rank <= 3 ? `top-${rank}` : ""}">${rank > 0 ? rank : "-"}</td>
+					<td>${esc(formatDisplayDate(item?.latest_created_at || ""))}</td>
+					<td class="admin-issue-recent-titles"><span class="admin-issue-recent-count">${recentCount > 0 ? `${recentCount}건` : '-'}</span></td>
+					<td><button type="button" class="btn-secondary admin-issue-member-filter-btn" data-reporter="${esc(reporter)}">티켓 보기</button></td>
+				</tr>
+			`;
+		}).join("");
+
+	}
+
+	function buildAdminIssueRowMarkup(item) {
+		const keyText = String(item?.key || item?.id || "-").trim();
+		const summaryText = String(item?.summary || "-").trim();
+		const summaryShort = summaryText.length > 120 ? `${summaryText.slice(0, 117)}...` : summaryText;
+		const linkUrl = String(item?.link_url || "").trim();
+		const keyMarkup = linkUrl
+			? `<a class="admin-issue-external-link" href="${esc(linkUrl)}" target="_blank" rel="noreferrer">${esc(keyText)}</a>`
+			: esc(keyText || "-");
+		const summaryMarkup = linkUrl
+			? `<a class="admin-issue-external-link admin-issue-summary-link" href="${esc(linkUrl)}" target="_blank" rel="noreferrer" title="${esc(summaryText)}">${esc(summaryShort)}</a>`
+			: `<span class="admin-issue-summary-text" title="${esc(summaryText)}">${esc(summaryShort || "-")}</span>`;
+		return `
+			<tr>
+				<td class="admin-issue-title-cell">${keyMarkup}</td>
+				<td>${esc(item?.reporter || "-")}</td>
+				<td>${issueStatusBadge(item?.status || "Open")}</td>
+				<td>${defectPriorityBadge(String(item?.priority || "Medium"))}</td>
+				<td>${esc(item?.resolution || "-")}</td>
+				<td class="admin-issue-content-cell">${summaryMarkup}</td>
+				<td>${esc(item?.region || "-")}</td>
+				<td>${esc(item?.os || "-")}</td>
+				<td>${esc(item?.components || "-")}</td>
+				<td>${esc(item?.brand || "-")}</td>
+				<td>${esc(item?.affects_versions || "-")}</td>
+				<td>${esc(item?.fix_versions || "-")}</td>
+				<td>${esc(item?.assignee || "-")}</td>
+				<td>${esc(formatDisplayDate(item?.created || ""))}</td>
+				<td>${esc(item?.labels || "-")}</td>
+				<td class="admin-issue-files-cell">${renderIssueLinkCell(item)}</td>
+				<td class="admin-issue-reason-cell">${formatMultilineText(item?.remarks || "-")}</td>
+			</tr>
+		`;
+	}
+
+	function renderAdminIssueRows(items) {
+		if (!adminIssueRows) return;
+		const rows = Array.isArray(items) ? items : [];
+		const renderToken = ++adminIssueRowRenderToken;
+		if (!rows.length) {
+			adminIssueRows.innerHTML = '<tr><td colspan="17">조회된 티켓이 없습니다.</td></tr>';
+			return;
+		}
+		adminIssueRows.innerHTML = '<tr><td colspan="17">상세 목록을 정리하는 중...</td></tr>';
+		const appendChunk = (startIndex) => {
+			if (renderToken !== adminIssueRowRenderToken) return;
+			const chunk = rows.slice(startIndex, startIndex + ADMIN_ISSUE_ROW_CHUNK_SIZE);
+			if (!chunk.length) return;
+			const markup = chunk.map(buildAdminIssueRowMarkup).join("");
+			if (startIndex === 0) {
+				adminIssueRows.innerHTML = markup;
+			} else {
+				adminIssueRows.insertAdjacentHTML("beforeend", markup);
+			}
+			if (startIndex + ADMIN_ISSUE_ROW_CHUNK_SIZE < rows.length) {
+				window.requestAnimationFrame(() => appendChunk(startIndex + ADMIN_ISSUE_ROW_CHUNK_SIZE));
+			}
+		};
+		window.requestAnimationFrame(() => appendChunk(0));
+	}
+
+	function setAdminIssueDetailCollapsed(collapsed) {
+		adminIssueDetailCollapsed = Boolean(collapsed);
+		adminIssueDetailCard?.classList.toggle("is-collapsed", adminIssueDetailCollapsed);
+		if (adminIssueDetailToggleBtn) {
+			adminIssueDetailToggleBtn.textContent = adminIssueDetailCollapsed ? "상세 펼치기" : "상세 접기";
+		}
+	}
+
+	function getAdminIssueBootstrapData() {
+		if (typeof window === "undefined") return {};
+		const data = window.__ADMIN_ISSUE_BOOTSTRAP__;
+		if (!data || typeof data !== "object") return {};
+		return data;
+	}
+
+	function buildAdminIssueQueryString(includeDetailLimit = true, includeDetailOffset = false) {
+		const params = new URLSearchParams();
+		const search = String(adminIssueSearchInput?.value || "").trim();
+		const reporter = String(adminIssueAuthorFilter?.value || "").trim();
+		const status = String(adminIssueStatusFilter?.value || "all").trim().toLowerCase();
+		const sortBy = String(adminIssueSortFilter?.value || "score_desc").trim().toLowerCase();
+		const startDate = String(adminIssueStartDate?.value || "").trim();
+		const endDate = String(adminIssueEndDate?.value || "").trim();
+		if (search) params.set("search", search);
+		if (reporter) params.set("reporter", reporter);
+		if (status && status !== "all") params.set("status", status);
+		if (sortBy && sortBy !== "total_desc") params.set("sort_by", sortBy);
+		if (startDate) params.set("start_date", startDate);
+		if (endDate) params.set("end_date", endDate);
+		if (includeDetailLimit && adminIssueDetailLimit > 0) params.set("detail_limit", String(adminIssueDetailLimit));
+		if (includeDetailOffset && adminIssueDetailOffset > 0) params.set("detail_offset", String(adminIssueDetailOffset));
+		return params.toString();
+	}
+
+	function isAdminIssueTabActive() {
+		const tab = document.getElementById("adminIssueTab");
+		return Boolean(tab) && !Boolean(tab.hidden);
+	}
+
+	function updateAdminIssueDetailMeta(data) {
+		const totalCount = Number(data?.detail_total_count ?? 0);
+		const shownCount = Number(data?.detail_shown_count ?? data?.detail_returned_count ?? 0);
+		const hasMore = Boolean(data?.detail_has_more);
+		if (adminIssueDetailCount) {
+			adminIssueDetailCount.textContent = hasMore
+				? `상세 ${shownCount}건 표시 중 / 전체 ${totalCount}건`
+				: `상세 ${shownCount}건 표시 중`;
+		}
+		if (adminIssueLoadMoreBtn) {
+			adminIssueLoadMoreBtn.hidden = !hasMore;
+			adminIssueLoadMoreBtn.disabled = false;
+			adminIssueLoadMoreBtn.textContent = hasMore ? `더 보기 (+${ADMIN_ISSUE_DETAIL_STEP})` : "모두 표시됨";
+		}
+	}
+
+	function getCachedAdminIssueResponse(cacheMap, queryKey) {
+		const entry = cacheMap.get(queryKey);
+		if (!entry) return null;
+		if (Date.now() - Number(entry.ts || 0) > ADMIN_ISSUE_RESPONSE_CACHE_TTL_MS) {
+			cacheMap.delete(queryKey);
+			return null;
+		}
+		return entry.data || null;
+	}
+
+	function setCachedAdminIssueResponse(cacheMap, queryKey, data) {
+		cacheMap.set(queryKey, { ts: Date.now(), data });
+	}
+
+	function updateAdminIssueUpdatedHint() {
+		if (!adminIssueUpdatedHint) return;
+		const updatedText = `갱신: ${formatDisplayDateTime(adminIssueLastUpdatedAt || "")}`;
+		adminIssueUpdatedHint.textContent = adminIssuePerfBadgeText
+			? `${updatedText} · ${adminIssuePerfBadgeText}`
+			: updatedText;
+	}
+
+	function formatAdminIssuePerfWindowLabel(windowSec) {
+		const numeric = Number(windowSec || 0);
+		if (numeric >= 60) {
+			return `최근${Math.round(numeric / 60)}분`;
+		}
+		return `최근${Math.max(1, Math.round(numeric))}초`;
+	}
+
+	function updateAdminIssuePerfWindowButtons() {
+		adminIssuePerfWindowButtons.forEach((button) => {
+			const value = Number(button.getAttribute("data-window-sec") || 0);
+			button.classList.toggle("active", value === adminIssuePerfWindowSec);
+		});
+	}
+
+	function renderAdminIssuePerfEndpoints(perf) {
+		if (!adminIssuePerfEndpointCards) return;
+		const endpoints = perf && typeof perf === "object" ? (perf.endpoints || {}) : {};
+		const endpointNames = Object.keys(endpoints).sort((a, b) => {
+			const ap95 = Number(endpoints[a]?.p95_ms ?? 0);
+			const bp95 = Number(endpoints[b]?.p95_ms ?? 0);
+			return bp95 - ap95;
+		});
+		if (!endpointNames.length) {
+			adminIssuePerfEndpointCards.innerHTML = '<span class="hint">선택한 구간에 성능 샘플이 없습니다.</span>';
+			return;
+		}
+		adminIssuePerfEndpointCards.innerHTML = endpointNames
+			.map((name) => {
+				const item = endpoints[name] || {};
+				const p95 = Number(item.p95_ms ?? 0);
+				const p99 = Number(item.p99_ms ?? 0);
+				const count = Number(item.count ?? 0);
+				const max = Number(item.max_ms ?? 0);
+				const warnClass = p95 >= adminIssuePerfWarnMs ? " warn" : "";
+				return `
+					<article class="admin-issue-perf-endpoint-card${warnClass}">
+						<span class="admin-issue-perf-endpoint-name">${esc(name)}</span>
+						<span class="admin-issue-perf-endpoint-main">p95 ${Math.round(p95)}ms</span>
+						<span class="admin-issue-perf-endpoint-sub">p99 ${Math.round(p99)}ms · max ${Math.round(max)}ms · ${count}건</span>
+					</article>
+				`;
+			})
+			.join("");
+	}
+
+	function renderAdminIssuePerfBadge(perf) {
+		if (!adminIssuePerfLevelBadge) return;
+		const p95 = Number(perf?.p95_ms ?? 0);
+		adminIssuePerfLevelBadge.classList.remove("info", "warn");
+		if (p95 >= adminIssuePerfWarnMs) {
+			adminIssuePerfLevel = "warn";
+			adminIssuePerfLevelBadge.textContent = "경고";
+			adminIssuePerfLevelBadge.classList.add("warn");
+			return;
+		}
+		if (p95 >= adminIssuePerfInfoMs) {
+			adminIssuePerfLevel = "info";
+			adminIssuePerfLevelBadge.textContent = "주의";
+			adminIssuePerfLevelBadge.classList.add("info");
+			return;
+		}
+		adminIssuePerfLevel = "normal";
+		adminIssuePerfLevelBadge.textContent = "정상";
+	}
+
+	function getAdminIssueAutoRefreshMs() {
+		if (adminIssuePerfLevel === "warn") {
+			return ADMIN_ISSUE_POLL_WARN_MS;
+		}
+		if (adminIssuePerfLevel === "info") {
+			return ADMIN_ISSUE_POLL_INFO_MS;
+		}
+		return ADMIN_ISSUE_POLL_NORMAL_MS;
+	}
+
+	function scheduleAdminIssueAutoRefresh() {
+		if (adminIssueAutoRefreshTimer) {
+			window.clearTimeout(adminIssueAutoRefreshTimer);
+			adminIssueAutoRefreshTimer = 0;
+		}
+		const waitMs = getAdminIssueAutoRefreshMs();
+		adminIssueAutoRefreshTimer = window.setTimeout(async () => {
+			adminIssueAutoRefreshTimer = 0;
+			if (isAdminIssueTabActive() && adminIssueHasLoaded) {
+				await refreshAdminIssueManagement(true);
+			} else {
+				adminIssueNeedsRefresh = true;
+			}
+			scheduleAdminIssueAutoRefresh();
+		}, waitMs);
+	}
+
+	async function refreshAdminIssuePerfSummary() {
+		if (!isAdminIssueTabActive()) return;
+		try {
+			const perfPath = `/api/admin/board/member-issues/perf?window_sec=${encodeURIComponent(String(adminIssuePerfWindowSec))}`;
+			const perf = await requestJson(perfPath, { method: "GET" });
+			const p95 = Number(perf?.p95_ms ?? 0);
+			const hitRate = Number(perf?.cache?.hit_rate ?? 0);
+			const count = Number(perf?.sample_count ?? 0);
+			const selectedWindow = Number(perf?.window_sec ?? adminIssuePerfWindowSec);
+			adminIssuePerfWindowSec = selectedWindow;
+			adminIssuePerfWarnMs = Number(perf?.thresholds?.warn_ms ?? adminIssuePerfWarnMs);
+			adminIssuePerfInfoMs = Number(perf?.thresholds?.info_ms ?? adminIssuePerfInfoMs);
+			const windowLabel = formatAdminIssuePerfWindowLabel(selectedWindow);
+			adminIssuePerfBadgeText = `${windowLabel} p95 ${Math.round(p95)}ms · hit ${Math.round(hitRate)}% (${count})`;
+			if (adminIssuePerfMeta) {
+				adminIssuePerfMeta.textContent = `p95 ${Math.round(p95)}ms · p99 ${Math.round(Number(perf?.p99_ms ?? 0))}ms · hit ${Math.round(hitRate)}% · 샘플 ${count}건`;
+			}
+			if (adminIssuePerfPanel) {
+				adminIssuePerfPanel.classList.toggle("warn", p95 >= adminIssuePerfWarnMs);
+			}
+			renderAdminIssuePerfBadge(perf);
+			renderAdminIssuePerfEndpoints(perf);
+			updateAdminIssuePerfWindowButtons();
+			updateAdminIssueUpdatedHint();
+			scheduleAdminIssueAutoRefresh();
+		} catch {
+			// Keep UI resilient: performance badge is optional and should not block data rendering.
+			if (adminIssuePerfMeta) {
+				adminIssuePerfMeta.textContent = "성능 지표를 불러오지 못했습니다.";
+			}
+			scheduleAdminIssueAutoRefresh();
+		}
+	}
+
+	function applyAdminIssueSummaryData(data) {
+		adminIssueHasLoaded = true;
+		adminIssueNeedsRefresh = false;
+		const stats = data?.stats || data?.summary || {};
+		const memberItems = Array.isArray(data?.member_items)
+			? data.member_items
+			: (Array.isArray(data?.members) ? data.members : []);
+		renderAdminIssueStats(stats);
+		renderAdminIssueAuthorOptions(data?.author_options || data?.reporter_options || []);
+		renderAdminIssueQuickMembers(data?.author_options || data?.reporter_options || []);
+		renderAdminIssueStatusOptions(data?.status_options || []);
+		renderAdminIssuePodium(memberItems);
+		renderAdminIssueMemberSummary(memberItems, stats);
+		updateAdminIssueDetailMeta(data);
+		updateAdminIssueRangeButtons();
+		if (adminIssueSourceHint) {
+			adminIssueSourceHint.textContent = `데이터 출처: ${String(data?.source || data?.sheet || '-').trim() || '-'}`;
+		}
+		if (adminIssueUpdatedHint) {
+			adminIssueLastUpdatedAt = String(data?.updated_at || "");
+			updateAdminIssueUpdatedHint();
+		}
+		if (adminIssuePeriodHint) {
+			const start = String(data?.period?.start || data?.date_range?.start || "").trim();
+			const end = String(data?.period?.end || data?.date_range?.end || "").trim();
+			adminIssuePeriodHint.textContent = `기간: ${start || "-"} ~ ${end || "-"}`;
+		}
+		if (adminIssueRows) {
+			adminIssueRows.innerHTML = '<tr><td colspan="17">상세 목록을 불러오는 중...</td></tr>';
+		}
+		if (adminIssueDetailCount) {
+			adminIssueDetailCount.textContent = `상세 0건 표시 중 / 전체 ${Number(data?.detail_total_count ?? 0)}건`;
+		}
+	}
+
+	function appendAdminIssueRows(items) {
+		if (!adminIssueRows) return;
+		const rows = Array.isArray(items) ? items : [];
+		if (!rows.length) return;
+		const renderToken = ++adminIssueRowRenderToken;
+		const appendChunk = (startIndex) => {
+			if (renderToken !== adminIssueRowRenderToken) return;
+			const chunk = rows.slice(startIndex, startIndex + ADMIN_ISSUE_ROW_CHUNK_SIZE);
+			if (!chunk.length) return;
+			adminIssueRows.insertAdjacentHTML("beforeend", chunk.map(buildAdminIssueRowMarkup).join(""));
+			if (startIndex + ADMIN_ISSUE_ROW_CHUNK_SIZE < rows.length) {
+				window.requestAnimationFrame(() => appendChunk(startIndex + ADMIN_ISSUE_ROW_CHUNK_SIZE));
+			}
+		};
+		window.requestAnimationFrame(() => appendChunk(0));
+	}
+
+	function applyAdminIssueDetailData(summaryData, detailData) {
+		const memberItems = Array.isArray(summaryData?.member_items)
+			? summaryData.member_items
+			: (Array.isArray(summaryData?.members) ? summaryData.members : []);
+		const issueItems = Array.isArray(detailData?.items)
+			? detailData.items
+			: (Array.isArray(detailData?.issue_items) ? detailData.issue_items : []);
+		updateAdminIssueDetailMeta(detailData);
+		updateAdminIssueRangeButtons();
+		adminIssueDetailOffset = Number(detailData?.detail_shown_count ?? issueItems.length);
+		if (adminIssueResultCount) {
+			const total = Number(detailData?.detail_total_count ?? issueItems.length);
+			const members = memberItems.length;
+			adminIssueResultCount.textContent = `조회 결과 ${total}건 · ${members}명`;
+		}
+		if (Number(detailData?.detail_offset ?? 0) > 0) {
+			window.requestAnimationFrame(() => {
+				appendAdminIssueRows(issueItems);
+			});
+			return;
+		}
+		window.requestAnimationFrame(() => {
+			renderAdminIssueRows(issueItems);
+		});
+	}
+
+	async function fetchAdminIssueSummary(query, forceRefresh, requestToken) {
+		if (!forceRefresh) {
+			const cachedSummary = getCachedAdminIssueResponse(adminIssueSummaryCache, query);
+			if (cachedSummary) {
+				applyAdminIssueSummaryData(cachedSummary);
+				return cachedSummary;
+			}
+		}
+		if (adminIssueSummaryAbortController) {
+			adminIssueSummaryAbortController.abort();
+		}
+		adminIssueSummaryAbortController = new AbortController();
+		adminIssueMemberRows.innerHTML = '<tr><td colspan="16">요약을 불러오는 중...</td></tr>';
+		const summaryUrl = query ? `/api/admin/board/member-issues/summary?${query}` : "/api/admin/board/member-issues/summary";
+		const summaryData = await requestJson(summaryUrl, {
+			method: "GET",
+			signal: adminIssueSummaryAbortController.signal,
+		});
+		if (requestToken !== adminIssueRequestToken) {
+			return null;
+		}
+		setCachedAdminIssueResponse(adminIssueSummaryCache, query, summaryData);
+		applyAdminIssueSummaryData(summaryData);
+		return summaryData;
+	}
+
+	async function fetchAdminIssueDetail(summaryData, queryWithLimit, forceRefresh, requestToken) {
+		if (!forceRefresh) {
+			const cachedDetail = getCachedAdminIssueResponse(adminIssueDetailCache, queryWithLimit);
+			if (cachedDetail) {
+				applyAdminIssueDetailData(summaryData, cachedDetail);
+				return;
+			}
+		}
+		if (adminIssueDetailAbortController) {
+			adminIssueDetailAbortController.abort();
+		}
+		adminIssueDetailAbortController = new AbortController();
+		if (adminIssueLoadMoreBtn) {
+			adminIssueLoadMoreBtn.disabled = true;
+		}
+		const detailUrl = queryWithLimit ? `/api/admin/board/member-issues/detail?${queryWithLimit}` : "/api/admin/board/member-issues/detail";
+		const detailData = await requestJson(detailUrl, {
+			method: "GET",
+			signal: adminIssueDetailAbortController.signal,
+		});
+		if (requestToken !== adminIssueRequestToken) {
+			return;
+		}
+		setCachedAdminIssueResponse(adminIssueDetailCache, queryWithLimit, detailData);
+		applyAdminIssueDetailData(summaryData, detailData);
+	}
+
+	async function refreshAdminIssueManagement(force = false) {
+		if (!adminIssueRows || !adminIssueMemberRows) return;
+		if (!isAdminIssueTabActive()) {
+			if (force) {
+				adminIssueNeedsRefresh = true;
+			}
+			return;
+		}
+		const forceRefresh = force === true;
+		const requestToken = ++adminIssueRequestToken;
+		try {
+			adminIssueDetailOffset = 0;
+			const summaryQuery = buildAdminIssueQueryString(false);
+			const detailQuery = buildAdminIssueQueryString(true, true);
+			const summaryData = await fetchAdminIssueSummary(summaryQuery, forceRefresh, requestToken);
+			if (!summaryData) {
+				return;
+			}
+			await new Promise((resolve) => window.requestAnimationFrame(resolve));
+			await fetchAdminIssueDetail(summaryData, detailQuery, forceRefresh, requestToken);
+			refreshAdminIssuePerfSummary();
+		} catch (error) {
+			if (error?.name === "AbortError") {
+				return;
+			}
+			const fallback = getAdminIssueBootstrapData();
+			const fallbackStats = fallback?.stats || {};
+			const fallbackMembers = Array.isArray(fallback?.member_items) ? fallback.member_items : [];
+			const fallbackItems = Array.isArray(fallback?.items) ? fallback.items : [];
+			if (fallbackMembers.length || fallbackItems.length) {
+				const fallbackSummary = {
+					...fallback,
+					stats: fallbackStats,
+					member_items: fallbackMembers,
+					detail_total_count: Number(fallback?.detail_total_count ?? fallbackItems.length),
+				};
+				applyAdminIssueSummaryData(fallbackSummary);
+				applyAdminIssueDetailData(fallbackSummary, {
+					items: fallbackItems,
+					detail_total_count: Number(fallback?.detail_total_count ?? fallbackItems.length),
+					detail_returned_count: fallbackItems.length,
+					detail_has_more: false,
+				});
+				if (adminIssuePeriodHint) {
+					const start = String(fallback?.period?.start || "").trim();
+					const end = String(fallback?.period?.end || "").trim();
+					adminIssuePeriodHint.textContent = `기간: ${start || "-"} ~ ${end || "-"} (업로드 데이터)`;
+				}
+				return;
+			}
+			renderAdminIssueStats({ total_tickets: 0, definite_problem: 0, mistake_rate: 0, score: 0 });
+			adminIssueMemberRows.innerHTML = `<tr><td colspan="16">${esc(error?.message || "인원별 이슈 요약을 불러오지 못했습니다.")}</td></tr>`;
+			adminIssueRows.innerHTML = `<tr><td colspan="17">${esc(error?.message || "인원별 이슈 목록을 불러오지 못했습니다.")}</td></tr>`;
+			if (adminIssuePeriodHint) {
+				adminIssuePeriodHint.textContent = "기간: -";
+			}
+			if (adminIssueResultCount) {
+				adminIssueResultCount.textContent = esc(error?.message || "조회 실패");
+			}
+		}
+	}
+
+	function ensureAdminIssueLoaded(force = false) {
+		if (!isAdminIssueTabActive()) return;
+		if (force || adminIssueNeedsRefresh || !adminIssueHasLoaded) {
+			refreshAdminIssueManagement(force);
+		}
+	}
+
+	function refreshAdminIssueDetailOnly(force = false) {
+		if (!adminIssueRows) return;
+		if (!isAdminIssueTabActive()) return;
+		const requestToken = ++adminIssueRequestToken;
+		const forceRefresh = force === true;
+		const summaryQuery = buildAdminIssueQueryString(false);
+		const detailQuery = buildAdminIssueQueryString(true, true);
+		const summaryData = getCachedAdminIssueResponse(adminIssueSummaryCache, summaryQuery);
+		if (!summaryData) {
+			refreshAdminIssueManagement(forceRefresh);
+			return;
+		}
+		fetchAdminIssueDetail(summaryData, detailQuery, forceRefresh, requestToken).catch((error) => {
+			if (error?.name === "AbortError") return;
+			adminIssueRows.innerHTML = `<tr><td colspan="17">${esc(error?.message || "상세 목록을 불러오지 못했습니다.")}</td></tr>`;
+		});
+	}
+
+	function scheduleAdminIssueRefresh() {
+		window.clearTimeout(adminIssueSearchTimer);
+		adminIssueDetailLimit = 120;
+		adminIssueDetailOffset = 0;
+		adminIssueSearchTimer = window.setTimeout(() => {
+			refreshAdminIssueManagement();
+		}, 420);
+	}
+
 	function openDetailModal(title, lines) {
 		if (!requestDetailModal || !requestDetailTitle || !requestDetailList) return;
 		requestDetailTitle.textContent = String(title || "상세").trim() || "상세";
@@ -82,6 +1134,60 @@ function esc(value) {
 		document.body.classList.add("modal-open");
 	}
 
+	function exportAdminIssueManagement() {
+		const query = buildAdminIssueQueryString(false, false);
+		const rawUrl = query ? `/api/admin/board/member-issues/export?${query}` : "/api/admin/board/member-issues/export";
+		const url = resolveApiUrl(rawUrl);
+		window.location.href = url;
+	}
+
+	async function refreshAdminCompanyMembers() {
+		if (!adminCompanyMemberHint && !adminCompanyMemberList) return;
+		try {
+			const data = await requestJson("/api/company-members", { method: "GET" });
+			const members = Array.isArray(data?.members)
+				? data.members.map((name) => String(name || "").trim()).filter(Boolean)
+				: [];
+			if (adminCompanyMemberHint) {
+				adminCompanyMemberHint.textContent = `회사 인원 ${members.length}명 | ${members.join(", ") || "-"}`;
+			}
+			if (adminCompanyMemberList) {
+				adminCompanyMemberList.innerHTML = members.map((name) => `<option value="${esc(name)}"></option>`).join("");
+			}
+		} catch (error) {
+			if (adminCompanyMemberHint) {
+				adminCompanyMemberHint.textContent = `회사 인원 목록 조회 실패: ${String(error?.message || error || "-")}`;
+			}
+		}
+	}
+
+	async function updateAdminCompanyMember(action) {
+		const name = String(adminCompanyMemberInput?.value || "").trim();
+		if (!name) {
+			window.alert("이름을 입력해 주세요.");
+			return;
+		}
+		const isAdd = action === "add";
+		const button = isAdd ? adminCompanyMemberAddBtn : adminCompanyMemberRemoveBtn;
+		if (button) button.disabled = true;
+		try {
+			const formData = new FormData();
+			formData.set("name", name);
+			await requestJson(isAdd ? "/api/company-members/add" : "/api/company-members/remove", {
+				method: "POST",
+				headers: undefined,
+				body: formData,
+			});
+			await refreshAdminCompanyMembers();
+			await refreshAdminIssueManagement(true);
+			if (adminCompanyMemberInput) adminCompanyMemberInput.value = "";
+		} catch (error) {
+			window.alert(String(error?.message || error || "요청 실패"));
+		} finally {
+			if (button) button.disabled = false;
+		}
+	}
+
 	function renderMembers(items) {
 		memberBody.innerHTML = items
 			.map((x) => {
@@ -90,7 +1196,7 @@ function esc(value) {
 				const approved = Boolean(x.approved);
 				const canLogin = Boolean(x.can_login);
 				const gameAccess = Boolean(x.game_access);
-				const canSeeGameControl = canManageGameAccess && email !== "hiss0723@poliot.co.kr" && String(x.role || "").toLowerCase() !== "admin";
+				const canSeeGameControl = canManageGameAccess;
 				const titlePhone = [String(x.title || "").trim(), String(x.phone || "").trim()].filter(Boolean).join(" / ") || "-";
 				const createdAt = formatDisplayDateTime(x.created_at || "");
 				return `
@@ -98,16 +1204,20 @@ function esc(value) {
 						<td>${esc(email || "-")}</td>
 						<td>${esc(x.name || "-")}</td>
 						<td>${esc(titlePhone)}</td>
-						<td>${esc(x.role || "user")}</td>
-						<td>${approved ? "승인" : "대기"}</td>
-						<td>${canLogin ? "허용" : "차단"}</td>
-						<td>${gameAccess ? "허용" : "차단"}</td>
+						<td><span class="admin-member-status-badge ${x.role === "admin" ? "is-admin" : "is-user"}">${esc(x.role || "user")}</span></td>
+						<td><span class="admin-member-status-badge ${approved ? "is-approved" : "is-pending"}">${approved ? "승인" : "대기"}</span></td>
+						<td>${canLogin ? "✓ 허용" : "✗ 차단"}</td>
+						${canManageGameAccess ? `<td>${gameAccess ? "✓ 허용" : "✗ 차단"}</td>` : ""}
 						<td>${esc(createdAt)}</td>
 						<td>
-							<button type="button" data-approve-member="${esc(email)}" ${approved ? "disabled" : ""}>승인</button>
-							<button type="button" class="btn-secondary" data-toggle-login-member="${esc(email)}" data-next-login="${canLogin ? "0" : "1"}" ${isCoreAdmin ? "disabled" : ""}>${canLogin ? "로그인 차단" : "로그인 허용"}</button>
-							${canSeeGameControl ? `<button type="button" class="btn-secondary" data-toggle-game-member="${esc(email)}" data-next-game="${gameAccess ? "0" : "1"}">어떠한 승인</button>` : ""}
-							<button type="button" class="btn-ghost" data-del-member="${esc(email)}" ${isCoreAdmin ? "disabled" : ""}>삭제</button>
+							<div class="admin-action-buttons">
+								<button type="button" class="btn-edit" data-open-member-edit="${esc(email)}">상세수정</button>
+								<button type="button" class="btn-approve" data-approve-member="${esc(email)}" ${approved ? "disabled" : ""}>승인</button>
+								<button type="button" class="btn-edit" data-toggle-role-member="${esc(email)}" data-next-role="${x.role === "admin" ? "user" : "admin"}" ${isCoreAdmin ? "disabled" : ""}>${x.role === "admin" ? "관리자해제" : "관리자부여"}</button>
+								<button type="button" class="btn-edit" data-toggle-login-member="${esc(email)}" data-next-login="${canLogin ? 0 : 1}" ${isCoreAdmin ? "disabled" : ""}>${canLogin ? "차단" : "허용"}</button>
+								${canSeeGameControl ? `<button type="button" class="btn-game-access" data-toggle-game-member="${esc(email)}" data-next-game="${gameAccess ? 0 : 1}" ${isCoreAdmin ? "disabled" : ""}>${gameAccess ? "차단" : "허용"}</button>` : ""}
+								<button type="button" class="btn-delete" data-del-member="${esc(email)}" ${isCoreAdmin ? "disabled" : ""}>삭제</button>
+							</div>
 						</td>
 					</tr>
 				`;
@@ -117,17 +1227,50 @@ function esc(value) {
 		setDetailSummary(items);
 	}
 
+	function resolveApiUrl(url) {
+		const raw = String(url || "").trim();
+		if (!raw || !raw.startsWith("/api/")) return raw;
+		const path = String(window.location.pathname || "");
+		if (!path) return raw;
+		const marker = "/admin";
+		const lowerPath = path.toLowerCase();
+		const idx = lowerPath.lastIndexOf(marker);
+		if (idx <= 0) return raw;
+		const prefix = path.slice(0, idx).replace(/\/$/, "");
+		if (!prefix) return raw;
+		return `${prefix}${raw}`;
+	}
+
 	async function requestJson(url, options) {
-		const res = await fetch(url, {
+		const requestOptions = {
 			credentials: "same-origin",
 			headers: { "Content-Type": "application/json" },
 			...options,
-		});
+		};
+		const candidates = [];
+		const resolvedUrl = resolveApiUrl(url);
+		if (resolvedUrl) candidates.push(resolvedUrl);
+		if (url && !candidates.includes(url)) candidates.push(url);
+		let res = null;
+		for (const candidate of candidates) {
+			res = await fetch(candidate, requestOptions);
+			if (res.status !== 404) break;
+		}
+		if (!res) {
+			throw new Error("요청을 전송하지 못했습니다.");
+		}
+		const contentType = String(res.headers.get("content-type") || "").toLowerCase();
+		if (!contentType.includes("application/json")) {
+			if (res.status === 401 || res.status === 403 || res.redirected) {
+				throw new Error("세션이 만료되었거나 권한이 없습니다. 다시 로그인해 주세요.");
+			}
+			throw new Error("서버 응답 형식이 올바르지 않습니다. 페이지를 새로고침해 주세요.");
+		}
 		let data = {};
 		try {
 			data = await res.json();
 		} catch {
-			data = {};
+			throw new Error("서버 응답을 읽지 못했습니다. 잠시 후 다시 시도해 주세요.");
 		}
 		if (!res.ok) {
 			const detail = String(data?.detail || "요청 처리 중 오류가 발생했습니다.");
@@ -139,12 +1282,31 @@ function esc(value) {
 	async function refreshMembers() {
 		try {
 			const data = await requestJson("/api/admin/users", { method: "GET" });
-			canManageGameAccess = Boolean(data.can_manage_game_access);
-			const items = Array.isArray(data.items) ? data.items : [];
-			items.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
-			renderMembers(items);
+			currentAdminEmail = String(data.current_user_email || "").trim().toLowerCase();
+			if (adminCurrentUser) {
+				adminCurrentUser.textContent = currentAdminEmail || "-";
+			}
+			console.log("[Admin] API Response - can_manage_game_access:", data.can_manage_game_access);
+			const serverCanManageGameAccess = Boolean(data.can_manage_game_access);
+			const emailCheckPassed = !currentAdminEmail || currentAdminEmail === GAME_ACCESS_MANAGER_EMAIL;
+			canManageGameAccess = serverCanManageGameAccess && emailCheckPassed;
+			console.log("[Admin] canManageGameAccess after assignment:", canManageGameAccess);
+			
+			// 게임 권한 상태 표시 (topbar에)
+			if (adminGameAccess) {
+				adminGameAccess.textContent = canManageGameAccess ? "✓ 허용" : "✗ 차단";
+				adminGameAccess.style.color = canManageGameAccess ? "#4CAF50" : "#f44336";
+			}
+			
+			syncGameAccessVisibility();
+			console.log("[Admin] memberGameAccessHeader hidden?", memberGameAccessHeader?.hidden);
+			console.log("[Admin] memberEditGameAccessField hidden?", memberEditGameAccessField?.hidden);
+			console.log("[Admin] adminMemberAddBtn exists?", adminMemberAddBtn ? "yes" : "no");
+			rawMemberItems = Array.isArray(data.items) ? data.items : [];
+			rawMemberItems.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+			applyMemberView(rawMemberItems);
 		} catch (error) {
-			memberBody.innerHTML = `<tr><td colspan="9">${esc(error?.message || "사용자 목록을 불러오지 못했습니다.")}</td></tr>`;
+			memberBody.innerHTML = `<tr><td colspan="${getMemberTableColumnCount()}">${esc(error?.message || "사용자 목록을 불러오지 못했습니다.")}</td></tr>`;
 			if (memberDetailBody) {
 				memberDetailBody.innerHTML = `<tr><td>상태</td><td>${esc(error?.message || "통계를 불러오지 못했습니다.")}</td></tr>`;
 			}
@@ -161,7 +1323,8 @@ function esc(value) {
 			.map((x) => {
 				const requestId = String(x.request_id || "");
 				const sourceType = String(x.source_type || "");
-				const canDecide = sourceType === "asset-delete" || sourceType === "schedule";
+				const canApprove = sourceType === "asset-delete" || sourceType === "schedule";
+				const canReject = sourceType === "asset-delete" || sourceType === "schedule";
 				const canWithdraw = sourceType === "asset-delete" || sourceType === "schedule";
 				return `
 					<tr>
@@ -170,7 +1333,10 @@ function esc(value) {
 						<td>${esc(formatDisplayDateTime(x.requested_at || ""))}</td>
 						<td><button type="button" class="btn-secondary" data-show-request-details="${esc(requestId)}">내용</button></td>
 						<td>
-							<button type="button" data-open-asset-decision="${esc(requestId)}" ${canDecide ? "" : "disabled"}>판단하기</button>
+							<div style="display:flex;gap:6px;flex-wrap:wrap;">
+								<button type="button" class="btn-approve" data-approve-asset-request="${esc(requestId)}" ${canApprove ? "" : "disabled"}>승인</button>
+								<button type="button" class="btn-reject" data-reject-asset-request="${esc(requestId)}" ${canReject ? "" : "disabled"}>반려</button>
+							</div>
 						</td>
 						<td>
 							<button type="button" class="btn-ghost" data-withdraw-asset-request="${esc(requestId)}" ${canWithdraw ? "" : "disabled"}>요청철회</button>
@@ -265,6 +1431,42 @@ function esc(value) {
 			await requestJson(`/api/manage/schedules/${encodeURIComponent(withdrawId)}/withdraw-request`, {
 				method: "POST",
 				body: JSON.stringify({}),
+			});
+			return;
+		}
+		throw new Error("지원하지 않는 요청 유형입니다.");
+	}
+
+	async function applyPendingRequestDecision(requestItem, decisionType, reason = "") {
+		const id = String(requestItem?.target_id || "");
+		const sourceType = String(requestItem?.source_type || "");
+		if (!id) {
+			throw new Error("처리할 요청 대상을 찾지 못했습니다.");
+		}
+		if (decisionType !== "approve" && decisionType !== "reject") {
+			throw new Error("지원하지 않는 처리 방식입니다.");
+		}
+		if (sourceType === "asset-delete") {
+			if (decisionType === "approve") {
+				await requestJson(`/api/admin/assets/${encodeURIComponent(id)}/approve-delete`, {
+					method: "POST",
+					body: JSON.stringify({}),
+				});
+				return;
+			}
+			await requestJson(`/api/admin/assets/${encodeURIComponent(id)}/reject-delete`, {
+				method: "POST",
+				body: JSON.stringify({ reason }),
+			});
+			return;
+		}
+		if (sourceType === "schedule") {
+			await requestJson(`/api/manage/schedules/${encodeURIComponent(id)}/approval`, {
+				method: "POST",
+				body: JSON.stringify({
+					status: decisionType === "approve" ? "approved" : "rejected",
+					reason: decisionType === "reject" ? reason : "",
+				}),
 			});
 			return;
 		}
@@ -386,7 +1588,15 @@ function esc(value) {
 	}
 
 	function applyAdminHashMode() {
-		const requestedId = (window.location.hash || "").replace("#", "");
+		let requestedId = (window.location.hash || "").replace("#", "");
+		if (requestedId === "adminAssetDecisionTab") {
+			requestedId = "adminAssetApprovalTab";
+			window.location.hash = "#adminAssetApprovalTab";
+		}
+		if (requestedId === "adminBoardApprovalTab") {
+			requestedId = "adminAssetApprovalTab";
+			window.location.hash = "#adminAssetApprovalTab";
+		}
 		if (!requestedId) {
 			for (const id of ADMIN_SECTION_IDS) {
 				const section = document.getElementById(id);
@@ -398,7 +1608,7 @@ function esc(value) {
 			adminMainGrid?.classList.remove("admin-single-mode");
 			return;
 		}
-		const activeId = ADMIN_SECTION_IDS.includes(requestedId) ? requestedId : "adminIssueTab";
+		const activeId = ADMIN_SECTION_IDS.includes(requestedId) ? requestedId : "adminPeopleTab";
 		for (const id of ADMIN_SECTION_IDS) {
 			const section = document.getElementById(id);
 			if (section) {
@@ -407,20 +1617,96 @@ function esc(value) {
 			}
 		}
 		adminMainGrid?.classList.add("admin-single-mode");
+		if (activeId === "adminIssueTab") {
+			ensureAdminIssueLoaded();
+		}
+	}
+
+	function openMemberAddModal() {
+		console.log("[Admin] openMemberAddModal called");
+		console.log("[Admin] memberAddModal exists?", memberAddModal ? "yes" : "no");
+		console.log("[Admin] memberAddForm exists?", memberAddForm ? "yes" : "no");
+		if (!memberAddModal) {
+			console.error("[Admin] Modal element not found!");
+			return;
+		}
+		if (memberAddForm) {
+			memberAddForm.reset();
+		}
+		
+		// Move modal to body to escape container constraints
+		if (memberAddModal.parentElement !== document.body) {
+			console.log("[Admin] Moving modal from", memberAddModal.parentElement.tagName, "to body");
+			document.body.appendChild(memberAddModal);
+		}
+		
+		// Remove hidden attribute FIRST
+		memberAddModal.removeAttribute("hidden");
+		
+		// Force browser reflow before applying styles
+		setTimeout(() => {
+			// Ensure html/body have proper height
+			document.documentElement.style.height = "100%";
+			document.body.style.height = "100%";
+			
+			// Apply modal container styles with absolute positioning
+			memberAddModal.style.cssText = "display: grid !important; position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 9999 !important; place-items: center !important; padding: 16px !important; margin: 0 !important;";
+			
+			// Also apply to modal panel
+			const panel = memberAddModal.querySelector(".modal-panel");
+			if (panel) {
+				panel.style.cssText = "position: relative !important; width: min(760px, 96vw) !important; max-height: 80vh !important; overflow: auto !important; background: #ffffff !important; border-radius: 12px !important; border: 1px solid #c9dbf0 !important; box-shadow: 0 22px 44px rgba(12, 36, 66, 0.28) !important;";
+			}
+			
+			document.body.classList.add("modal-open");
+			
+			// Debug: Check actual computed styles after reflow
+			const computed = window.getComputedStyle(memberAddModal);
+			console.log("[Admin] Modal computed display:", computed.display);
+			console.log("[Admin] Modal clientHeight:", memberAddModal.clientHeight);
+			console.log("[Admin] Modal offsetHeight:", memberAddModal.offsetHeight);
+			if (panel) {
+				console.log("[Admin] Panel clientHeight:", panel.clientHeight);
+				console.log("[Admin] Panel offsetHeight:", panel.offsetHeight);
+			}
+		}, 0);
+	}
+
+	function closeMemberAddModal() {
+		if (!memberAddModal) return;
+		memberAddModal.setAttribute("hidden", "");
+		memberAddModal.style.display = "none";
+		document.body.classList.remove("modal-open");
 	}
 
 	memberBody.addEventListener("click", async (event) => {
-		const target = event.target;
+		const source = event.target;
+		if (!(source instanceof Element)) return;
+		const target = source.closest("button");
 		if (!(target instanceof HTMLElement)) return;
 
 		const approveEmail = target.getAttribute("data-approve-member");
+		const editEmail = target.getAttribute("data-open-member-edit");
+		const toggleRoleEmail = target.getAttribute("data-toggle-role-member");
+		const nextRole = String(target.getAttribute("data-next-role") || "").trim().toLowerCase();
 		const toggleEmail = target.getAttribute("data-toggle-login-member");
 		const nextLogin = target.getAttribute("data-next-login");
 		const toggleGameEmail = target.getAttribute("data-toggle-game-member");
 		const nextGame = target.getAttribute("data-next-game");
 		const deleteEmail = target.getAttribute("data-del-member");
 
+		if (!approveEmail && !editEmail && !toggleRoleEmail && !toggleEmail && !toggleGameEmail && !deleteEmail) {
+			return;
+		}
+
 		try {
+			if (editEmail) {
+				const member = findMemberByEmail(editEmail);
+				if (!member) throw new Error("수정할 회원 정보를 찾지 못했습니다.");
+				openMemberEditModal(member);
+				return;
+			}
+
 			if (approveEmail) {
 				await requestJson(`/api/admin/users/${encodeURIComponent(approveEmail)}`, {
 					method: "PUT",
@@ -434,6 +1720,18 @@ function esc(value) {
 				await requestJson(`/api/admin/users/${encodeURIComponent(toggleEmail)}`, {
 					method: "PUT",
 					body: JSON.stringify({ can_login: String(nextLogin) === "1" }),
+				});
+				await refreshMembers();
+				return;
+			}
+
+			if (toggleRoleEmail) {
+				if (nextRole !== "admin" && nextRole !== "user") {
+					throw new Error("변경할 권한 정보가 올바르지 않습니다.");
+				}
+				await requestJson(`/api/admin/users/${encodeURIComponent(toggleRoleEmail)}`, {
+					method: "PUT",
+					body: JSON.stringify({ role: nextRole }),
 				});
 				await refreshMembers();
 				return;
@@ -462,6 +1760,194 @@ function esc(value) {
 		}
 	});
 
+	memberEditModal?.addEventListener("click", (event) => {
+		const target = event.target;
+		if (!(target instanceof HTMLElement)) return;
+		if (target.closest("[data-close-member-edit='1']")) {
+			closeMemberEditModal();
+		}
+	});
+
+	memberEditForm?.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		const email = String(document.getElementById("memberEditEmail")?.value || "").trim().toLowerCase();
+		if (!email) {
+			window.alert("수정할 계정을 찾지 못했습니다.");
+			return;
+		}
+		const payload = {
+			name: String(document.getElementById("memberEditName")?.value || "").trim(),
+			role: String(document.getElementById("memberEditRole")?.value || "user").trim().toLowerCase(),
+			title: String(document.getElementById("memberEditTitle")?.value || "").trim(),
+			phone: String(document.getElementById("memberEditPhone")?.value || "").trim(),
+			birth: String(document.getElementById("memberEditBirth")?.value || "").trim(),
+			address: String(document.getElementById("memberEditAddress")?.value || "").trim(),
+			approved: Boolean(document.getElementById("memberEditApproved")?.checked),
+			can_login: Boolean(document.getElementById("memberEditCanLogin")?.checked),
+		};
+		if (canManageGameAccess) {
+			payload.game_access = Boolean(memberEditGameAccessInput?.checked);
+		}
+		if (!payload.name) {
+			window.alert("이름을 입력해 주세요.");
+			return;
+		}
+		if (!isValidPhone(payload.phone)) {
+			window.alert(PHONE_RULE_TEXT);
+			return;
+		}
+		if (!isValidBirth(payload.birth)) {
+			window.alert(BIRTH_RULE_TEXT);
+			return;
+		}
+		try {
+			await requestJson(`/api/admin/users/${encodeURIComponent(email)}`, {
+				method: "PUT",
+				body: JSON.stringify(payload),
+			});
+			window.alert("회원 정보가 저장되었습니다.");
+			closeMemberEditModal();
+			await refreshMembers();
+			window.dispatchEvent(new Event("cci:auth-updated"));
+		} catch (error) {
+			window.alert(error?.message || "회원 정보 저장 중 오류가 발생했습니다.");
+		}
+	});
+
+	memberPasswordForm?.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		const email = String(document.getElementById("memberEditEmail")?.value || "").trim().toLowerCase();
+		const password = String(document.getElementById("memberPasswordInput")?.value || "").trim();
+		if (!email) {
+			window.alert("수정할 계정을 찾지 못했습니다.");
+			return;
+		}
+		if (!isValidPassword(password)) {
+			window.alert(PASSWORD_RULE_TEXT);
+			return;
+		}
+		try {
+			await requestJson(`/api/admin/users/${encodeURIComponent(email)}`, {
+				method: "PUT",
+				body: JSON.stringify({ password }),
+			});
+			await refreshMembers();
+			window.alert("비밀번호가 변경되었습니다.");
+			document.getElementById("memberPasswordInput").value = "";
+		} catch (error) {
+			window.alert(error?.message || "비밀번호 변경 중 오류가 발생했습니다.");
+		}
+	});
+
+	// 인원 추가 버튼 클릭
+	// 인원 추가 버튼 클릭
+	if (adminMemberAddBtn) {
+		console.log("[Admin] Attaching click listener to adminMemberAddBtn");
+		adminMemberAddBtn.addEventListener("click", (e) => {
+			console.log("[Admin] Button clicked!", e);
+			openMemberAddModal();
+		});
+	} else {
+		console.error("[Admin] adminMemberAddBtn not found during event setup!");
+	}
+
+	// 인원 추가 모달 닫기
+	document.querySelectorAll('[data-close-member-add]').forEach((btn) => {
+		btn.addEventListener("click", closeMemberAddModal);
+	});
+
+	// 인원 추가 폼 제출
+	memberAddForm?.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		try {
+			const email = String(document.getElementById("memberAddEmail")?.value || "").trim().toLowerCase();
+			const password = String(document.getElementById("memberAddPassword")?.value || "").trim();
+			const name = String(document.getElementById("memberAddName")?.value || "").trim();
+			const phone = String(document.getElementById("memberAddPhone")?.value || "").trim();
+			const title = String(document.getElementById("memberAddTitle")?.value || "").trim();
+			const birth = String(document.getElementById("memberAddBirth")?.value || "").trim();
+			const address = String(document.getElementById("memberAddAddress")?.value || "").trim();
+			const approved = Boolean(document.getElementById("memberAddApproved")?.checked);
+			const canLogin = Boolean(document.getElementById("memberAddCanLogin")?.checked);
+			const isAdmin = Boolean(document.getElementById("memberAddRole")?.checked);
+
+			if (!email || !name || !password) {
+				window.alert("이메일, 이름, 비밀번호는 필수입니다.");
+				return;
+			}
+			if (!isValidEmail(email)) {
+				window.alert("이메일 형식이 올바르지 않습니다.");
+				return;
+			}
+			if (!isValidPhone(phone)) {
+				window.alert(PHONE_RULE_TEXT);
+				return;
+			}
+			if (!isValidBirth(birth)) {
+				window.alert(BIRTH_RULE_TEXT);
+				return;
+			}
+			if (!isValidPassword(password)) {
+				window.alert(PASSWORD_RULE_TEXT);
+				return;
+			}
+
+			const payload = {
+				email,
+				password,
+				name,
+				phone,
+				title,
+				birth,
+				address,
+				approved,
+				can_login: canLogin,
+				role: isAdmin ? "admin" : "user",
+			};
+
+			const result = await requestJson("/api/admin/users", {
+				method: "POST",
+				body: JSON.stringify(payload),
+			});
+
+			if (result.ok) {
+				window.alert("인원이 추가되었습니다.");
+				closeMemberAddModal();
+				await refreshMembers();
+			}
+		} catch (error) {
+			window.alert(error?.message || "인원 추가 중 오류가 발생했습니다.");
+		}
+	});
+
+	adminMemberSearchInput?.addEventListener("input", () => applyMemberView(rawMemberItems));
+	adminMemberStatusFilter?.addEventListener("change", () => applyMemberView(rawMemberItems));
+	adminMemberRefreshBtn?.addEventListener("click", refreshMembers);
+
+	adminApproveAllPendingBtn?.addEventListener("click", async () => {
+		const pending = rawMemberItems.filter((x) => !Boolean(x.approved));
+		if (!pending.length) {
+			window.alert("승인 대기 계정이 없습니다.");
+			return;
+		}
+		const ok = window.confirm(`승인 대기 ${pending.length}건을 모두 승인하시겠습니까?`);
+		if (!ok) return;
+		try {
+			for (const item of pending) {
+				const email = String(item.email || "").trim().toLowerCase();
+				if (!email) continue;
+				await requestJson(`/api/admin/users/${encodeURIComponent(email)}`, {
+					method: "PUT",
+					body: JSON.stringify({ approved: true, can_login: true }),
+				});
+			}
+			await refreshMembers();
+			window.alert("승인 대기 계정을 모두 승인했습니다.");
+		} catch (error) {
+			window.alert(error?.message || "일괄 승인 중 오류가 발생했습니다.");
+		}
+	});
+
 	assetDeleteRequestBody?.addEventListener("click", async (event) => {
 		const target = event.target;
 		if (!(target instanceof HTMLElement)) return;
@@ -472,16 +1958,56 @@ function esc(value) {
 			return;
 		}
 
-		const openDecisionId = target.getAttribute("data-open-asset-decision");
-		if (openDecisionId) {
-			preferredDecisionId = String(openDecisionId);
-			renderDecisionQueue(pendingDeleteRequests);
-			window.location.hash = "#adminAssetDecisionTab";
-			applyAdminHashMode();
-			setTimeout(() => {
-				const row = document.querySelector(`[data-decision-row-id="${preferredDecisionId}"]`);
-				row?.scrollIntoView({ block: "center", behavior: "smooth" });
-			}, 10);
+		const approveRequestId = target.getAttribute("data-approve-asset-request");
+		if (approveRequestId) {
+			const requestItem = getPendingRequestById(approveRequestId);
+			const ok = window.confirm("이 요청을 승인 처리하시겠습니까?");
+			if (!ok) return;
+			try {
+				await applyPendingRequestDecision(requestItem, "approve", "");
+				await refreshAssetDeleteRequests();
+				await refreshAssetDeletedItems();
+				await refreshAssetRejectedItems();
+				await refreshActivityLog();
+				if (String(requestItem?.source_type || "") === "asset-delete") {
+					window.location.hash = "#adminAssetDeletedTab";
+					applyAdminHashMode();
+				}
+				window.alert("승인 처리되었습니다.");
+			} catch (error) {
+				window.alert(error?.message || "승인 처리 중 오류가 발생했습니다.");
+			}
+			return;
+		}
+
+		const rejectRequestId = target.getAttribute("data-reject-asset-request");
+		if (rejectRequestId) {
+			const requestItem = getPendingRequestById(rejectRequestId);
+			const sourceType = String(requestItem?.source_type || "");
+			const needReason = sourceType === "schedule";
+			const promptText = needReason
+				? "반려 사유를 입력해 주세요."
+				: "반려 사유를 입력하세요. (선택사항)";
+			const reason = window.prompt(promptText, "") ?? null;
+			if (reason === null) return;
+			if (needReason && !String(reason).trim()) {
+				window.alert("일정 반려는 사유가 필요합니다.");
+				return;
+			}
+			try {
+				await applyPendingRequestDecision(requestItem, "reject", String(reason).trim());
+				await refreshAssetDeleteRequests();
+				await refreshAssetDeletedItems();
+				await refreshAssetRejectedItems();
+				await refreshActivityLog();
+				if (sourceType === "asset-delete") {
+					window.location.hash = "#adminAssetRejectedTab";
+					applyAdminHashMode();
+				}
+				window.alert("반려 처리되었습니다.");
+			} catch (error) {
+				window.alert(error?.message || "반려 처리 중 오류가 발생했습니다.");
+			}
 			return;
 		}
 
@@ -623,36 +2149,7 @@ function esc(value) {
 		try {
 			for (const requestId of selectedIds) {
 				const requestItem = getPendingRequestById(requestId);
-				const id = String(requestItem?.target_id || "");
-				const sourceType = String(requestItem?.source_type || "");
-				if (!id) {
-					throw new Error("처리할 요청 대상을 찾지 못했습니다.");
-				}
-				if (sourceType === "asset-delete") {
-					if (decisionType === "approve") {
-						await requestJson(`/api/admin/assets/${encodeURIComponent(id)}/approve-delete`, {
-							method: "POST",
-							body: JSON.stringify({}),
-						});
-						continue;
-					}
-					await requestJson(`/api/admin/assets/${encodeURIComponent(id)}/reject-delete`, {
-						method: "POST",
-						body: JSON.stringify({ reason }),
-					});
-					continue;
-				}
-				if (sourceType === "schedule") {
-					await requestJson(`/api/manage/schedules/${encodeURIComponent(id)}/approval`, {
-						method: "POST",
-						body: JSON.stringify({
-							status: decisionType === "approve" ? "approved" : "rejected",
-							reason: decisionType === "reject" ? reason : "",
-						}),
-					});
-					continue;
-				}
-				throw new Error("지원하지 않는 요청 유형입니다.");
+				await applyPendingRequestDecision(requestItem, decisionType, reason);
 			}
 			await refreshAssetDeleteRequests();
 			await refreshAssetDeletedItems();
@@ -699,6 +2196,10 @@ function esc(value) {
 
 	document.addEventListener("keydown", (event) => {
 		if (event.key !== "Escape") return;
+		if (!memberEditModal?.hidden) {
+			closeMemberEditModal();
+			return;
+		}
 		if (requestDetailModal?.hidden) return;
 		closeRequestDetailModal();
 	});
@@ -805,7 +2306,10 @@ function esc(value) {
 					? `<span style="color:#059669;font-size:0.75rem;font-weight:600;">✅ 승인됨</span>`
 					: p.status === 'rejected'
 					? `<span style="color:#dc2626;font-size:0.75rem;font-weight:600;">❌ 반려됨</span>`
+					: p.status === 'withdrawn'
+					? `<span style="color:#64748b;font-size:0.75rem;font-weight:600;">↩️ 철회됨</span>`
 					: `<span style="color:#ca8a04;font-size:0.75rem;font-weight:600;">⏳ 대기</span>`;
+				const isWithdrawn = p.status === 'withdrawn';
 				return `<div class="board-admin-post-card ${priorityCls}" data-post-id="${escBoard(p.id)}">
 					<div>
 						<div class="board-admin-post-meta">
@@ -821,9 +2325,10 @@ function esc(value) {
 						</div>
 					</div>
 					<div class="board-admin-post-actions">
-						${p.status !== 'approved' ? `<button type="button" class="btn-approve board-admin-approve-btn" data-id="${escBoard(p.id)}" style="padding:6px 12px;font-size:0.8rem;"><i class="fas fa-check"></i> 승인</button>` : ''}
-						${p.status !== 'rejected' ? `<button type="button" class="btn-reject board-admin-reject-btn" data-id="${escBoard(p.id)}" style="padding:6px 12px;font-size:0.8rem;"><i class="fas fa-times"></i> 반려</button>` : ''}
+						${!isWithdrawn && p.status !== 'approved' ? `<button type="button" class="btn-approve board-admin-approve-btn" data-id="${escBoard(p.id)}" style="padding:6px 12px;font-size:0.8rem;"><i class="fas fa-check"></i> 승인</button>` : ''}
+						${!isWithdrawn && p.status !== 'rejected' ? `<button type="button" class="btn-reject board-admin-reject-btn" data-id="${escBoard(p.id)}" style="padding:6px 12px;font-size:0.8rem;"><i class="fas fa-times"></i> 반려</button>` : ''}
 						<a href="/board#${escBoard(p.id)}" target="_blank" style="padding:6px 12px;font-size:0.8rem;border:1px solid #c7d5eb;border-radius:7px;color:#334155;text-decoration:none;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-external-link-alt"></i> 보기</a>
+						<button type="button" class="btn-reject board-admin-delete-btn" data-id="${escBoard(p.id)}" title="게시글 영구 삭제" style="padding:6px 12px;font-size:0.8rem;background:#fee2e2;border-color:#fca5a5;color:#b91c1c;"><i class="fas fa-trash"></i></button>
 					</div>
 				</div>`;
 			}).join('');
@@ -834,9 +2339,11 @@ function esc(value) {
 					const id = btn.dataset.id;
 					btn.disabled = true;
 					try {
-						await fetch(`/api/board/posts/${encodeURIComponent(id)}/approve`, { method: 'POST', credentials: 'include' });
+						const r = await fetch(`/api/board/posts/${encodeURIComponent(id)}/approve`, { method: 'POST', credentials: 'include' });
+						if (!r.ok) throw new Error(await r.text());
 						await refreshAdminBoardPosts();
-					} catch (e) { alert('승인 실패: ' + e.message); btn.disabled = false; }
+						await refreshAdminIssueManagement(true);
+					} catch (e) { btn.disabled = false; alert('승인 실패: ' + e.message); }
 				});
 			});
 
@@ -844,18 +2351,35 @@ function esc(value) {
 			container.querySelectorAll('.board-admin-reject-btn').forEach(btn => {
 				btn.addEventListener('click', async () => {
 					const id = btn.dataset.id;
-					const reason = prompt('반려 사유를 입력하세요 (선택사항)') ?? '';
+					const reason = prompt('반려 사유를 입력하세요 (선택사항)');
 					if (reason === null) return;
 					btn.disabled = true;
 					try {
-						await fetch(`/api/board/posts/${encodeURIComponent(id)}/reject`, {
+						const r = await fetch(`/api/board/posts/${encodeURIComponent(id)}/reject`, {
 							method: 'POST',
 							credentials: 'include',
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({ reason }),
 						});
+						if (!r.ok) throw new Error(await r.text());
 						await refreshAdminBoardPosts();
-					} catch (e) { alert('반려 실패: ' + e.message); btn.disabled = false; }
+						await refreshAdminIssueManagement(true);
+					} catch (e) { btn.disabled = false; alert('반려 실패: ' + e.message); }
+				});
+			});
+
+			// 삭제 버튼
+			container.querySelectorAll('.board-admin-delete-btn').forEach(btn => {
+				btn.addEventListener('click', async () => {
+					const id = btn.dataset.id;
+					if (!confirm('이 게시글을 영구 삭제하시겠습니까?\n\n삭제 후 복구가 불가능합니다.')) return;
+					btn.disabled = true;
+					try {
+						const r = await fetch(`/api/board/posts/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' });
+						if (!r.ok) throw new Error(await r.text());
+						await refreshAdminBoardPosts();
+						await refreshAdminIssueManagement(true);
+					} catch (e) { btn.disabled = false; alert('삭제 실패: ' + e.message); }
 				});
 			});
 		} catch (e) {
@@ -873,7 +2397,121 @@ function esc(value) {
 		});
 	});
 	document.getElementById('adminBoardRefreshBtn')?.addEventListener('click', refreshAdminBoardPosts);
+	adminIssueSearchInput?.addEventListener("input", scheduleAdminIssueRefresh);
+	adminIssueQuickMembers?.addEventListener("click", (event) => {
+		const button = event.target.closest(".admin-issue-chip");
+		if (!button) return;
+		applyAdminIssueReporterFilter(button.getAttribute("data-reporter"));
+	});
+	adminIssuePodium?.addEventListener("click", (event) => {
+		const button = event.target.closest(".admin-issue-podium-card");
+		if (!button) return;
+		applyAdminIssueReporterFilter(button.getAttribute("data-reporter"));
+	});
+	adminIssueSummaryVisual?.addEventListener("click", (event) => {
+		const actionButton = event.target.closest(".admin-issue-member-filter-btn");
+		if (actionButton) {
+			event.stopPropagation();
+			applyAdminIssueReporterFilter(actionButton.getAttribute("data-reporter"));
+			return;
+		}
+		const card = event.target.closest(".admin-issue-summary-card[data-reporter]");
+		if (!card) return;
+		applyAdminIssueReporterFilter(card.getAttribute("data-reporter"));
+	});
+	adminIssueMemberRows?.addEventListener("click", (event) => {
+		const actionButton = event.target.closest(".admin-issue-author-link, .admin-issue-member-filter-btn");
+		if (actionButton) {
+			event.stopPropagation();
+			applyAdminIssueReporterFilter(actionButton.getAttribute("data-reporter"));
+			return;
+		}
+		const row = event.target.closest(".admin-issue-summary-row[data-reporter]");
+		if (!row) return;
+		applyAdminIssueReporterFilter(row.getAttribute("data-reporter"));
+	});
+	adminIssueAuthorFilter?.addEventListener("change", () => {
+		adminIssueDetailLimit = 120;
+		adminIssueDetailOffset = 0;
+		refreshAdminIssueManagement();
+	});
+	adminIssueStatusFilter?.addEventListener("change", () => {
+		adminIssueDetailLimit = 120;
+		adminIssueDetailOffset = 0;
+		refreshAdminIssueManagement();
+	});
+	adminIssueSortFilter?.addEventListener("change", () => {
+		adminIssueDetailLimit = 120;
+		adminIssueDetailOffset = 0;
+		refreshAdminIssueManagement();
+	});
+	adminIssueStartDate?.addEventListener("change", () => {
+		adminIssueDetailLimit = 120;
+		adminIssueDetailOffset = 0;
+		updateAdminIssueRangeButtons();
+		refreshAdminIssueManagement();
+	});
+	adminIssueEndDate?.addEventListener("change", () => {
+		adminIssueDetailLimit = 120;
+		adminIssueDetailOffset = 0;
+		updateAdminIssueRangeButtons();
+		refreshAdminIssueManagement();
+	});
+	adminIssueRefreshBtn?.addEventListener("click", () => {
+		refreshAdminIssueManagement(true);
+	});
+	adminIssueDetailToggleBtn?.addEventListener("click", () => {
+		setAdminIssueDetailCollapsed(!adminIssueDetailCollapsed);
+	});
+	adminIssueLoadMoreBtn?.addEventListener("click", () => {
+		adminIssueDetailLimit = ADMIN_ISSUE_DETAIL_STEP;
+		refreshAdminIssueDetailOnly(true);
+	});
+	adminIssueExportBtn?.addEventListener("click", exportAdminIssueManagement);
+	adminIssueRangeButtons.forEach((button) => {
+		button.addEventListener("click", () => {
+			setAdminIssueDateRange(button.getAttribute("data-range") || "all");
+		});
+	});
+	adminIssuePerfWindowButtons.forEach((button) => {
+		button.addEventListener("click", () => {
+			const next = Number(button.getAttribute("data-window-sec") || 60);
+			if (next === adminIssuePerfWindowSec) return;
+			adminIssuePerfWindowSec = next;
+			updateAdminIssuePerfWindowButtons();
+			refreshAdminIssuePerfSummary();
+		});
+	});
+	adminIssueResetBtn?.addEventListener("click", () => {
+		if (adminIssueSearchInput) adminIssueSearchInput.value = "";
+		if (adminIssueAuthorFilter) adminIssueAuthorFilter.value = "";
+		if (adminIssueStatusFilter) adminIssueStatusFilter.value = "all";
+		if (adminIssueSortFilter) adminIssueSortFilter.value = "score_desc";
+		if (adminIssueStartDate) adminIssueStartDate.value = "";
+		if (adminIssueEndDate) adminIssueEndDate.value = "";
+		adminIssueDetailLimit = 120;
+		adminIssueDetailOffset = 0;
+		adminIssuePerfWindowSec = 60;
+		updateAdminIssuePerfWindowButtons();
+		updateAdminIssueRangeButtons();
+		refreshAdminIssueManagement(true);
+	});
+	adminCompanyMemberAddBtn?.addEventListener("click", () => {
+		updateAdminCompanyMember("add");
+	});
+	adminCompanyMemberRemoveBtn?.addEventListener("click", () => {
+		updateAdminCompanyMember("remove");
+	});
+	adminCompanyMemberInput?.addEventListener("keydown", (event) => {
+		if (event.key === "Enter") {
+			event.preventDefault();
+			updateAdminCompanyMember("add");
+		}
+	});
 
 	refreshAdminBoardPosts();
+	refreshAdminCompanyMembers();
+	setAdminIssueDetailCollapsed(false);
 	setInterval(refreshAdminBoardPosts, 60000);
+	scheduleAdminIssueAutoRefresh();
 })();
