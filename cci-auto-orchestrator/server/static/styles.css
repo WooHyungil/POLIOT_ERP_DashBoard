@@ -1083,6 +1083,14 @@ body.has-side-nav #qaOverviewSection[hidden] {
       "summary";
   }
 
+  .overview-layout-row2 {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "statistics"
+      "label"
+      "category";
+  }
+
   .overview-updates {
     max-height: none;
   }
@@ -1489,9 +1497,13 @@ body.has-side-nav #qaOverviewSection[hidden] {
 
 .grid-overview {
   grid-template-columns: repeat(3, minmax(260px, 1fr));
-  grid-template-areas:
-  "recent notice summary";
+  grid-template-areas: "recent notice summary";
   align-items: stretch;
+}
+
+.overview-layout-row2 {
+  grid-template-areas: "statistics label category";
+  margin-top: 0;
 }
 
 .grid-wide {
@@ -1828,6 +1840,18 @@ body.has-side-nav #qaOverviewSection[hidden] {
   grid-area: summary;
 }
 
+.overview-statistics {
+  grid-area: statistics;
+}
+
+.overview-label {
+  grid-area: label;
+}
+
+.overview-category {
+  grid-area: category;
+}
+
 
 .overview-recent {
   background: radial-gradient(130% 120% at 15% 10%, #f7fbff 0%, #edf6ff 46%, #ffffff 100%);
@@ -1845,6 +1869,45 @@ body.has-side-nav #qaOverviewSection[hidden] {
   background: radial-gradient(130% 120% at 12% 8%, #f6f9ff 0%, #eef2ff 44%, #ffffff 100%);
 }
 
+.overview-statistics {
+  background: radial-gradient(130% 120% at 10% 10%, #f0fdf7 0%, #dcfce7 46%, #ffffff 100%);
+}
+
+.overview-label {
+  background: radial-gradient(130% 120% at 12% 10%, #fffbeb 0%, #fef3c7 44%, #ffffff 100%);
+}
+
+.overview-category {
+  background: radial-gradient(130% 120% at 10% 8%, #f5f3ff 0%, #ede9fe 44%, #ffffff 100%);
+}
+
+.overview-fulltc-total-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 1px solid #a7f3d0;
+  border-radius: 14px;
+  padding: 7px 12px;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.12);
+  flex-shrink: 0;
+}
+
+.overview-ftc-badge-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #065f46;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.overview-ftc-badge-count {
+  font-size: 1.3rem;
+  font-weight: 900;
+  color: #064e3b;
+  line-height: 1;
+}
 
 .overview-nav-card {
   display: flex;
@@ -1912,6 +1975,18 @@ body.has-side-nav #qaOverviewSection[hidden] {
 
 .overview-card-icon.summary {
   background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+}
+
+.overview-card-icon.statistics {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+}
+
+.overview-card-icon.label {
+  background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+}
+
+.overview-card-icon.category {
+  background: linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%);
 }
 
 .overview-card-sub {
@@ -2021,6 +2096,22 @@ body.has-side-nav #qaOverviewSection[hidden] {
 
 .overview-donut-empty {
   background: conic-gradient(#eaf1fb 0 360deg);
+}
+
+.overview-donut-loading {
+  background: conic-gradient(#e2eaf4 0 360deg) !important;
+}
+
+.overview-donut-spin {
+  font-size: 1.5rem;
+  color: #94a3b8;
+  display: block;
+  line-height: 1;
+}
+
+.overview-legend-loading li {
+  opacity: 1 !important;
+  transform: none !important;
 }
 
 .overview-legend {
@@ -10448,6 +10539,359 @@ button,
   line-height:1.38;
   vertical-align:top;
   padding:7px 9px;
+}
+
+.qa-dashboard-page .qa-regular-release-card{
+  border-color:#cfe0f3;
+  background:
+    radial-gradient(circle at 8% 4%, rgba(59,130,246,.12), transparent 30%),
+    radial-gradient(circle at 96% 8%, rgba(16,185,129,.10), transparent 34%),
+    linear-gradient(180deg,#ffffff 0%,#f5f9ff 100%);
+}
+
+/* ── 정기배포 헤더 바 ──────────────────────────────── */
+.qa-dashboard-page .qa-rr-bar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-bottom:10px;
+}
+.qa-dashboard-page .qa-rr-bar-left{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  min-width:0;
+}
+.qa-dashboard-page .qa-rr-bar-right{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  flex-shrink:0;
+}
+.qa-dashboard-page .qa-rr-title{
+  margin:0;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  color:#153f6d;
+  font-size:1rem;
+  white-space:nowrap;
+}
+
+/* ── 통계 pill ──────────────────────────────────────── */
+.qa-dashboard-page .qa-rr-stat-pills{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  flex-wrap:wrap;
+}
+.qa-dashboard-page .qa-rr-stat-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:4px 11px;
+  border:1px solid #d0e6f8;
+  border-radius:999px;
+  background:#f0f8ff;
+  font-size:12px;
+  color:#2a5f97;
+}
+.qa-dashboard-page .qa-rr-stat-pill .qa-rr-stat-label{
+  color:#5a7797;
+  font-weight:500;
+}
+.qa-dashboard-page .qa-rr-stat-pill .qa-rr-stat-val{
+  font-weight:800;
+  color:#1a4b7a;
+}
+.qa-dashboard-page .qa-rr-stat-pill-ftc{
+  border-color:#b8dfd0;
+  background:#f0fdf6;
+}
+.qa-dashboard-page .qa-rr-stat-pill-ftc .qa-rr-stat-label{color:#3a7a6a;}
+.qa-dashboard-page .qa-rr-stat-pill-ftc .qa-rr-stat-val{color:#1a5a4a;}
+
+/* ── DATE DESC 배지 ─────────────────────────────────── */
+.qa-dashboard-page .qa-release-order-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  border:1px solid #c8daf0;
+  border-radius:999px;
+  padding:5px 10px;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:.06em;
+  color:#2a5f97;
+  background:#eef5ff;
+  white-space:nowrap;
+}
+
+/* ── 최신화 버튼 ────────────────────────────────────── */
+.qa-dashboard-page .qa-rr-refresh-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:6px 13px;
+  border:1px solid #b3cde8;
+  border-radius:8px;
+  font-size:12px;
+  font-weight:700;
+  color:#1f578f;
+  background:linear-gradient(180deg,#f5faff 0%,#e8f3ff 100%);
+  cursor:pointer;
+  transition:all .14s ease;
+  white-space:nowrap;
+}
+.qa-dashboard-page .qa-rr-refresh-btn:hover{
+  background:linear-gradient(180deg,#e4f0ff 0%,#d5e9ff 100%);
+  border-color:#7cb2e0;
+  transform:translateY(-1px);
+  box-shadow:0 2px 6px rgba(30,100,190,.12);
+}
+
+/* ── 상세 조회 정보 바 ──────────────────────────────── */
+.qa-dashboard-page .qa-rr-detail-bar{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:8px 2px 6px;
+  border-top:1px solid #deeaf8;
+  margin-top:8px;
+  flex-wrap:wrap;
+}
+.qa-dashboard-page .qa-rr-detail-hint{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  flex-wrap:wrap;
+  margin:0;
+}
+.qa-dashboard-page .qa-rr-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  padding:3px 9px;
+  border:1px solid #ccdcee;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:700;
+  color:#2a5070;
+  background:#f0f7ff;
+}
+.qa-dashboard-page .qa-rr-chip-date{
+  border-color:#b8d0ea;
+  background:#e6f1ff;
+  color:#1a4a7a;
+}
+.qa-dashboard-page .qa-rr-chip-type{
+  border-color:#c0d0e0;
+  background:#e8eff8;
+  color:#1a3c58;
+}
+.qa-dashboard-page .qa-rr-chip-count{
+  border-color:#a8c8e8;
+  background:#dceeff;
+  color:#0f3a60;
+  font-size:12px;
+  font-weight:800;
+}
+
+.qa-dashboard-page .qa-release-table-wrap,
+.qa-dashboard-page .qa-release-detail-wrap{
+  overflow:auto;
+  border:1px solid #d5e5f6;
+  border-radius:14px;
+  background:#fbfdff;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7);
+}
+
+.qa-dashboard-page .qa-release-table-wrap{
+  max-height:340px;
+}
+
+.qa-dashboard-page .qa-release-detail-wrap{
+  max-height:460px;
+}
+
+.qa-dashboard-page #regularReleaseTable thead th,
+.qa-dashboard-page #regularReleaseDetailTable thead th{
+  top:0;
+  background:linear-gradient(180deg,#2d6bbf 0%,#1d55a0 100%) !important;
+  color:#ffffff !important;
+}
+
+.qa-dashboard-page #regularReleaseTable .release-sum-row{
+  background:#edf5ff !important;
+}
+
+.qa-dashboard-page #regularReleaseTable .release-sum-row td{
+  font-weight:800;
+  color:#1f466f;
+}
+
+.qa-dashboard-page #regularReleaseSection .release-count-btn{
+  border:1px solid #c9dcf4;
+  border-radius:999px;
+  padding:2px 9px;
+  font-size:11px;
+  font-weight:800;
+  color:#1f578f;
+  background:#f0f7ff;
+  cursor:pointer;
+  transition:all .14s ease;
+}
+
+.qa-dashboard-page #regularReleaseSection .release-count-btn:hover{
+  transform:translateY(-1px);
+  border-color:#8cb5e5;
+  background:#e0efff;
+  color:#154a7f;
+}
+
+/* 컬럼 헤더 전체 조회 버튼 */
+.qa-dashboard-page #regularReleaseTable th{
+  padding:0 !important;
+  vertical-align:middle;
+}
+.qa-dashboard-page #regularReleaseTable th.rr-th-date,
+.qa-dashboard-page #regularReleaseTable th.rr-th-sum{
+  padding:8px 12px !important;
+}
+.qa-dashboard-page #regularReleaseTable th .rr-col-all-btn{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  width:100%;
+  padding:9px 12px;
+  border:none;
+  border-radius:0;
+  background:transparent;
+  cursor:pointer;
+  transition:background .15s ease;
+  white-space:nowrap;
+}
+.qa-dashboard-page #regularReleaseTable th .rr-col-all-btn:hover{
+  background:rgba(0,0,0,.12);
+}
+.qa-dashboard-page #regularReleaseTable th .rr-col-label{
+  font-size:12px;
+  font-weight:700;
+  color:#ffffff;
+  letter-spacing:-.01em;
+  line-height:1.2;
+  opacity:.9;
+}
+.qa-dashboard-page #regularReleaseTable th .rr-col-all-btn:hover .rr-col-label{
+  opacity:1;
+}
+.qa-dashboard-page #regularReleaseTable th .rr-col-count{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:30px;
+  padding:2px 8px;
+  border-radius:999px;
+  font-size:13px;
+  font-weight:900;
+  line-height:1.4;
+  background:#ffffff;
+  color:#1a4f96;
+  border:none;
+  letter-spacing:-.01em;
+  box-shadow:0 1px 4px rgba(0,0,0,.18);
+  transition:transform .12s ease, box-shadow .12s ease;
+}
+.qa-dashboard-page #regularReleaseTable th .rr-col-all-btn:hover .rr-col-count{
+  transform:scale(1.08);
+  box-shadow:0 2px 7px rgba(0,0,0,.22);
+}
+
+/* 전체 조회 버튼 (날짜행 SUM, SUM행 전체합) */
+.qa-dashboard-page #regularReleaseSection .release-count-btn-all{
+  border-color:#a0bcd8;
+  background:linear-gradient(135deg,#e6f0ff 0%,#d4e8fe 100%);
+  color:#0f3a60;
+  font-weight:900;
+}
+.qa-dashboard-page #regularReleaseSection .release-count-btn-all:hover{
+  background:linear-gradient(135deg,#d4e6ff 0%,#bed8ff 100%);
+  border-color:#6fa0ce;
+  color:#08284a;
+}
+
+.qa-dashboard-page #regularReleaseTable th:nth-child(1),
+.qa-dashboard-page #regularReleaseTable td:nth-child(1){
+  position:sticky;
+  left:0;
+  z-index:3;
+  min-width:130px;
+  background:#f6faff;
+  font-weight:800;
+}
+
+.qa-dashboard-page #regularReleaseTable th:nth-child(2),
+.qa-dashboard-page #regularReleaseTable td:nth-child(2){
+  position:sticky;
+  left:130px;
+  z-index:3;
+  min-width:88px;
+  background:#f9fcff;
+  font-weight:700;
+}
+
+.qa-dashboard-page #regularReleaseTable thead th:nth-child(1),
+.qa-dashboard-page #regularReleaseTable thead th:nth-child(2){
+  z-index:4;
+  background:linear-gradient(180deg,#1e4f9a 0%,#163d7c 100%) !important;
+  color:#ffffff !important;
+}
+
+/* 정기배포 표: 날짜 열 제외 중앙 정렬 */
+.qa-dashboard-page #regularReleaseTable thead th,
+.qa-dashboard-page #regularReleaseTable tbody td{
+  text-align:center;
+}
+
+.qa-dashboard-page #regularReleaseTable thead th:nth-child(1),
+.qa-dashboard-page #regularReleaseTable tbody td:nth-child(1){
+  text-align:left;
+}
+
+.qa-dashboard-page #regularReleaseSection .release-count-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  margin-inline:auto;
+}
+
+.qa-dashboard-page #regularReleaseTable tbody tr.release-sum-row td:nth-child(1),
+.qa-dashboard-page #regularReleaseTable tbody tr.release-sum-row td:nth-child(2){
+  background:#e8f2ff !important;
+}
+
+@media (max-width: 980px){
+  .qa-dashboard-page .qa-release-table-wrap{max-height:300px !important;}
+  .qa-dashboard-page .qa-release-detail-wrap{max-height:380px !important;}
+  .qa-dashboard-page .qa-release-order-badge{
+    display:none;
+  }
+}
+
+/* keep regular-release tables scrollable even if later global table-wrap rules override */
+.qa-dashboard-page #regularReleaseSection .qa-release-table-wrap{
+  max-height:340px !important;
+  overflow:auto !important;
+}
+
+.qa-dashboard-page #regularReleaseSection .qa-release-detail-wrap{
+  max-height:460px !important;
+  overflow:auto !important;
 }
 .qa-full-tc-page .ftc-defect-toolbar .ftc-filter-inline{
   background:#fff;

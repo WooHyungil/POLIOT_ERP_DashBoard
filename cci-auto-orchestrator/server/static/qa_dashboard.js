@@ -1055,16 +1055,18 @@ function renderRegularRelease(data) {
     <tr>
       <th>날짜</th>
       <th>SUM</th>
-      <th>전수평가TC</th>
-      ${versions.map((v) => `<th>${esc(v)}</th>`).join("")}
+      <th><button type="button" class="rr-col-all-btn" data-version="" data-fulltc="true">전수평가TC</button></th>
+      ${versions.map((v) => `<th><button type="button" class="rr-col-all-btn" data-version="${esc(v)}">${esc(v)}</button></th>`).join("")}
     </tr>
   `;
 
   const regions = (Array.isArray(data?.regions) ? data.regions : []).filter((r) =>
     String(r?.region || "").toLowerCase().includes("eu")
   );
+  const detailBar = document.getElementById("qa-rr-detail-bar");
+  if (detailBar) detailBar.style.display = "none";
   if (!regions.length) {
-    summary.innerHTML = [statCard("정기배포 이슈", "0건"), statCard("전수평가TC", "0건")].join("");
+    summary.innerHTML = `<span class="qa-rr-stat-pill"><i class="fa fa-bug"></i><span class="qa-rr-stat-label">이슈</span><strong class="qa-rr-stat-val">0</strong></span><span class="qa-rr-stat-pill qa-rr-stat-pill-ftc"><i class="fa fa-list-check"></i><span class="qa-rr-stat-label">전수평가TC</span><strong class="qa-rr-stat-val">0</strong></span>`;
     body.innerHTML = `<tr><td colspan="${3 + versions.length}" class="hint">정기배포 데이터가 없습니다.</td></tr>`;
     return;
   }
@@ -1098,28 +1100,34 @@ function renderRegularRelease(data) {
   const filteredTotal = versions.reduce((acc, v) => acc + Number(summaryMap[v] || 0), 0);
   const fullTcTotal = Number(data?.full_tc_total || 0);
 
-  summary.innerHTML = [statCard("정기배포 이슈", `${filteredTotal}건`), statCard("전수평가TC", `${fullTcTotal}건`)].join("");
-
-  rows.push(`
-    <tr class="release-sum-row">
-      <td>SUM</td>
-      <td>${filteredTotal}</td>
-      <td>${fullTcTotal > 0 ? `<button type="button" class="release-count-btn" data-version="" data-date="" data-fulltc="true">${fullTcTotal}</button>` : "0"}</td>
+  // 집계 완료 후 헤더를 카운트 배지 포함해 교체
+  head.innerHTML = `
+    <tr>
+      <th class="rr-th-date">날짜</th>
+      <th class="rr-th-sum">SUM</th>
+      <th><button type="button" class="rr-col-all-btn" data-version="" data-fulltc="true"><span class="rr-col-label">전수평가TC</span>${fullTcTotal > 0 ? `<span class="rr-col-count">${fullTcTotal}</span>` : ""}</button></th>
       ${versions.map((v) => {
         const n = Number(summaryMap[v] || 0);
-        if (n <= 0) return `<td>0</td>`;
-        return `<td><button type="button" class="release-count-btn" data-version="${esc(v)}" data-date="">${n}</button></td>`;
+        return `<th><button type="button" class="rr-col-all-btn" data-version="${esc(v)}"><span class="rr-col-label">${esc(v)}</span>${n > 0 ? `<span class="rr-col-count">${n}</span>` : ""}</button></th>`;
       }).join("")}
     </tr>
-  `);
-  const days = Array.from(byDate.keys()).sort();
+  `;
+
+  summary.innerHTML = `<span class="qa-rr-stat-pill"><i class="fa fa-bug"></i><span class="qa-rr-stat-label">이슈</span><strong class="qa-rr-stat-val">${filteredTotal}</strong></span><span class="qa-rr-stat-pill qa-rr-stat-pill-ftc"><i class="fa fa-list-check"></i><span class="qa-rr-stat-label">전수평가TC</span><strong class="qa-rr-stat-val">${fullTcTotal}</strong></span>`;
+
+  const days = Array.from(byDate.keys()).sort(function (a, b) {
+    const aMs = toSortableDateMs(a);
+    const bMs = toSortableDateMs(b);
+    if (aMs !== bMs) return bMs - aMs;
+    return String(b || "").localeCompare(String(a || ""), "ko");
+  });
   for (const day of days) {
     const d = byDate.get(day) || { sum: 0, full_tc: 0, versions: {} };
     const rowSum = versions.reduce((acc, v) => acc + Number((d.versions || {})[v] || 0), 0);
     rows.push(`
       <tr>
         <td>${esc(day)}</td>
-        <td>${rowSum}</td>
+        <td>${rowSum > 0 ? `<button type="button" class="release-count-btn release-count-btn-all" data-version="" data-date="${esc(day)}" data-all="true">${rowSum}</button>` : "0"}</td>
         <td>${Number(d.full_tc || 0) > 0 ? `<button type="button" class="release-count-btn" data-version="" data-date="${esc(day)}" data-fulltc="true">${Number(d.full_tc || 0)}</button>` : "0"}</td>
         ${versions.map((v) => {
           const n = Number((d.versions || {})[v] || 0);
@@ -1129,6 +1137,20 @@ function renderRegularRelease(data) {
       </tr>
     `);
   }
+
+  // 합계 행은 하단에 고정해 날짜 최신순 흐름을 방해하지 않도록 한다.
+  rows.push(`
+    <tr class="release-sum-row">
+      <td>SUM</td>
+      <td>${filteredTotal > 0 ? `<button type="button" class="release-count-btn release-count-btn-all" data-version="" data-date="" data-all="true">${filteredTotal}</button>` : "0"}</td>
+      <td>${fullTcTotal > 0 ? `<button type="button" class="release-count-btn" data-version="" data-date="" data-fulltc="true">${fullTcTotal}</button>` : "0"}</td>
+      ${versions.map((v) => {
+        const n = Number(summaryMap[v] || 0);
+        if (n <= 0) return `<td>0</td>`;
+        return `<td><button type="button" class="release-count-btn" data-version="${esc(v)}" data-date="">${n}</button></td>`;
+      }).join("")}
+    </tr>
+  `);
   body.innerHTML = rows.join("");
 }
 
@@ -1137,11 +1159,19 @@ function renderRegularReleaseDetails(data) {
   const body = document.getElementById("regularReleaseDetailBody");
   if (!hint || !body) return;
   const rows = Array.isArray(data?.rows) ? data.rows : [];
+  const sortedRows = rows.slice().sort(function (a, b) {
+    const aMs = toSortableDateMs(a?.created);
+    const bMs = toSortableDateMs(b?.created);
+    if (aMs !== bMs) return bMs - aMs;
+    return String(b?.created || "").localeCompare(String(a?.created || ""), "ko");
+  });
   const version = String(data?.version || "").trim() || "전체";
   const day = String(data?.date || "").trim() || "전체";
   const fullTcOnly = !!data?.full_tc_only;
-  hint.innerText = `정기배포 상세 | 버전: ${version} | 날짜: ${day} | 구분: ${fullTcOnly ? "전수평가TC" : "전체"} | 총 ${Number(data?.count || 0)}건`;
-  if (!rows.length) {
+  const detailBar = document.getElementById("qa-rr-detail-bar");
+  if (detailBar) detailBar.style.display = "";
+  hint.innerHTML = `<span class="qa-rr-chip"><i class="fa fa-code-branch"></i>${esc(version)}</span><span class="qa-rr-chip qa-rr-chip-date"><i class="fa fa-calendar"></i>${esc(day)}</span><span class="qa-rr-chip qa-rr-chip-type">${fullTcOnly ? "전수평가TC" : "전체"}</span><span class="qa-rr-chip qa-rr-chip-count">총 ${Number(data?.count || 0)}건</span>`;
+  if (!sortedRows.length) {
     body.innerHTML = '<tr><td colspan="9" class="hint">조회 결과가 없습니다.</td></tr>';
     return;
   }
@@ -1149,7 +1179,7 @@ function renderRegularReleaseDetails(data) {
     const t = String(v ?? "").trim();
     return t || "-";
   };
-  body.innerHTML = rows.slice(0, 300).map((r) => `
+  body.innerHTML = sortedRows.map((r) => `
     <tr>
       <td>${esc(cellText(r.key))}</td>
       <td>${esc(cellText(r.status))}</td>
@@ -1197,6 +1227,33 @@ function normalizeCreatedDateText(value) {
   }
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
   return "";
+}
+
+function toSortableDateMs(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return Number.NEGATIVE_INFINITY;
+
+  const iso = normalizeCreatedDateText(text);
+  if (iso) {
+    const ms = Date.parse(iso + "T00:00:00");
+    if (!Number.isNaN(ms)) return ms;
+  }
+
+  // Accept common variants: yyyy.mm.dd, yyyy/mm/dd, yyyy-mm-dd HH:mm:ss.
+  const normalized = text.replace(/\./g, "-").replace(/\//g, "-").replace(/\s+/g, " ").trim();
+  const parsedMs = Date.parse(normalized);
+  if (!Number.isNaN(parsedMs)) return parsedMs;
+
+  const m = normalized.match(/(\d{4})[^\d]?(\d{1,2})[^\d]?(\d{1,2})/);
+  if (m) {
+    const yy = Number(m[1]);
+    const mm = Number(m[2]);
+    const dd = Number(m[3]);
+    const ms = Date.parse(`${yy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}T00:00:00`);
+    if (!Number.isNaN(ms)) return ms;
+  }
+
+  return Number.NEGATIVE_INFINITY;
 }
 
 async function refreshRegularReleaseDetails(version, date, force, fullTcOnly) {
@@ -1332,6 +1389,17 @@ document.getElementById("regularReleaseRefreshBtn")?.addEventListener("click", f
   }).catch((e) => toast(`정기배포 최신화 실패: ${String(e)}`, "error"));
 });
 
+document.getElementById("regularReleaseHead")?.addEventListener("click", function (event) {
+  const el = event.target;
+  if (!(el instanceof HTMLElement)) return;
+  const btn = el.closest(".rr-col-all-btn");
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const version = String(btn.dataset.version || "").trim();
+  const fullTcOnly = String(btn.dataset.fulltc || "").toLowerCase() === "true";
+  if (!version && !fullTcOnly) return;
+  refreshRegularReleaseDetails(version, "", false, fullTcOnly).catch((e) => toast(`정기배포 상세 조회 실패: ${String(e)}`, "error"));
+});
+
 document.getElementById("regularReleaseBody")?.addEventListener("click", function (event) {
   const el = event.target;
   if (!(el instanceof HTMLElement)) return;
@@ -1340,7 +1408,8 @@ document.getElementById("regularReleaseBody")?.addEventListener("click", functio
   const version = String(btn.dataset.version || "").trim();
   const day = String(btn.dataset.date || "").trim();
   const fullTcOnly = String(btn.dataset.fulltc || "").toLowerCase() === "true";
-  if (!version && !fullTcOnly) return;
+  const allMode = String(btn.dataset.all || "").toLowerCase() === "true";
+  if (!version && !fullTcOnly && !allMode) return;
   refreshRegularReleaseDetails(version, day, false, fullTcOnly).catch((e) => toast(`정기배포 상세 조회 실패: ${String(e)}`, "error"));
 });
 

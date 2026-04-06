@@ -6,7 +6,7 @@
   <title>CCI QA Dashboard</title>
   <!-- FontAwesome CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260404m" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260404u" />
 </head>
 <body class="has-side-nav qa-dashboard-page">
   {% include "components/side_nav.html" %}
@@ -105,21 +105,29 @@
     </section>
 
     <section class="grid" id="regularReleaseSection">
-      <article class="card card-table" style="grid-column: 1 / -1;">
-        <h2>정기배포 현황</h2>
-        <div class="button-row" style="justify-content: flex-end; margin-bottom: 8px;">
-          <button id="regularReleaseRefreshBtn" type="button" class="btn-secondary">DefectList_Raw 최신화</button>
+      <article class="card card-table qa-regular-release-card" style="grid-column: 1 / -1;">
+        <div class="qa-rr-bar">
+          <div class="qa-rr-bar-left">
+            <h2 class="qa-rr-title"><i class="fa fa-calendar-days"></i> 정기배포 현황</h2>
+            <div id="regularReleaseSummary" class="qa-rr-stat-pills"></div>
+          </div>
+          <div class="qa-rr-bar-right">
+            <span class="qa-release-order-badge"><i class="fa fa-arrow-down-wide-short"></i> DATE DESC</span>
+            <button id="regularReleaseRefreshBtn" type="button" class="qa-rr-refresh-btn">
+              <i class="fa fa-rotate-right"></i><span>최신화</span>
+            </button>
+          </div>
         </div>
-        <p id="regularReleaseSyncHint" class="hint">정기배포 데이터를 DefectList_Raw 기준으로 즉시 갱신할 수 있습니다.</p>
-        <div id="regularReleaseSummary" class="stats-grid" style="margin-top:10px;"></div>
-        <div class="table-wrap" style="margin-top:10px;">
+        <div class="table-wrap qa-release-table-wrap">
           <table id="regularReleaseTable" class="recent-status-table">
             <thead id="regularReleaseHead"></thead>
             <tbody id="regularReleaseBody"></tbody>
           </table>
         </div>
-        <p id="regularReleaseDetailHint" class="hint" style="margin-top:10px;"></p>
-        <div class="table-wrap" style="margin-top:10px;">
+        <div id="qa-rr-detail-bar" class="qa-rr-detail-bar" style="display:none;">
+          <p id="regularReleaseDetailHint" class="qa-rr-detail-hint"></p>
+        </div>
+        <div class="table-wrap qa-release-detail-wrap">
           <table id="regularReleaseDetailTable" class="recent-status-table">
             <thead>
               <tr>
@@ -196,6 +204,6 @@
   </main>
   <div id="toastStack" class="toast-stack"></div>
   <script src="/static/side_nav.js?v=20260330a"></script>
-  <script src="/static/qa_dashboard.js?v=20260404a"></script>
+  <script src="/static/qa_dashboard.js?v=20260404i"></script>
 </body>
 </html>

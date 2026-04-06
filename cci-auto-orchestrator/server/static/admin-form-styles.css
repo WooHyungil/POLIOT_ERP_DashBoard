@@ -79,8 +79,8 @@
 
 .form-field input:focus {
   outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  border-color: #2d6bbf;
+  box-shadow: 0 0 0 3px rgba(45, 107, 191, 0.12);
   background: #f8fafe;
 }
 
@@ -125,7 +125,7 @@
   height: 18px;
   margin-top: 2px;
   cursor: pointer;
-  accent-color: #667eea;
+  accent-color: #2d6bbf;
 }
 
 .checkbox-label {
@@ -148,7 +148,7 @@
 /* 버튼 스타일 */
 .btn-primary {
   padding: 11px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #1e3a5f 0%, #2d6bbf 100%);
   color: white;
   border: none;
   border-radius: 6px;
@@ -156,12 +156,18 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+  box-shadow: 0 2px 8px rgba(30, 58, 95, 0.26);
 }
 
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 12px rgba(30, 58, 95, 0.34);
+}
+
+.member-add-address-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .btn-primary:active {

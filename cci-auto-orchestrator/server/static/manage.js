@@ -194,6 +194,12 @@ function canEditSchedule(item) {
   return String(item.author_email || "").trim().toLowerCase() === currentUserEmail();
 }
 
+function canDeleteSchedule(item) {
+  if (!item) return false;
+  if (isCurrentUserAdmin()) return true;
+  return String(item.author_email || "").trim().toLowerCase() === currentUserEmail();
+}
+
 function setScheduleFormHint(text) {
   const hint = document.getElementById("scheduleFormHint");
   if (hint) hint.textContent = String(text || "");
@@ -331,8 +337,10 @@ function renderScheduleRows() {
   body.innerHTML = sorted.map((row) => {
     const type = normalizeScheduleType(row.type);
     const canEdit = canEditSchedule(row);
+    const canDelete = canDeleteSchedule(row);
     const approvalStatus = normalizeApprovalStatus(row.approval_status);
-    const lockReason = approvalStatus === "approved" ? "승인 완료된 일정은 수정/삭제할 수 없습니다." : "작성자 또는 관리자만 수정/삭제할 수 있습니다.";
+    const editLockReason = approvalStatus === "approved" ? "승인 완료된 일정은 수정할 수 없습니다." : "작성자 또는 관리자만 수정할 수 있습니다.";
+    const deleteLockReason = "작성자 또는 관리자만 삭제할 수 있습니다.";
     const showBrand = String(row.brand || "").trim();
     const titleText = showBrand ? `${String(row.title || "-")} (${showBrand})` : String(row.title || "-");
     return `
@@ -344,8 +352,8 @@ function renderScheduleRows() {
         <td>${esc(row.author_name || row.author_email || "-")}</td>
         <td>${esc(row.note || row.reject_reason || "-")}</td>
         <td>
-          <button type="button" title="${esc(lockReason)}" data-edit-schedule="${esc(row.id || "")}" ${canEdit ? "" : "disabled"}>수정</button>
-          <button type="button" class="btn-ghost" title="${esc(lockReason)}" data-del-schedule="${esc(row.id || "")}" ${canEdit ? "" : "disabled"}>삭제</button>
+          <button type="button" title="${esc(editLockReason)}" data-edit-schedule="${esc(row.id || "")}" ${canEdit ? "" : "disabled"}>수정</button>
+          <button type="button" class="btn-ghost" title="${esc(deleteLockReason)}" data-del-schedule="${esc(row.id || "")}" ${canDelete ? "" : "disabled"}>삭제</button>
         </td>
       </tr>
     `;
@@ -1421,17 +1429,31 @@ document.getElementById("scheduleCalendarGrid")?.addEventListener("click", (ev) 
 document.getElementById("scheduleForm")?.addEventListener("submit", saveSchedule);
 document.getElementById("scheduleResetBtn")?.addEventListener("click", resetScheduleForm);
 
-// 팝업 닫기
-document.getElementById("schedulePopupOverlay")?.addEventListener("click", closeSchedulePopup);
-document.querySelector(".schedule-popup-close")?.addEventListener("click", closeSchedulePopup);
+// 팝업 닫기: 템플릿 하단에 팝업 DOM이 있어도 항상 동작하도록 이벤트 위임 사용
+document.addEventListener("click", (ev) => {
+  const target = ev.target;
+  if (!(target instanceof Element)) return;
+  if (target.id === "schedulePopupOverlay" || target.closest(".schedule-popup-close")) {
+    closeSchedulePopup();
+  }
+});
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape") return;
+  const overlay = document.getElementById("schedulePopupOverlay");
+  if (!overlay || !overlay.classList.contains("active")) return;
+  closeSchedulePopup();
+});
 
 document.getElementById("scheduleRows")?.addEventListener("click", async (ev) => {
   const target = ev.target;
-  if (!(target instanceof HTMLElement)) return;
-  const editId = target.getAttribute("data-edit-schedule");
-  const delId = target.getAttribute("data-del-schedule");
-  const approveId = target.getAttribute("data-approve-schedule");
-  const rejectId = target.getAttribute("data-reject-schedule");
+  if (!(target instanceof Element)) return;
+  const button = target.closest("button");
+  if (!(button instanceof HTMLElement)) return;
+  const editId = button.getAttribute("data-edit-schedule");
+  const delId = button.getAttribute("data-del-schedule");
+  const approveId = button.getAttribute("data-approve-schedule");
+  const rejectId = button.getAttribute("data-reject-schedule");
   if (editId) {
     const item = schedules.find((x) => String(x.id || "") === String(editId));
     if (!canEditSchedule(item)) {
@@ -1443,8 +1465,8 @@ document.getElementById("scheduleRows")?.addEventListener("click", async (ev) =>
   }
   if (delId) {
     const item = schedules.find((x) => String(x.id || "") === String(delId));
-    if (!canEditSchedule(item)) {
-      window.alert("승인 완료된 일정은 삭제할 수 없습니다.");
+    if (!canDeleteSchedule(item)) {
+      window.alert("작성자 또는 관리자만 삭제할 수 있습니다.");
       return;
     }
     await deleteScheduleById(delId);

@@ -1844,6 +1844,7 @@ def auth_register_submit(
     birth: str = Form(""),
     address: str = Form(""),
     next: str = Form("/"),
+    address_detail: str = Form(""),
 ):
     normalized = str(email or "").strip().lower()
     clean_name = str(name or "").strip()
@@ -1851,6 +1852,25 @@ def auth_register_submit(
     clean_title = str(title or "").strip()
     clean_birth = str(birth or "").strip()
     clean_address = str(address or "").strip()
+    # 상세 주소 합치기
+    _clean_addr_detail = str(address_detail or "").strip()
+    if _clean_addr_detail:
+        clean_address = (clean_address + " " + _clean_addr_detail).strip()
+    # 직책 기본값
+    if not clean_title:
+        clean_title = "SW품질/책임"
+    # 전화번호 정규화 (숫자 11자리 → 010-XXXX-XXXX, 10자리 → 0XX-XXX-XXXX)
+    _digits_only = re.sub(r"\D", "", clean_phone)
+    if clean_phone and not re.search(r"-", clean_phone):
+        if len(_digits_only) == 11:
+            clean_phone = f"{_digits_only[:3]}-{_digits_only[3:7]}-{_digits_only[7:]}"
+        elif len(_digits_only) == 10:
+            clean_phone = f"{_digits_only[:3]}-{_digits_only[3:6]}-{_digits_only[6:]}"
+    # 생년월일 정규화 (숫자 8자리 → YYYY-MM-DD)
+    if clean_birth and not re.search(r"-", clean_birth):
+        _d = re.sub(r"\D", "", clean_birth)
+        if len(_d) == 8:
+            clean_birth = f"{_d[:4]}-{_d[4:6]}-{_d[6:]}"
 
     redirect_to = str(next or "/").strip() or "/"
     if not redirect_to.startswith("/"):
@@ -2145,6 +2165,19 @@ async def admin_user_create(request: Request):
         raise HTTPException(status_code=400, detail="이름은 필수 입력입니다.")
     create_phone = str(payload.get("phone", "") or "").strip()
     create_birth = str(payload.get("birth", "") or "").strip()
+    create_title = str(payload.get("title", "") or "").strip() or "SW품질/책임"
+    # 전화번호 정규화 (숫자 10/11자리 입력 지원)
+    if create_phone and "-" not in create_phone:
+        _phone_digits = re.sub(r"\D", "", create_phone)
+        if len(_phone_digits) == 11:
+            create_phone = f"{_phone_digits[:3]}-{_phone_digits[3:7]}-{_phone_digits[7:]}"
+        elif len(_phone_digits) == 10:
+            create_phone = f"{_phone_digits[:3]}-{_phone_digits[3:6]}-{_phone_digits[6:]}"
+    # 생년월일 정규화 (YYYYMMDD 입력 지원)
+    if create_birth and "-" not in create_birth:
+        _birth_digits = re.sub(r"\D", "", create_birth)
+        if len(_birth_digits) == 8:
+            create_birth = f"{_birth_digits[:4]}-{_birth_digits[4:6]}-{_birth_digits[6:]}"
     if create_phone and not _is_valid_phone(create_phone):
         raise HTTPException(status_code=400, detail=_phone_policy_text())
     if create_birth and not _is_valid_birth(create_birth):
@@ -2170,6 +2203,10 @@ async def admin_user_create(request: Request):
         "password_hash": _hash_password(email, password),
         "role": role,
         "name": str(payload.get("name", "")).strip() or email.split("@")[0],
+        "phone": create_phone,
+        "title": create_title,
+        "birth": create_birth,
+        "address": str(payload.get("address", "") or "").strip(),
         "created_at": datetime.utcnow().isoformat(timespec="seconds"),
         "approved": approved,
         "can_login": can_login,
@@ -2183,9 +2220,9 @@ async def admin_user_create(request: Request):
     _sync_employee_profile(
         email=email,
         name=str(created.get("name", "") or ""),
-        title=str(payload.get("title", "") or "").strip(),
-        phone=str(payload.get("phone", "") or "").strip(),
-        birth=str(payload.get("birth", "") or "").strip(),
+        title=create_title,
+        phone=create_phone,
+        birth=create_birth,
         address=str(payload.get("address", "") or "").strip(),
     )
 
@@ -2721,10 +2758,15 @@ async def manage_schedule_create(request: Request):
     payload = await request.json()
     parsed = _parse_manage_schedule_payload(payload)
 
-    # 모든 일정은 관리자 승인 흐름으로 들어가도록 요청 상태를 pending으로 시작한다.
-    approval_status = "pending"
-    approved_by = ""
-    approved_at = ""
+    # 관리자 작성 일정은 즉시 확정, 일반 사용자는 승인 대기
+    if _is_admin_user(user):
+        approval_status = "approved"
+        approved_by = str(user.get("email", "")).strip().lower()
+        approved_at = datetime.utcnow().isoformat(timespec="seconds")
+    else:
+        approval_status = "pending"
+        approved_by = ""
+        approved_at = ""
 
     item = {
         "id": f"schedule-{uuid.uuid4().hex[:12]}",
@@ -2779,10 +2821,6 @@ async def manage_schedule_update(schedule_id: str, request: Request):
         if not target:
             raise HTTPException(status_code=404, detail="schedule not found")
 
-        current_status = _normalize_manage_schedule_approval(target.get("approval_status", target.get("request_status", "pending")))
-        if current_status == "approved":
-            raise HTTPException(status_code=409, detail="approved schedule is locked")
-
         actor_email = str(user.get("email", "")).strip().lower()
         owner_email = str(target.get("author_email", "")).strip().lower()
         if actor_email != owner_email and not _is_admin_user(user):
@@ -2824,10 +2862,6 @@ def manage_schedule_delete(schedule_id: str, request: Request):
         target = next((row for row in items if str(row.get("id", "")).strip() == target_id), None)
         if not target:
             raise HTTPException(status_code=404, detail="schedule not found")
-
-        current_status = _normalize_manage_schedule_approval(target.get("approval_status", target.get("request_status", "pending")))
-        if current_status == "approved":
-            raise HTTPException(status_code=409, detail="approved schedule is locked")
 
         actor_email = str(user.get("email", "")).strip().lower()
         owner_email = str(target.get("author_email", "")).strip().lower()
@@ -3523,6 +3557,14 @@ def admin_activity_log(request: Request, limit: int = 300, include_all: bool = T
 
     # 기본: 상태 변경성 이력(승인/차단/삭제/수정/요청 등)을 전체 사용자 기준으로 반환
     filtered = list(updates)
+
+    # 활동이력에서 일정 승인 철회 버튼 노출을 위해 현재 일정 승인 상태 인덱스를 구성한다.
+    schedule_status_by_id: dict[str, str] = {}
+    for row in _load_json_array(MANAGE_SCHEDULES_FILE):
+        sid = str(row.get("id", "") or "").strip()
+        if not sid:
+            continue
+        schedule_status_by_id[sid] = _normalize_manage_schedule_approval(row.get("approval_status", "pending"))
     if not include_all:
         keywords = ("상태", "승인", "반려", "삭제", "차단", "허용", "요청", "수정", "생성", "변경")
 
@@ -3550,6 +3592,22 @@ def admin_activity_log(request: Request, limit: int = 300, include_all: bool = T
                 actor = d_text.split(":", 1)[1].strip() if ":" in d_text else ""
             else:
                 other_details.append(d_text)
+        # 활동이력에서 일정 승인 철회 액션 여부 판별
+        schedule_target_id = ""
+        for line in other_details:
+            text = str(line or "").strip()
+            if text.startswith("ID:"):
+                schedule_target_id = text.split(":", 1)[1].strip()
+                break
+
+        is_schedule_scope = str(row.get("scope", "") or "").strip() == "일정 관리"
+        current_schedule_status = schedule_status_by_id.get(schedule_target_id, "")
+        can_withdraw_schedule_approval = bool(
+            schedule_target_id
+            and is_schedule_scope
+            and current_schedule_status == "approved"
+        )
+
         result.append({
             "updated_at": str(row.get("updated_at", "")),
             "title": str(row.get("title", "")),
@@ -3557,8 +3615,50 @@ def admin_activity_log(request: Request, limit: int = 300, include_all: bool = T
             "scope": str(row.get("scope", "")),
             "actor": actor,
             "details": other_details,
+            "target_schedule_id": schedule_target_id,
+            "can_withdraw_schedule_approval": can_withdraw_schedule_approval,
         })
     return {"ok": True, "items": result}
+
+
+@app.post("/api/manage/schedules/{schedule_id}/cancel-approval")
+def manage_schedule_cancel_approval(schedule_id: str, request: Request):
+    user = _current_user_from_request(request)
+    if not user:
+        return JSONResponse(status_code=401, content={"ok": False, "detail": "login required"})
+    if not _is_admin_user(user):
+        raise HTTPException(status_code=403, detail="admin only")
+
+    target_id = str(schedule_id or "").strip()
+    if not target_id:
+        raise HTTPException(status_code=400, detail="invalid schedule id")
+
+    with AUTH_LOCK:
+        items = _load_json_array(MANAGE_SCHEDULES_FILE)
+        target = next((row for row in items if str(row.get("id", "")).strip() == target_id), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="schedule not found")
+
+        current_status = _normalize_manage_schedule_approval(target.get("approval_status", "pending"))
+        if current_status != "approved":
+            raise HTTPException(status_code=400, detail="approved schedule not found")
+
+        before = dict(target)
+        target["approval_status"] = "pending"
+        target["approved_by"] = ""
+        target["approved_at"] = ""
+        target["reject_reason"] = ""
+        _save_json_array(MANAGE_SCHEDULES_FILE, items)
+
+    change_lines = _build_change_lines(before, target, ["approval_status", "approved_by", "approved_at", "reject_reason"])
+    _append_audit_update(
+        "일정 승인 철회",
+        [f"ID: {target_id}", *(change_lines or ["변경 항목 없음"])],
+        kind="updated",
+        scope="일정 관리",
+        actor=user,
+    )
+    return {"ok": True, "item": target}
 
 
 
@@ -6283,7 +6383,7 @@ FULL_TC_COMPONENT_SPECS = [
 ]
 
 FULL_TC_SUMMARY_CACHE: dict[str, dict] = {"ts": 0.0, "uploaded_at": "", "data": {}}
-FULL_TC_SUMMARY_CACHE_TTL_SEC = 20.0
+FULL_TC_SUMMARY_CACHE_TTL_SEC = 300.0  # 5분 캐시 (Excel 파싱 비용 절감)
 FULL_TC_AGENT_STATUS_LOCK = threading.Lock()
 FULL_TC_AGENT_STATUS: dict[str, dict] = {
     "server": {"last_run_at": "", "last_ok": False, "elapsed_ms": 0.0},

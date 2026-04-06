@@ -5,156 +5,109 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CCI Dashboard - 회원가입</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260324n" />
+  <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+  <link rel="stylesheet" href="/static/styles.css?v=20260404x" />
   <style>
+    *, *::before, *::after { box-sizing: border-box; }
     body {
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: flex; align-items: flex-start; justify-content: center;
       min-height: 100vh;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #1e3a5f 0%, #2d6bbf 50%, #1d55a0 100%);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      margin: 0;
-      padding: 20px;
+      margin: 0; padding: 40px 20px 60px;
     }
+    .register-wrap { width: 100%; max-width: 520px; }
     .register-container {
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-      width: 100%;
-      max-width: 420px;
-      padding: 40px;
+      background: #fff; border-radius: 20px;
+      box-shadow: 0 24px 64px rgba(0,0,0,.22); padding: 44px 40px;
     }
-    .register-header {
-      text-align: center;
-      margin-bottom: 30px;
+    .register-header { text-align: center; margin-bottom: 32px; }
+    .register-header .brand-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: linear-gradient(135deg,#1e3a5f,#2d6bbf);
+      color: #fff; border-radius: 12px; padding: 10px 18px;
+      font-size: 1.1rem; font-weight: 800; letter-spacing: .04em; margin-bottom: 14px;
     }
-    .register-header h1 {
-      font-size: 24px;
-      margin: 15px 0 5px;
-      color: #333;
+    .register-header h1 { font-size: 1.35rem; font-weight: 700; color: #0f172a; margin: 0 0 4px; }
+    .register-header p  { font-size: .83rem; color: #64748b; margin: 0; }
+    .reg-msg {
+      display: flex; align-items: flex-start; gap: 10px;
+      background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+      padding: 12px 14px; color: #991b1b; font-size: .85rem; margin-bottom: 22px;
     }
-    .register-header p {
-      font-size: 14px;
-      color: #666;
-      margin: 0;
+    .reg-msg i { margin-top: 2px; flex-shrink: 0; }
+    .reg-section-title {
+      font-size: .72rem; font-weight: 800; letter-spacing: .08em;
+      text-transform: uppercase; color: #94a3b8;
+      margin: 20px 0 10px;
+      display: flex; align-items: center; gap: 8px;
     }
-    .form-group {
-      margin-bottom: 20px;
+    .reg-section-title::after { content:""; flex:1; height:1px; background:#e2e8f0; }
+    .reg-section-title .opt { color: #94a3b8; font-weight: 500; font-size: .72rem; letter-spacing: 0; text-transform: none; }
+    .pw-encrypt-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: linear-gradient(135deg,#ecfdf5,#d1fae5);
+      border: 1px solid #a7f3d0; border-radius: 6px; padding: 3px 8px;
+      font-size: .7rem; color: #065f46; font-weight: 700;
+      text-transform: none; letter-spacing: 0;
     }
-    .form-group label {
-      display: block;
-      font-size: 14px;
-      font-weight: 500;
-      margin-bottom: 8px;
-      color: #333;
+    .reg-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 14px; }
+    .reg-grid .full { grid-column: 1 / -1; }
+    .fg { display: flex; flex-direction: column; gap: 5px; }
+    .fg label { font-size: .8rem; font-weight: 700; color: #374151; display: flex; align-items: center; gap: 5px; }
+    .fg label .req { color: #ef4444; }
+    .fg label .opt { color: #94a3b8; font-weight: 400; font-size: .72rem; }
+    .fg input {
+      width: 100%; padding: 11px 13px;
+      border: 1.5px solid #e2e8f0; border-radius: 10px;
+      font-size: .88rem; color: #0f172a; background: #f8fafc;
+      transition: border-color .18s, box-shadow .18s, background .18s;
     }
-    .form-group input {
-      width: 100%;
-      padding: 12px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      font-size: 14px;
-      box-sizing: border-box;
-      transition: border-color 0.3s;
+    .fg input:focus { outline:none; border-color:#2d6bbf; background:#fff; box-shadow:0 0 0 3px rgba(45,107,191,.12); }
+    .fg input.is-valid   { border-color: #22c55e; background: #f0fdf4; }
+    .fg input.is-invalid { border-color: #ef4444; background: #fef2f2; }
+    .fg .hint { font-size: .74rem; color: #64748b; line-height: 1.4; }
+    .fg .hint.ok  { color: #16a34a; }
+    .fg .hint.err { color: #dc2626; }
+    .addr-row { display: flex; gap: 8px; align-items: stretch; }
+    .addr-row input { flex: 1; }
+    .addr-search-btn {
+      flex-shrink: 0; padding: 0 14px;
+      border: 1.5px solid #2d6bbf;
+      background: linear-gradient(180deg,#f0f6ff,#e6f0ff);
+      color: #1d55a0; border-radius: 10px;
+      font-size: .82rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+      transition: background .18s;
     }
-    .form-group input:focus {
-      outline: none;
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    .addr-search-btn:hover { background: linear-gradient(180deg,#ddeeff,#c8e0ff); }
+    .pw-strength { height: 4px; border-radius: 4px; background: #e2e8f0; overflow: hidden; margin-top: 2px; }
+    .pw-strength-bar { height: 100%; border-radius: 4px; width: 0; transition: width .3s, background .3s; }
+    .reg-submit {
+      width: 100%; padding: 14px;
+      background: linear-gradient(135deg,#1e3a5f 0%,#2d6bbf 100%);
+      color: #fff; border: none; border-radius: 12px;
+      font-size: 1rem; font-weight: 700; cursor: pointer; margin-top: 24px;
+      transition: transform .2s, box-shadow .2s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
     }
-    .form-group.message {
-      background: #f8d7da;
-      border: 1px solid #f5c6cb;
-      border-radius: 6px;
-      padding: 12px;
-      color: #721c24;
-      font-size: 13px;
-    }
-    .register-button {
-      width: 100%;
-      padding: 12px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform 0.2s, box-shadow 0.2s;
-      margin-bottom: 15px;
-    }
-    .register-button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 16px rgba(102, 126, 234, 0.4);
-    }
-    .register-button:active {
-      transform: translateY(0);
-    }
-    .back-to-login {
-      text-align: center;
-      font-size: 13px;
-    }
-    .back-to-login a {
-      color: #667eea;
-      text-decoration: none;
-      font-weight: 500;
-    }
-    .back-to-login a:hover {
-      text-decoration: underline;
-    }
-    .hint-text {
-      font-size: 12px;
-      color: #666;
-      margin-top: 5px;
-    }
-    .register-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-    }
-    .register-grid .form-group {
-      margin-bottom: 0;
-    }
-    .register-grid .full-span {
-      grid-column: 1 / -1;
-    }
-    @media (max-width: 640px) {
-      .register-container {
-        padding: 28px 22px;
-      }
-      .register-grid {
-        grid-template-columns: 1fr;
-      }
-      .register-grid .full-span {
-        grid-column: auto;
-      }
-    }
-    .auth-corner-nav {
-      position: fixed;
-      top: 16px;
-      right: 16px;
-      z-index: 40;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
+    .reg-submit:hover  { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(30,58,95,.35); }
+    .reg-submit:active { transform: translateY(0); }
+    .reg-footer { text-align: center; font-size: .82rem; color: #64748b; margin-top: 20px; }
+    .reg-footer a { color: #2d6bbf; text-decoration: none; font-weight: 600; }
+    .reg-footer a:hover { text-decoration: underline; }
+    .auth-corner-nav { position: fixed; top: 16px; right: 16px; z-index: 40; display: flex; align-items: center; gap: 8px; }
     .auth-corner-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 12px;
-      border-radius: 999px;
-      text-decoration: none;
-      border: 1px solid rgba(255, 255, 255, 0.35);
-      color: #ffffff;
-      background: rgba(15, 23, 42, 0.25);
-      backdrop-filter: blur(6px);
-      font-size: 13px;
-      font-weight: 600;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border-radius: 999px; text-decoration: none;
+      border: 1px solid rgba(255,255,255,.35); color: #fff;
+      background: rgba(15,23,42,.28); backdrop-filter: blur(6px);
+      font-size: .8rem; font-weight: 600; transition: background .18s;
     }
-    .auth-corner-link:hover {
-      background: rgba(15, 23, 42, 0.4);
+    .auth-corner-link:hover { background: rgba(15,23,42,.45); }
+    @media (max-width: 560px) {
+      .register-container { padding: 30px 22px; }
+      .reg-grid { grid-template-columns: 1fr; }
+      .reg-grid .full { grid-column: auto; }
     }
   </style>
 </head>
@@ -163,133 +116,283 @@
     <a class="auth-corner-link" href="/"><i class="fas fa-house"></i> 홈</a>
     <a class="auth-corner-link" href="/auth/login?next={{ next }}"><i class="fas fa-right-to-bracket"></i> 로그인</a>
   </div>
-  <div class="register-container">
-    <div class="register-header">
-      <h1>CCI Dashboard</h1>
-      <p>POLIOT Device Control Center</p>
-    </div>
-    
-    {% if popup_message %}
-    <div class="form-group message">
-      {{ popup_message }}
-    </div>
-    {% endif %}
-    
-    <form method="post" action="/auth/register" onsubmit="return validateRegisterForm(event)">
-      <div class="register-grid">
-        <div class="form-group">
-          <label for="name">이름</label>
-          <input type="text" id="name" name="name" placeholder="이름 입력" required />
-        </div>
 
-        <div class="form-group">
-          <label for="phone">전화번호</label>
-          <input type="tel" id="phone" name="phone" placeholder="010-0000-0000" required pattern="^(?:\+?\d[\d\-\s]{7,18}\d)$" title="전화번호 형식이 올바르지 않습니다. 예: 010-1234-5678" />
-        </div>
-
-        <div class="form-group full-span">
-          <label for="email">이메일</label>
-          <input type="email" id="email" name="email" placeholder="example@poliot.co.kr" required pattern="^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$" title="올바른 이메일 형식을 입력해 주세요." />
-          <div class="hint-text">회사 이메일을 입력해 주세요</div>
-        </div>
-
-        <div class="form-group">
-          <label for="title">직책/소속</label>
-          <input type="text" id="title" name="title" placeholder="SW품질/책임" />
-        </div>
-
-        <div class="form-group">
-          <label for="birth">생년월일</label>
-          <input type="text" id="birth" name="birth" placeholder="1990-01-01" pattern="^\d{4}-\d{2}-\d{2}$" title="YYYY-MM-DD 형식으로 입력해 주세요." />
-        </div>
-
-        <div class="form-group full-span">
-          <label for="address">주소</label>
-          <input type="text" id="address" name="address" placeholder="주소 입력" />
-        </div>
-
-        <div class="form-group">
-          <label for="password">비밀번호</label>
-          <input type="password" id="password" name="password" placeholder="비밀번호 입력" required minlength="8" maxlength="100" pattern="^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$" title="영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~100자로 입력해 주세요." />
-          <div class="hint-text">8~100자, 영문/숫자/특수문자를 각각 1개 이상 포함해 주세요</div>
-        </div>
-
-        <div class="form-group">
-          <label for="password_confirm">비밀번호 확인</label>
-          <input type="password" id="password_confirm" name="password_confirm" placeholder="비밀번호 재입력" required minlength="8" maxlength="100" pattern="^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$" title="영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~100자로 입력해 주세요." />
-        </div>
+  <div class="register-wrap">
+    <div class="register-container">
+      <div class="register-header">
+        <div class="brand-badge"><i class="fas fa-shield-halved"></i> CCI Dashboard</div>
+        <h1>회원가입</h1>
+        <p>POLIOT Device Control Center</p>
       </div>
-      
-      <input type="hidden" name="next" value="{{ next }}" />
-      
-      <button type="submit" class="register-button">
-        <i class="fas fa-user-plus"></i> 회원가입
-      </button>
-    </form>
-    
-    <div class="back-to-login">
-      <p>{{ message }}</p>
-      <p style="margin: 0;"><a href="/auth/login?next={{ next }}">← 로그인 페이지로 돌아가기</a></p>
+
+      {% if popup_message %}
+      <div class="reg-msg"><i class="fas fa-circle-exclamation"></i><span>{{ popup_message }}</span></div>
+      {% endif %}
+
+      <form id="regForm" method="post" action="/auth/register" autocomplete="on" novalidate>
+
+        <div class="reg-section-title"><i class="fas fa-user"></i> 기본 정보</div>
+        <div class="reg-grid">
+          <div class="fg">
+            <label for="name">이름 <span class="req">*</span></label>
+            <input type="text" id="name" name="name" placeholder="홍길동" required autocomplete="name" />
+          </div>
+          <div class="fg">
+            <label for="phone">전화번호 <span class="req">*</span></label>
+            <input type="tel" id="phone" name="phone" placeholder="010-0000-0000" required
+                   autocomplete="tel" inputmode="numeric" maxlength="13" />
+            <span class="hint" id="phoneHint">숫자만 입력해도 자동으로 하이픈이 추가됩니다</span>
+          </div>
+          <div class="fg full">
+            <label for="email">이메일 <span class="req">*</span></label>
+            <input type="email" id="email" name="email" placeholder="example@poliot.co.kr" required autocomplete="email" />
+            <span class="hint">회사 이메일을 입력해 주세요</span>
+          </div>
+          <div class="fg">
+            <label for="title">직책/소속 <span class="opt">(선택)</span></label>
+            <input type="text" id="title" name="title" placeholder="SW품질/책임" autocomplete="organization-title" />
+            <span class="hint">미입력 시 <b>SW품질/책임</b>으로 설정됩니다</span>
+          </div>
+          <div class="fg">
+            <label for="birth">생년월일 <span class="opt">(선택)</span></label>
+            <input type="text" id="birth" name="birth" placeholder="19900101"
+                   autocomplete="bday" inputmode="numeric" maxlength="10" />
+            <span class="hint" id="birthHint">숫자만 입력해도 자동으로 하이픈이 추가됩니다</span>
+          </div>
+        </div>
+
+        <div class="reg-section-title"><i class="fas fa-location-dot"></i> 주소 <span class="opt">(선택)</span></div>
+        <div class="reg-grid">
+          <div class="fg full">
+            <label for="postcode">우편번호</label>
+            <div class="addr-row">
+              <input type="text" id="postcode" name="postcode" placeholder="우편번호" readonly
+                     style="max-width:130px;cursor:pointer;background:#f1f5f9;" onclick="openDaumPostcode()" />
+              <button type="button" class="addr-search-btn" onclick="openDaumPostcode()">
+                <i class="fas fa-magnifying-glass"></i> 우편번호 검색
+              </button>
+            </div>
+          </div>
+          <div class="fg full">
+            <label for="address">기본 주소</label>
+            <input type="text" id="address" name="address" placeholder="우편번호 검색 후 자동 입력됩니다" readonly
+                   style="cursor:pointer;" onclick="openDaumPostcode()" />
+          </div>
+          <div class="fg full">
+            <label for="address_detail">상세 주소 <span class="opt">(선택)</span></label>
+            <input type="text" id="address_detail" name="address_detail" placeholder="동·호수, 층 등 상세 주소" autocomplete="address-line2" />
+          </div>
+        </div>
+
+        <div class="reg-section-title">
+          <i class="fas fa-lock"></i> 비밀번호
+          <span class="pw-encrypt-badge"><i class="fas fa-shield-halved"></i> PBKDF2-SHA256 암호화</span>
+        </div>
+        <div class="reg-grid">
+          <div class="fg full">
+            <label for="password">비밀번호 <span class="req">*</span></label>
+            <input type="password" id="password" name="password" placeholder="비밀번호 입력"
+                   required minlength="8" maxlength="100" autocomplete="new-password" />
+            <div class="pw-strength"><div class="pw-strength-bar" id="pwStrengthBar"></div></div>
+            <span class="hint" id="pwHint">8~100자, 영문·숫자·특수문자를 각각 1개 이상 포함해 주세요</span>
+          </div>
+          <div class="fg full">
+            <label for="password_confirm">비밀번호 확인 <span class="req">*</span></label>
+            <input type="password" id="password_confirm" name="password_confirm" placeholder="비밀번호 재입력"
+                   required minlength="8" maxlength="100" autocomplete="new-password" />
+            <span class="hint" id="pwConfirmHint"></span>
+          </div>
+        </div>
+
+        <input type="hidden" name="next" value="{{ next }}" />
+
+        <button type="submit" class="reg-submit">
+          <i class="fas fa-user-plus"></i> 회원가입
+        </button>
+      </form>
+
+      <div class="reg-footer">
+        <p style="margin:0 0 6px;">이미 계정이 있으신가요? <a href="/auth/login?next={{ next }}">로그인</a></p>
+      </div>
     </div>
   </div>
 
   <script>
-    const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-    const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$/;
-    const PHONE_REGEX = /^(?:\+?\d[\d\-\s]{7,18}\d)$/;
-    const BIRTH_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+  (function () {
+    "use strict";
+    var EMAIL_RE    = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+    var PASSWORD_RE = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$/;
+    var PHONE_RE    = /^(?:\+?\d[\d\-\s]{7,18}\d)$/;
+    var BIRTH_RE    = /^\d{4}-\d{2}-\d{2}$/;
 
-    function isValidBirthDate(value) {
-      const text = String(value || "").trim();
+    /* 전화번호 자동 하이픈 */
+    var phoneInput = document.getElementById("phone");
+    if (phoneInput) {
+      phoneInput.addEventListener("input", function () {
+        var raw = this.value.replace(/[^\d]/g, "");
+        if (raw.length > 11) raw = raw.slice(0, 11);
+        var fmt = raw;
+        if (raw.startsWith("02")) {
+          if      (raw.length <= 2)  fmt = raw;
+          else if (raw.length <= 5)  fmt = raw.slice(0,2) + "-" + raw.slice(2);
+          else if (raw.length <= 9)  fmt = raw.slice(0,2) + "-" + raw.slice(2,5) + "-" + raw.slice(5);
+          else                       fmt = raw.slice(0,2) + "-" + raw.slice(2,6) + "-" + raw.slice(6);
+        } else {
+          if      (raw.length <= 3)  fmt = raw;
+          else if (raw.length <= 6)  fmt = raw.slice(0,3) + "-" + raw.slice(3);
+          else if (raw.length <= 10) fmt = raw.slice(0,3) + "-" + raw.slice(3,6) + "-" + raw.slice(6);
+          else                       fmt = raw.slice(0,3) + "-" + raw.slice(3,7) + "-" + raw.slice(7);
+        }
+        this.value = fmt;
+        validatePhone();
+      });
+      phoneInput.addEventListener("blur", validatePhone);
+    }
+    function validatePhone() {
+      var hint = document.getElementById("phoneHint");
+      if (!phoneInput) return;
+      var v = phoneInput.value.trim();
+      if (!v) { setField(phoneInput,""); if(hint){hint.textContent="숫자만 입력해도 자동으로 하이픈이 추가됩니다";hint.className="hint";} return; }
+      if (PHONE_RE.test(v)) { setField(phoneInput,"ok"); if(hint){hint.textContent="올바른 전화번호 형식입니다 ✔";hint.className="hint ok";} }
+      else                  { setField(phoneInput,"err");if(hint){hint.textContent="전화번호 형식이 올바르지 않습니다. 예: 010-1234-5678";hint.className="hint err";} }
+    }
+
+    /* 생년월일 자동 하이픈 */
+    var birthInput = document.getElementById("birth");
+    if (birthInput) {
+      birthInput.addEventListener("input", function () {
+        var raw = this.value.replace(/[^\d]/g, "");
+        if (raw.length > 8) raw = raw.slice(0, 8);
+        var fmt = raw;
+        if      (raw.length > 6) fmt = raw.slice(0,4) + "-" + raw.slice(4,6) + "-" + raw.slice(6);
+        else if (raw.length > 4) fmt = raw.slice(0,4) + "-" + raw.slice(4);
+        this.value = fmt;
+        validateBirth();
+      });
+      birthInput.addEventListener("blur", validateBirth);
+    }
+    function isValidBirthDate(text) {
       if (!text) return true;
-      if (!BIRTH_REGEX.test(text)) return false;
-      const [yearText, monthText, dayText] = text.split("-");
-      const year = Number(yearText);
-      const month = Number(monthText);
-      const day = Number(dayText);
-      const d = new Date(year, month - 1, day);
-      return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day;
+      if (!BIRTH_RE.test(text)) return false;
+      var parts = text.split("-"), y=+parts[0], m=+parts[1], d=+parts[2];
+      var dt = new Date(y, m-1, d);
+      return dt.getFullYear()===y && dt.getMonth()===m-1 && dt.getDate()===d;
+    }
+    function validateBirth() {
+      var hint = document.getElementById("birthHint");
+      if (!birthInput) return;
+      var v = birthInput.value.trim();
+      if (!v) { setField(birthInput,""); if(hint){hint.textContent="숫자만 입력해도 자동으로 하이픈이 추가됩니다";hint.className="hint";} return; }
+      if (isValidBirthDate(v)) { setField(birthInput,"ok"); if(hint){hint.textContent="올바른 생년월일 형식입니다 ✔";hint.className="hint ok";} }
+      else                     { setField(birthInput,"err");if(hint){hint.textContent="형식이 올바르지 않습니다. 예: 1990-01-01";hint.className="hint err";} }
     }
 
-    function validateRegisterForm(event) {
-      const email = document.getElementById("email");
-      const phone = document.getElementById("phone");
-      const birth = document.getElementById("birth");
-      const password = document.getElementById("password");
-      const passwordConfirm = document.getElementById("password_confirm");
-      if (!email || !phone || !birth || !password || !passwordConfirm) return true;
-      if (!EMAIL_REGEX.test(String(email.value || "").trim().toLowerCase())) {
-        event.preventDefault();
-        window.alert("이메일 형식이 올바르지 않습니다.");
-        email.focus();
-        return false;
-      }
-      if (!PHONE_REGEX.test(String(phone.value || "").trim())) {
-        event.preventDefault();
-        window.alert("전화번호 형식이 올바르지 않습니다. 예: 010-1234-5678");
-        phone.focus();
-        return false;
-      }
-      if (!isValidBirthDate(birth.value || "")) {
-        event.preventDefault();
-        window.alert("생년월일 형식이 올바르지 않습니다. YYYY-MM-DD 형식으로 입력해 주세요.");
-        birth.focus();
-        return false;
-      }
-      if (!PASSWORD_REGEX.test(password.value || "")) {
-        event.preventDefault();
-        window.alert("비밀번호는 8~100자이며, 영문/숫자/특수문자를 각각 1개 이상 포함해야 합니다.");
-        password.focus();
-        return false;
-      }
-      if (password.value !== passwordConfirm.value) {
-        event.preventDefault();
-        window.alert("비밀번호가 일치하지 않습니다.");
-        passwordConfirm.focus();
-        return false;
-      }
-      return true;
+    /* 비밀번호 강도 */
+    var pwInput   = document.getElementById("password");
+    var pwConfirm = document.getElementById("password_confirm");
+    if (pwInput) {
+      pwInput.addEventListener("input", function () { updatePwStrength(this.value); validatePwConfirm(); });
+      pwInput.addEventListener("blur", validatePasswordField);
     }
+    if (pwConfirm) {
+      pwConfirm.addEventListener("input", validatePwConfirm);
+      pwConfirm.addEventListener("blur", validatePwConfirm);
+    }
+    function pwStrengthScore(pw) {
+      var s=0;
+      if (pw.length>=8) s++;
+      if (pw.length>=12) s++;
+      if (/[A-Za-z]/.test(pw)) s++;
+      if (/\d/.test(pw)) s++;
+      if (/[^A-Za-z0-9]/.test(pw)) s++;
+      return s;
+    }
+    function updatePwStrength(pw) {
+      var bar  = document.getElementById("pwStrengthBar");
+      var hint = document.getElementById("pwHint");
+      if (!bar) return;
+      var levels = [
+        {pct:0,  color:"#e2e8f0", label:"비밀번호를 입력하세요",          cls:""},
+        {pct:20, color:"#ef4444", label:"매우 약함 — 보완이 필요합니다",   cls:"err"},
+        {pct:40, color:"#f97316", label:"약함 — 특수문자를 추가하세요",    cls:"err"},
+        {pct:60, color:"#eab308", label:"보통 — 길이를 늘리면 더 좋습니다",cls:""},
+        {pct:80, color:"#22c55e", label:"강함 ✔",                        cls:"ok"},
+        {pct:100,color:"#16a34a", label:"매우 강함 ✔✔",                  cls:"ok"},
+      ];
+      var lv = levels[Math.min(pwStrengthScore(pw),5)];
+      bar.style.width=lv.pct+"%"; bar.style.background=lv.color;
+      if (hint) { hint.textContent=lv.label; hint.className="hint "+lv.cls; }
+    }
+    function validatePasswordField() {
+      if (!pwInput) return;
+      setField(pwInput, pwInput.value ? (PASSWORD_RE.test(pwInput.value)?"ok":"err") : "");
+    }
+    function validatePwConfirm() {
+      var hint = document.getElementById("pwConfirmHint");
+      if (!pwInput||!pwConfirm) return;
+      if (!pwConfirm.value) { setField(pwConfirm,""); if(hint) hint.textContent=""; return; }
+      if (pwInput.value===pwConfirm.value) { setField(pwConfirm,"ok"); if(hint){hint.textContent="비밀번호가 일치합니다 ✔";hint.className="hint ok";} }
+      else                                 { setField(pwConfirm,"err");if(hint){hint.textContent="비밀번호가 일치하지 않습니다";hint.className="hint err";} }
+    }
+
+    /* 필드 상태 */
+    function setField(el, state) {
+      if (!el) return;
+      el.classList.remove("is-valid","is-invalid");
+      if (state==="ok")  el.classList.add("is-valid");
+      if (state==="err") el.classList.add("is-invalid");
+    }
+
+    /* Daum 우편번호 */
+    window.openDaumPostcode = function () {
+      if (typeof daum==="undefined"||typeof daum.Postcode==="undefined") {
+        alert("주소 검색 서비스를 불러오는 중입니다. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
+      new daum.Postcode({
+        oncomplete: function (data) {
+          var pcEl = document.getElementById("postcode");
+          var adEl = document.getElementById("address");
+          var dtEl = document.getElementById("address_detail");
+          if (pcEl) pcEl.value = data.zonecode||"";
+          if (adEl) adEl.value = data.roadAddress||data.jibunAddress||"";
+          if (dtEl) { dtEl.value=""; dtEl.focus(); }
+        }
+      }).open();
+    };
+
+    /* 폼 최종 검증 */
+    var form = document.getElementById("regForm");
+    if (form) {
+      form.addEventListener("submit", function (ev) {
+        var nameEl   = document.getElementById("name");
+        var emailEl  = document.getElementById("email");
+        var phoneEl  = document.getElementById("phone");
+        var birthEl  = document.getElementById("birth");
+        var titleEl  = document.getElementById("title");
+        var addrEl   = document.getElementById("address");
+        var detailEl = document.getElementById("address_detail");
+        /* 직책 기본값 */
+        if (titleEl && !titleEl.value.trim()) titleEl.value = "SW품질/책임";
+        /* 주소 합치기 */
+        if (addrEl && detailEl && detailEl.value.trim())
+          addrEl.value = addrEl.value.trim() + " " + detailEl.value.trim();
+        function fail(msg, el) { ev.preventDefault(); alert(msg); if(el) el.focus(); }
+        if (!nameEl||!nameEl.value.trim())
+          return fail("이름을 입력해 주세요.", nameEl);
+        if (!emailEl||!EMAIL_RE.test(emailEl.value.trim().toLowerCase()))
+          return fail("이메일 형식이 올바르지 않습니다.", emailEl);
+        if (!phoneEl||!PHONE_RE.test(phoneEl.value.trim()))
+          return fail("전화번호 형식이 올바르지 않습니다. 예: 010-1234-5678", phoneEl);
+        if (birthEl&&birthEl.value.trim()&&!isValidBirthDate(birthEl.value.trim()))
+          return fail("생년월일 형식이 올바르지 않습니다. 예: 1990-01-01", birthEl);
+        if (!pwInput||!PASSWORD_RE.test(pwInput.value))
+          return fail("비밀번호는 8~100자이며, 영문·숫자·특수문자를 각각 1개 이상 포함해야 합니다.", pwInput);
+        if (!pwConfirm||pwInput.value!==pwConfirm.value)
+          return fail("비밀번호가 일치하지 않습니다.", pwConfirm);
+      });
+    }
+  })();
   </script>
 </body>
 </html>

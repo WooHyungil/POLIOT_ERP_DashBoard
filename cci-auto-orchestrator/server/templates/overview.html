@@ -6,7 +6,7 @@
   <title>CCI Overview</title>
   <!-- FontAwesome CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260330c" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260404x" />
   <script src="/static/auto_logout.js"></script>
 </head>
 <body class="has-side-nav">
@@ -113,6 +113,77 @@
 
     </section>
 
+    <section class="grid grid-overview overview-layout overview-layout-row2" id="overviewMainContent2" aria-label="Full_TC 통계 빠른 접근">
+
+      <article class="card card-guidance overview-statistics overview-nav-card overview-chart-card" data-link="/qa/full-tc?view=summary" role="button" tabindex="0" aria-label="Full_TC Statistics 페이지로 이동">
+        <div class="overview-card-head">
+          <div class="overview-card-head-main">
+            <span class="overview-card-icon statistics"><i class="fas fa-chart-bar"></i></span>
+            <div>
+              <h2>Statistics</h2>
+              <p class="overview-card-sub">Full_TC 전체 결과(PASS/FAIL/N/T/N/A) 분포를 한눈에 확인합니다.</p>
+            </div>
+          </div>
+          <div id="overviewStatsTotalBadge" class="overview-fulltc-total-badge" hidden>
+            <span class="overview-ftc-badge-label">전체 TC</span>
+            <strong class="overview-ftc-badge-count" id="overviewStatsTotalCount">0</strong>
+          </div>
+        </div>
+        <div class="overview-pie-wrap overview-chart-shell">
+          <div id="overviewStatisticsDonut" class="overview-donut overview-donut-loading" aria-hidden="true">
+            <div class="overview-donut-center"><span class="overview-donut-spin"><i class="fas fa-circle-notch fa-spin"></i></span><span>로딩중</span></div>
+          </div>
+          <ul id="overviewStatisticsLegend" class="overview-legend overview-legend-loading">
+            <li style="opacity:1;transform:none;"><i class="fas fa-circle-notch fa-spin" style="margin-right:6px;color:#94a3b8;"></i>데이터 불러오는 중...</li>
+          </ul>
+        </div>
+        <p id="overviewStatisticsHint" class="hint">업로드된 Full_TC 파일 기반 결과 항목별 분포입니다.</p>
+      </article>
+
+      <article class="card card-guidance overview-label overview-nav-card overview-chart-card" data-link="/qa/full-tc?view=label" role="button" tabindex="0" aria-label="Full_TC LABEL 통계 페이지로 이동">
+        <div class="overview-card-head">
+          <div class="overview-card-head-main">
+            <span class="overview-card-icon label"><i class="fas fa-tags"></i></span>
+            <div>
+              <h2>LABEL 통계</h2>
+              <p class="overview-card-sub">TC에 할당된 LABEL 상위 7개의 비중 분포를 표시합니다.</p>
+            </div>
+          </div>
+        </div>
+        <div class="overview-pie-wrap overview-chart-shell">
+          <div id="overviewLabelDonut" class="overview-donut overview-donut-loading" aria-hidden="true">
+            <div class="overview-donut-center"><span class="overview-donut-spin"><i class="fas fa-circle-notch fa-spin"></i></span><span>로딩중</span></div>
+          </div>
+          <ul id="overviewLabelLegend" class="overview-legend overview-legend-loading">
+            <li style="opacity:1;transform:none;"><i class="fas fa-circle-notch fa-spin" style="margin-right:6px;color:#94a3b8;"></i>데이터 불러오는 중...</li>
+          </ul>
+        </div>
+        <p id="overviewLabelHint" class="hint">Full_TC 업로드 파일 기반 LABEL별 TC 수 분포입니다.</p>
+      </article>
+
+      <article class="card card-guidance overview-category overview-nav-card overview-chart-card" data-link="/qa/full-tc?view=group" role="button" tabindex="0" aria-label="Full_TC 카테고리 분석 페이지로 이동">
+        <div class="overview-card-head">
+          <div class="overview-card-head-main">
+            <span class="overview-card-icon category"><i class="fas fa-th-large"></i></span>
+            <div>
+              <h2>카테고리 분석</h2>
+              <p class="overview-card-sub">컴포넌트별 TC 수 분포를 원형 차트로 확인합니다.</p>
+            </div>
+          </div>
+        </div>
+        <div class="overview-pie-wrap overview-chart-shell">
+          <div id="overviewCategoryDonut" class="overview-donut overview-donut-loading" aria-hidden="true">
+            <div class="overview-donut-center"><span class="overview-donut-spin"><i class="fas fa-circle-notch fa-spin"></i></span><span>로딩중</span></div>
+          </div>
+          <ul id="overviewCategoryLegend" class="overview-legend overview-legend-loading">
+            <li style="opacity:1;transform:none;"><i class="fas fa-circle-notch fa-spin" style="margin-right:6px;color:#94a3b8;"></i>데이터 불러오는 중...</li>
+          </ul>
+        </div>
+        <p id="overviewCategoryHint" class="hint">Full_TC 업로드 파일 기반 컴포넌트별 TC 수 분포입니다.</p>
+      </article>
+
+    </section>
+
     <section id="shortcutPage" hidden class="shortcut-page">
       <!-- ① 상단 툴바: 바로가기 버튼 + 액션 -->
       <div class="sc-toolbar">
@@ -189,7 +260,7 @@
   </div>
 
   <div id="toastStack" class="toast-stack"></div>
-  <script src="/static/side_nav.js?v=20260403b"></script>
-  <script src="/static/overview.js?v=20260403b"></script>
+  <script src="/static/side_nav.js?v=20260404x"></script>
+  <script src="/static/overview.js?v=20260404o"></script>
 </body>
 </html>

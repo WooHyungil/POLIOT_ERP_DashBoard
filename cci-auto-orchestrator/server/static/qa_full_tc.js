@@ -380,16 +380,14 @@ const FTC_VIEW_ALIAS = {
   summary: "summary",
   group: "group",
   label: "label",
-  detail: "detail",
   defect: "defect",
   missing: "defect",
 };
 
 const FTC_SECTION_LABEL = {
-  summary: "컴포넌트 요약",
+  summary: "Statistics",
   group: "카테고리 분석",
   label: "LABEL 통계",
-  detail: "원본 상세",
   defect: "Defect 대조",
 };
 
@@ -2939,7 +2937,7 @@ function openDetailByMissingTc(row) {
   if (nOnlyInput) nOnlyInput.checked = false;
   if (ntOnlyInput) ntOnlyInput.checked = false;
   if (naOnlyInput) naOnlyInput.checked = false;
-  switchTab("detail", true);
+  switchTab("summary", true);
 }
 
 function renderDefectMissingTcTable() {
@@ -3570,8 +3568,8 @@ document.getElementById("qaPageSizeSelect")?.addEventListener("change", function
 });
 
 document.getElementById("qaFullTcInlineEditBtn")?.addEventListener("click", function () {
-  switchTab("detail", true);
-  toast("상세 조회 탭의 각 행에서 '수정' 버튼으로 값/비고를 입력하세요.", "ok");
+  switchTab("summary", true);
+  toast("각 행에서 '수정' 버튼으로 값/비고를 입력하세요.", "ok");
 });
 
 document.getElementById("qaFullTcRefreshBtn")?.addEventListener("click", function () {

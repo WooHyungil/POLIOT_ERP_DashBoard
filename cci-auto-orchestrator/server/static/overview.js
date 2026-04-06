@@ -359,12 +359,19 @@ function buildPieItems(rawItems, maxItems) {
   return head;
 }
 
-function renderOverviewDonut(donutId, legendId, items) {
+function renderOverviewDonut(donutId, legendId, items, customColors) {
   const donut = document.getElementById(donutId);
   const legend = document.getElementById(legendId);
   if (!donut || !legend) return;
 
-  const centerLabel = donutId === "overviewRecentDonut" ? "최근 이슈" : donutId === "overviewSummaryDonut" ? "Summary" : "통계";
+  const centerLabel = donutId === "overviewRecentDonut" ? "최근 이슈"
+    : donutId === "overviewSummaryDonut" ? "Summary"
+    : donutId === "overviewStatisticsDonut" ? "Results"
+    : donutId === "overviewLabelDonut" ? "LABEL"
+    : donutId === "overviewCategoryDonut" ? "카테고리"
+    : "통계";
+
+  const palette = Array.isArray(customColors) && customColors.length ? customColors : OVERVIEW_PIE_COLORS;
 
   const safeItems = Array.isArray(items) ? items : [];
   const total = safeItems.reduce(function (acc, cur) { return acc + Number(cur.count || 0); }, 0);
@@ -378,12 +385,13 @@ function renderOverviewDonut(donutId, legendId, items) {
   }
 
   donut.classList.remove("overview-donut-empty");
+  donut.classList.remove("overview-donut-loading");
   let startDeg = 0;
   const segments = safeItems.map(function (item, idx) {
     const ratio = Number(item.count || 0) / total;
     const sweep = ratio * 360;
     const endDeg = startDeg + sweep;
-    const color = OVERVIEW_PIE_COLORS[idx % OVERVIEW_PIE_COLORS.length];
+    const color = palette[idx % palette.length];
     const part = `${color} ${startDeg.toFixed(2)}deg ${endDeg.toFixed(2)}deg`;
     startDeg = endDeg;
     return part;
@@ -392,7 +400,7 @@ function renderOverviewDonut(donutId, legendId, items) {
   donut.innerHTML = `<div class="overview-donut-center"><strong>${esc(String(total))}</strong><span>${centerLabel}</span></div>`;
 
   legend.innerHTML = safeItems.map(function (item, idx) {
-    const color = OVERVIEW_PIE_COLORS[idx % OVERVIEW_PIE_COLORS.length];
+    const color = palette[idx % palette.length];
     const pct = Math.round((Number(item.count || 0) / total) * 100);
     return `<li><span class="overview-legend-dot" style="background:${color}"></span><span class="overview-legend-label">${esc(item.name)}</span><strong class="overview-legend-value">${esc(String(item.count))}건</strong><span class="overview-legend-pct">${esc(String(pct))}%</span></li>`;
   }).join("");
@@ -403,6 +411,142 @@ function renderOverviewDonut(donutId, legendId, items) {
 function extractRegularPieItems(payload) {
   const base = Array.isArray(payload?.summary_by_version) ? payload.summary_by_version : [];
   return buildPieItems(base, 5);
+}
+
+// Full_TC Statistics: PASS/FAIL/N/T/N/A 의미 색상 팔레트
+const FULLTC_RESULT_COLORS = ["#22c55e", "#ef4444", "#f59e0b", "#94a3b8", "#6b7fd7"];
+
+function extractFullTcStatisticsPieItems(totals) {
+  const t = totals || {};
+  return buildPieItems([
+    { name: "PASS", count: Number(t.result_pass_count || 0) },
+    { name: "FAIL", count: Number(t.result_fail_count || 0) },
+    { name: "N/T", count: Number(t.result_nt_count || 0) },
+    { name: "N/A", count: Number(t.result_na_count || 0) },
+    { name: "기타", count: Number(t.result_other_count || 0) },
+  ], 5);
+}
+
+function extractFullTcLabelPieItems(labelRows) {
+  const rows = Array.isArray(labelRows) ? labelRows : [];
+  const top = rows.slice(0, 7).map(function (r) {
+    return { name: String(r.label || "").trim() || "기타", count: Number(r.count || 0) };
+  }).filter(function (x) { return x.count > 0; });
+  const rest = rows.slice(7).reduce(function (acc, r) { return acc + Number(r.count || 0); }, 0);
+  if (rest > 0) top.push({ name: "기타", count: rest });
+  return top;
+}
+
+function extractFullTcCategoryPieItems(components) {
+  const rows = Array.isArray(components) ? components : [];
+  return buildPieItems(
+    rows.map(function (c) {
+      return { name: String(c.component || "").trim() || "기타", count: Number(c.row_count || 0) };
+    }), 8
+  );
+}
+
+async function refreshFullTcPies() {
+  // 로딩 상태 즉시 표시
+  _setFullTcDonutsLoading();
+
+  let data = null;
+  try {
+    const res = await fetch("/api/qa/full-tc/summary", { credentials: "same-origin" });
+    if (!res.ok) {
+      throw new Error(`서버 오류 (HTTP ${res.status})`);
+    }
+    data = await res.json();
+  } catch (e) {
+    const errMsg = esc(String(e || "네트워크 오류"));
+    _renderFullTcDonutsError(`Full_TC 조회 실패: ${errMsg}`);
+    return;
+  }
+
+  if (!data || !data.ok) {
+    const errMsg = String(data?.detail || "Full_TC 파일이 업로드되지 않았습니다.");
+    _renderFullTcDonutsError(errMsg);
+    return;
+  }
+
+  const totals = data.totals || {};
+  const totalCount = Number(totals.row_count || 0);
+
+  // 전체 TC 배지
+  const badge = document.getElementById("overviewStatsTotalBadge");
+  const badgeCount = document.getElementById("overviewStatsTotalCount");
+  if (badge && badgeCount) {
+    badgeCount.textContent = String(totalCount);
+    badge.hidden = totalCount === 0;
+  }
+
+  // 힌트 텍스트 갱신
+  const uploadedAt = String(data.uploaded_at || "").trim();
+  const statsHint = document.getElementById("overviewStatisticsHint");
+  if (statsHint) {
+    statsHint.textContent = uploadedAt
+      ? `업로드 기준: ${uploadedAt} · 전체 ${totalCount.toLocaleString()}건 결과 분포`
+      : `전체 ${totalCount.toLocaleString()}건의 Full_TC 결과 항목별 분포입니다.`;
+  }
+  const labelHint = document.getElementById("overviewLabelHint");
+  if (labelHint) {
+    labelHint.textContent = `총 ${Number(totals.label_count || 0)}개 LABEL 중 상위 7개 분포입니다.`;
+  }
+  const catHint = document.getElementById("overviewCategoryHint");
+  if (catHint) {
+    catHint.textContent = `총 ${Number(totals.component_count || 0)}개 컴포넌트의 TC 수 분포입니다.`;
+  }
+
+  // 3개 도넛 렌더링
+  renderOverviewDonut(
+    "overviewStatisticsDonut", "overviewStatisticsLegend",
+    extractFullTcStatisticsPieItems(totals),
+    FULLTC_RESULT_COLORS
+  );
+  renderOverviewDonut(
+    "overviewLabelDonut", "overviewLabelLegend",
+    extractFullTcLabelPieItems(data.label_rows)
+  );
+  renderOverviewDonut(
+    "overviewCategoryDonut", "overviewCategoryLegend",
+    extractFullTcCategoryPieItems(data.components)
+  );
+}
+
+function _setFullTcDonutsLoading() {
+  const DONUT_IDS = ["overviewStatisticsDonut", "overviewLabelDonut", "overviewCategoryDonut"];
+  DONUT_IDS.forEach(function (id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add("overview-donut-loading");
+    el.style.background = "conic-gradient(#e2eaf4 0 360deg)";
+    el.innerHTML = '<div class="overview-donut-center"><span class="overview-donut-spin"><i class="fas fa-circle-notch fa-spin"></i></span><span>로딩중</span></div>';
+  });
+}
+
+function _renderFullTcDonutsError(msg) {
+  const PAIRS = [
+    ["overviewStatisticsDonut", "overviewStatisticsLegend", "overviewStatisticsHint"],
+    ["overviewLabelDonut", "overviewLabelLegend", "overviewLabelHint"],
+    ["overviewCategoryDonut", "overviewCategoryLegend", "overviewCategoryHint"],
+  ];
+  PAIRS.forEach(function (pair) {
+    const donut = document.getElementById(pair[0]);
+    const legend = document.getElementById(pair[1]);
+    const hint = document.getElementById(pair[2]);
+    if (donut) {
+      donut.classList.remove("overview-donut-loading");
+      donut.classList.add("overview-donut-empty");
+      donut.style.background = "conic-gradient(#eaf1fb 0 360deg)";
+      donut.innerHTML = '<div class="overview-donut-center"><strong style="font-size:1rem;color:#94a3b8;">-</strong><span>데이터 없음</span></div>';
+    }
+    if (legend) {
+      legend.innerHTML = `<li style="opacity:1;transform:none;color:#64748b;font-size:0.8rem;">${esc(msg)}</li>`;
+    }
+    if (hint) {
+      hint.textContent = msg;
+    }
+  });
 }
 
 function extractRecentPieItems(payload) {
@@ -1556,6 +1700,7 @@ async function initShortcuts() {
 
 refreshOverviewQaPies();
 refreshNoticeCard();
+refreshFullTcPies();
 refreshFloatingLogout();
 initShortcuts();
 bindOverviewCardNavigation();
@@ -1564,6 +1709,7 @@ bindOverviewRecentRangeControls();
 bindNoticeTabControls();
 setInterval(refreshOverviewQaPies, 60000);
 setInterval(refreshNoticeCard, 60000);
+setInterval(refreshFullTcPies, 120000);
 // beforeunload 는 bfcache 를 비활성화하므로 제거 — pagehide 가 대신 처리
 document.addEventListener("visibilitychange", function () {
   if (document.visibilityState === "hidden") { 
@@ -1586,9 +1732,11 @@ window.addEventListener("pageshow", function (ev) {
 // ── 뷰 전환: 개요 ↔ 바로가기 ──────────────────────────────
 function showView(view) {
   const mainContent = document.getElementById("overviewMainContent");
+  const mainContent2 = document.getElementById("overviewMainContent2");
   const shortcutPage = document.getElementById("shortcutPage");
   if (view === "shortcuts") {
     if (mainContent) mainContent.hidden = true;
+    if (mainContent2) mainContent2.hidden = true;
     if (shortcutPage) shortcutPage.hidden = false;
     document.body.classList.add("shortcut-fullscreen");
     if (location.pathname !== "/shortcuts" || location.hash) {
@@ -1596,6 +1744,7 @@ function showView(view) {
     }
   } else {
     if (mainContent) mainContent.hidden = false;
+    if (mainContent2) mainContent2.hidden = false;
     if (shortcutPage) shortcutPage.hidden = true;
     document.body.classList.remove("shortcut-fullscreen");
     if (location.pathname !== "/" || location.hash) {

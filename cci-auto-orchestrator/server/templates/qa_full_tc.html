@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>QA Full_TC 관리</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260404m" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260404v" />
 </head>
 <body class="has-side-nav qa-full-tc-page">
   {% include "components/side_nav.html" %}
@@ -377,67 +377,6 @@
       </div>
     </div>
 
-    <!-- ── 탭 패널: 상세 조회 ── -->
-    <div class="ftc-panel ftc-panel-hidden" id="panel-detail">
-      <div class="card card-table">
-        <div class="ftc-panel-head">
-          <h2><i class="fa fa-table"></i> 원본 상세</h2>
-          <div class="ftc-col-toggles" id="qaDetailColToggles">
-            <span class="ftc-col-toggle-label">열 표시:</span>
-            <label class="ftc-col-toggle-label"><input type="checkbox" data-colgroup="basic" checked /> 기본정보</label>
-            <label class="ftc-col-toggle-label"><input type="checkbox" data-colgroup="tc" /> TC 내용</label>
-            <label class="ftc-col-toggle-label"><input type="checkbox" data-colgroup="result" checked /> 결과값</label>
-            <label class="ftc-col-toggle-label"><input type="checkbox" data-colgroup="issue" checked /> 이슈/LABEL</label>
-          </div>
-          <span id="qaFullTcDetailHint" class="hint"></span>
-        </div>
-        <div class="table-wrap">
-          <table class="ftc-table ftc-detail-table" id="qaFullTcDetailTable">
-            <thead>
-              <tr>
-                <!-- 고정 열 -->
-                <th class="ftc-sticky-col s0">컴포넌트</th>
-                <th class="ftc-sticky-col s1">TC ID</th>
-                <th class="ftc-sticky-col s2">행</th>
-                <!-- 기본정보 그룹 [data-colgroup="basic"] -->
-                <th data-colgroup="basic">카테고리(C)</th>
-                <th data-colgroup="basic">대분류(D)</th>
-                <th data-colgroup="basic">중분류(E)</th>
-                <th data-colgroup="basic">소분류(F)</th>
-                <th data-colgroup="basic">향지</th>
-                <th data-colgroup="basic">브랜드</th>
-                <th data-colgroup="basic">우선순위</th>
-                <!-- TC 내용 그룹 [data-colgroup="tc"] hidden by default -->
-                <th data-colgroup="tc">Pre-condition</th>
-                <th data-colgroup="tc">TC procedure</th>
-                <th data-colgroup="tc">Expected result</th>
-                <!-- 결과값 그룹 [data-colgroup="result"] -->
-                <th data-colgroup="result" class="th-r-base">N(기본)</th>
-                <th data-colgroup="result" class="th-r-koa">KOA</th>
-                <th data-colgroup="result" class="th-r-koa">KOA AOS</th>
-                <th data-colgroup="result" class="th-r-koa">KOA iOS</th>
-                <th data-colgroup="result" class="th-r-hoa">HOA</th>
-                <th data-colgroup="result" class="th-r-hoa">HOA AOS</th>
-                <th data-colgroup="result" class="th-r-hoa">HOA iOS</th>
-                <th data-colgroup="result" class="th-r-goa">GOA</th>
-                <th data-colgroup="result" class="th-r-goa">GOA AOS</th>
-                <th data-colgroup="result" class="th-r-goa">GOA iOS</th>
-                <!-- 이슈/LABEL 그룹 [data-colgroup="issue"] -->
-                <th data-colgroup="issue">Closed 지라</th>
-                <th data-colgroup="issue">지라 NO.</th>
-                <th data-colgroup="issue">NT/NA 사유</th>
-                <th data-colgroup="issue">NT/NA 필터</th>
-                <th data-colgroup="issue">LABEL</th>
-                <th data-colgroup="issue">수정</th>
-              </tr>
-            </thead>
-            <tbody id="qaFullTcDetailBody"></tbody>
-          </table>
-        </div>
-        <div id="qaFullTcDetailPagination" class="ftc-pagination"></div>
-      </div>
-    </div>
-
     <!-- ── 탭 패널: Defect 대조 ── -->
     <div class="ftc-panel ftc-panel-hidden" id="panel-defect">
       <!-- Defect 요약 카드 -->
@@ -488,6 +427,6 @@
   </main>
   <div id="toastStack" class="toast-stack"></div>
   <script src="/static/side_nav.js?v=20260330a"></script>
-  <script src="/static/qa_full_tc.js?v=20260404l"></script>
+  <script src="/static/qa_full_tc.js?v=20260404m"></script>
 </body>
 </html>

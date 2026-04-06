@@ -86,6 +86,13 @@ function esc(value) {
 	const memberAddModal = document.getElementById("memberAddModal");
 	const memberAddForm = document.getElementById("memberAddForm");
 	const adminMemberAddBtn = document.getElementById("adminMemberAddBtn");
+	const memberAddPhoneInput = document.getElementById("memberAddPhone");
+	const memberAddBirthInput = document.getElementById("memberAddBirth");
+	const memberAddTitleInput = document.getElementById("memberAddTitle");
+	const memberAddPostcodeInput = document.getElementById("memberAddPostcode");
+	const memberAddAddressInput = document.getElementById("memberAddAddress");
+	const memberAddAddressDetailInput = document.getElementById("memberAddAddressDetail");
+	const memberAddSearchAddressBtn = document.getElementById("memberAddSearchAddressBtn");
 	const ADMIN_SECTION_IDS = ["adminPeopleTab", "adminIssueTab", "adminAssetApprovalTab", "adminActivityLogTab", "adminAssetDeletedTab", "adminAssetRejectedTab"];
 	const GAME_ACCESS_MANAGER_EMAIL = "hiss0723@poliot.co.kr";
 	let pendingDeleteRequests = [];
@@ -192,6 +199,58 @@ function esc(value) {
 		const day = Number(parts[2]);
 		const d = new Date(year, month - 1, day);
 		return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day;
+	}
+
+	function normalizePhoneFormat(value) {
+		let digits = String(value || "").replace(/\D/g, "");
+		if (digits.length > 11) digits = digits.slice(0, 11);
+		if (!digits) return "";
+		if (digits.startsWith("02")) {
+			if (digits.length <= 2) return digits;
+			if (digits.length <= 5) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+			if (digits.length <= 9) return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`;
+			return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6)}`;
+		}
+		if (digits.length <= 3) return digits;
+		if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+		if (digits.length <= 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+		return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+	}
+
+	function normalizeBirthFormat(value) {
+		const digits = String(value || "").replace(/\D/g, "").slice(0, 8);
+		if (!digits) return "";
+		if (digits.length <= 4) return digits;
+		if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+		return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
+	}
+
+	function openMemberAddAddressSearch() {
+		if (typeof daum === "undefined" || typeof daum.Postcode === "undefined") {
+			window.alert("주소 검색 서비스를 불러오는 중입니다. 잠시 후 다시 시도해 주세요.");
+			return;
+		}
+		new daum.Postcode({
+			oncomplete: (data) => {
+				if (memberAddPostcodeInput) memberAddPostcodeInput.value = String(data?.zonecode || "");
+				if (memberAddAddressInput) memberAddAddressInput.value = String(data?.roadAddress || data?.jibunAddress || "");
+				if (memberAddAddressDetailInput) {
+					memberAddAddressDetailInput.focus();
+				}
+			},
+		}).open();
+	}
+
+	function bindMemberAddFieldEnhancements() {
+		memberAddPhoneInput?.addEventListener("input", () => {
+			memberAddPhoneInput.value = normalizePhoneFormat(memberAddPhoneInput.value);
+		});
+		memberAddBirthInput?.addEventListener("input", () => {
+			memberAddBirthInput.value = normalizeBirthFormat(memberAddBirthInput.value);
+		});
+		memberAddSearchAddressBtn?.addEventListener("click", openMemberAddAddressSearch);
+		memberAddPostcodeInput?.addEventListener("click", openMemberAddAddressSearch);
+		memberAddAddressInput?.addEventListener("click", openMemberAddAddressSearch);
 	}
 
 	function getFilteredMembers(items) {
@@ -1679,6 +1738,8 @@ function esc(value) {
 		document.body.classList.remove("modal-open");
 	}
 
+	bindMemberAddFieldEnhancements();
+
 	memberBody.addEventListener("click", async (event) => {
 		const source = event.target;
 		if (!(source instanceof Element)) return;
@@ -1863,10 +1924,12 @@ function esc(value) {
 			const email = String(document.getElementById("memberAddEmail")?.value || "").trim().toLowerCase();
 			const password = String(document.getElementById("memberAddPassword")?.value || "").trim();
 			const name = String(document.getElementById("memberAddName")?.value || "").trim();
-			const phone = String(document.getElementById("memberAddPhone")?.value || "").trim();
-			const title = String(document.getElementById("memberAddTitle")?.value || "").trim();
-			const birth = String(document.getElementById("memberAddBirth")?.value || "").trim();
-			const address = String(document.getElementById("memberAddAddress")?.value || "").trim();
+			const phone = normalizePhoneFormat(String(document.getElementById("memberAddPhone")?.value || "").trim());
+			const title = String(document.getElementById("memberAddTitle")?.value || "").trim() || "SW품질/책임";
+			const birth = normalizeBirthFormat(String(document.getElementById("memberAddBirth")?.value || "").trim());
+			const baseAddress = String(document.getElementById("memberAddAddress")?.value || "").trim();
+			const detailAddress = String(document.getElementById("memberAddAddressDetail")?.value || "").trim();
+			const address = [baseAddress, detailAddress].filter(Boolean).join(" ");
 			const approved = Boolean(document.getElementById("memberAddApproved")?.checked);
 			const canLogin = Boolean(document.getElementById("memberAddCanLogin")?.checked);
 			const isAdmin = Boolean(document.getElementById("memberAddRole")?.checked);
@@ -2221,6 +2284,8 @@ function esc(value) {
 				const summary = detailLines.length ? detailLines[0] : "-";
 				const hasMore = detailLines.length > 1;
 				const detailTitle = `활동 상세 · ${String(x.title || "작업 내용")}`;
+				const canWithdrawApproval = Boolean(x?.can_withdraw_schedule_approval && x?.target_schedule_id);
+				const targetScheduleId = String(x?.target_schedule_id || "").trim();
 				return `
 					<tr>
 						<td style="white-space:nowrap;">${esc(formatDisplayDateTime(x.updated_at || ""))}</td>
@@ -2229,6 +2294,7 @@ function esc(value) {
 						<td>${esc(kindLabel)} · ${esc(x.title || "-")}</td>
 						<td class="detail-cell">
 							<button type="button" class="btn-secondary" data-show-activity-details="${idx}" data-activity-title="${esc(detailTitle)}">항목상세</button>
+							${canWithdrawApproval ? `<button type="button" class="btn-ghost" data-withdraw-schedule-approval="${esc(targetScheduleId)}">승인철회</button>` : ""}
 							<div class="hint">${esc(summary)}${hasMore ? ` 외 ${detailLines.length - 1}건` : ""}</div>
 						</td>
 					</tr>
@@ -2237,9 +2303,28 @@ function esc(value) {
 			.join("");
 	}
 
-	activityLogBody?.addEventListener("click", (event) => {
+	activityLogBody?.addEventListener("click", async (event) => {
 		const target = event.target;
 		if (!(target instanceof HTMLElement)) return;
+
+		const withdrawScheduleId = String(target.getAttribute("data-withdraw-schedule-approval") || "").trim();
+		if (withdrawScheduleId) {
+			const ok = window.confirm("해당 일정의 승인 상태를 철회(승인 대기) 하시겠습니까?");
+			if (!ok) return;
+			try {
+				await requestJson(`/api/manage/schedules/${encodeURIComponent(withdrawScheduleId)}/cancel-approval`, {
+					method: "POST",
+					body: JSON.stringify({}),
+				});
+				await refreshAssetDeleteRequests();
+				await refreshActivityLog();
+				window.alert("일정 승인 철회가 완료되었습니다.");
+			} catch (error) {
+				window.alert(error?.message || "일정 승인 철회 처리 중 오류가 발생했습니다.");
+			}
+			return;
+		}
+
 		const rawIndex = target.getAttribute("data-show-activity-details");
 		if (rawIndex == null) return;
 		const index = Number(rawIndex);

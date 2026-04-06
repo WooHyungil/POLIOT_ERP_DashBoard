@@ -6,8 +6,9 @@
   <title>CCI Admin Panel</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <link rel="stylesheet" href="/static/styles.css?v=20260329a" />
-  <link rel="stylesheet" href="/static/admin-form-styles.css?v=20260320a" />
+  <link rel="stylesheet" href="/static/admin-form-styles.css?v=20260405a" />
   <link rel="stylesheet" href="/static/admin-ui-theme.css?v=20260320a" />
+  <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
   <script src="/static/auto_logout.js"></script>
 </head>
 <body class="has-side-nav">
@@ -82,7 +83,7 @@
             <option value="admin">관리자</option>
           </select>
           <button type="button" class="btn-ghost" id="adminMemberRefreshBtn">새로고침</button>
-          <button type="button" id="adminMemberAddBtn" style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap;">+ 인원 추가</button>
+          <button type="button" id="adminMemberAddBtn" style="padding: 8px 16px; background: #2d6bbf; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap;">+ 인원 추가</button>
         </div>
 
         <p class="hint" id="adminMemberResultCount">조회 결과 0명</p>
@@ -483,7 +484,7 @@
                 <div class="form-field form-field--wide">
                   <label for="memberAddPassword">비밀번호 <span class="required-badge">필수</span></label>
                   <input type="password" id="memberAddPassword" minlength="8" maxlength="100" pattern="^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$" title="영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~100자로 입력해 주세요." placeholder="8~100자, 영문/숫자/특수문자 포함" required />
-                  <small class="form-hint">8~100자, 영문/숫자/특수문자를 각각 1개 이상 포함해 주세요</small>
+                  <small class="form-hint">8~100자, 영문/숫자/특수문자를 각각 1개 이상 포함해 주세요 (PBKDF2-SHA256 암호화 저장)</small>
                 </div>
                 <div class="form-field">
                   <label for="memberAddName">이름 <span class="required-badge">필수</span></label>
@@ -499,18 +500,26 @@
                 <div class="form-field">
                   <label for="memberAddPhone">전화번호</label>
                   <input type="tel" id="memberAddPhone" placeholder="010-0000-0000" maxlength="40" pattern="^(?:\+?\d[\d\-\s]{7,18}\d)$" title="전화번호 형식이 올바르지 않습니다. 예: 010-1234-5678" />
+                  <small class="form-hint">숫자만 입력해도 자동으로 하이픈이 추가됩니다</small>
                 </div>
                 <div class="form-field">
                   <label for="memberAddTitle">직책/소속</label>
-                  <input type="text" id="memberAddTitle" placeholder="예: QA 개발팀 / 책임" maxlength="60" />
+                  <input type="text" id="memberAddTitle" placeholder="SW품질/책임" maxlength="60" />
+                  <small class="form-hint">미입력 시 SW품질/책임으로 저장됩니다</small>
                 </div>
                 <div class="form-field">
                   <label for="memberAddBirth">생년월일</label>
-                  <input type="text" id="memberAddBirth" placeholder="YYYY-MM-DD" maxlength="30" pattern="^\d{4}-\d{2}-\d{2}$" title="YYYY-MM-DD 형식으로 입력해 주세요." />
+                  <input type="text" id="memberAddBirth" placeholder="19900101" maxlength="30" pattern="^\d{4}-\d{2}-\d{2}$" title="YYYY-MM-DD 형식으로 입력해 주세요." />
+                  <small class="form-hint">숫자만 입력해도 자동으로 하이픈이 추가됩니다</small>
                 </div>
                 <div class="form-field form-field--wide">
-                  <label for="memberAddAddress">주소</label>
-                  <input type="text" id="memberAddAddress" placeholder="서울시 강남구..." maxlength="160" />
+                  <label for="memberAddAddress">주소 <span style="color:#94a3b8;font-weight:400;">(선택)</span></label>
+                  <div class="member-add-address-row">
+                    <input type="text" id="memberAddPostcode" placeholder="우편번호" maxlength="10" readonly style="max-width:140px;background:#f1f5f9;cursor:pointer;" />
+                    <button type="button" class="btn-secondary" id="memberAddSearchAddressBtn">우편번호 검색</button>
+                  </div>
+                  <input type="text" id="memberAddAddress" placeholder="기본 주소" maxlength="160" readonly style="background:#f8fafc;cursor:pointer;" />
+                  <input type="text" id="memberAddAddressDetail" placeholder="상세 주소 (동/호수/층)" maxlength="160" />
                 </div>
               </div>
             </fieldset>
@@ -554,6 +563,6 @@
   </section>
 
   <script src="/static/side_nav.js?v=20260320h"></script>
-  <script src="/static/admin.js?v=20260330a"></script>
+  <script src="/static/admin.js?v=20260405c"></script>
 </body>
 </html>

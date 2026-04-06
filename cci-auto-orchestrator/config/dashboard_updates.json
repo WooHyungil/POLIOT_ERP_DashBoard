@@ -2313,5 +2313,192 @@
       "반영 시각: 2026-04-03T23:45:54",
       "이슈 건수: 0"
     ]
+  },
+  {
+    "title": "일정 생성",
+    "kind": "added",
+    "scope": "일정 관리",
+    "updated_at": "2026-04-04T23:50:32",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: ㄴㅇㄹ",
+      "일정 유형: meeting",
+      "시작일: 2026-05-14",
+      "종료일: 2026-05-14",
+      "승인 상태: pending"
+    ]
+  },
+  {
+    "title": "일정 생성",
+    "kind": "added",
+    "scope": "일정 관리",
+    "updated_at": "2026-04-04T23:51:07",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: ㅁㅇㄴ",
+      "일정 유형: sick_leave",
+      "시작일: 2026-05-14",
+      "종료일: 2026-05-14",
+      "승인 상태: pending"
+    ]
+  },
+  {
+    "title": "일정 생성",
+    "kind": "added",
+    "scope": "일정 관리",
+    "updated_at": "2026-04-04T23:51:15",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: ㅁㄴㅇㄹ",
+      "일정 유형: deployment",
+      "시작일: 2026-05-14",
+      "종료일: 2026-05-14",
+      "승인 상태: pending"
+    ]
+  },
+  {
+    "title": "일정 삭제",
+    "kind": "removed",
+    "scope": "일정 관리",
+    "updated_at": "2026-04-04T23:51:35",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: ㅁㄴㅇㄹ",
+      "일정 유형: deployment",
+      "시작일: 2026-05-14",
+      "종료일: 2026-05-14"
+    ]
+  },
+  {
+    "title": "일정 삭제",
+    "kind": "removed",
+    "scope": "일정 관리",
+    "updated_at": "2026-04-04T23:51:37",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: ㅁㅇㄴ",
+      "일정 유형: sick_leave",
+      "시작일: 2026-05-14",
+      "종료일: 2026-05-14"
+    ]
+  },
+  {
+    "title": "일정 삭제",
+    "kind": "removed",
+    "scope": "일정 관리",
+    "updated_at": "2026-04-04T23:51:39",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: ㄴㅇㄹ",
+      "일정 유형: meeting",
+      "시작일: 2026-05-14",
+      "종료일: 2026-05-14"
+    ]
+  },
+  {
+    "title": "게시판 글 등록",
+    "kind": "added",
+    "scope": "게시판",
+    "updated_at": "2026-04-05T00:07:21",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: Test",
+      "작성자: 우형일",
+      "중요도: Low",
+      "ID: board-fa47dfd2e2da"
+    ]
+  },
+  {
+    "title": "일정 생성",
+    "kind": "added",
+    "scope": "일정 관리",
+    "updated_at": "2026-04-05T00:08:10",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: dsf",
+      "일정 유형: vacation",
+      "시작일: 2026-04-24",
+      "종료일: 2026-04-24",
+      "승인 상태: pending"
+    ]
+  },
+  {
+    "title": "일정 승인 처리",
+    "kind": "updated",
+    "scope": "일정 관리",
+    "updated_at": "2026-04-05T00:10:41",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "ID: schedule-18fc0c515ec2",
+      "approval_status: pending -> approved",
+      "approved_by: - -> hiss0723@poliot.co.kr",
+      "approved_at: - -> 2026-04-04T15:10:41"
+    ]
+  },
+  {
+    "title": "일정 생성",
+    "kind": "added",
+    "scope": "일정 관리",
+    "updated_at": "2026-04-05T00:16:28",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: ㅎ로ㅓ",
+      "일정 유형: vacation",
+      "시작일: 2026-04-23",
+      "종료일: 2026-04-24",
+      "승인 상태: pending"
+    ]
+  },
+  {
+    "title": "일정 승인 처리",
+    "kind": "updated",
+    "scope": "일정 관리",
+    "updated_at": "2026-04-05T00:17:09",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "ID: schedule-6ab2124c023e",
+      "approval_status: pending -> approved",
+      "approved_by: - -> hiss0723@poliot.co.kr",
+      "approved_at: - -> 2026-04-04T15:17:09"
+    ]
+  },
+  {
+    "title": "일정 삭제",
+    "kind": "removed",
+    "scope": "일정 관리",
+    "updated_at": "2026-04-05T14:09:03",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: dsf",
+      "일정 유형: vacation",
+      "시작일: 2026-04-24",
+      "종료일: 2026-04-24"
+    ]
+  },
+  {
+    "title": "일정 삭제",
+    "kind": "removed",
+    "scope": "일정 관리",
+    "updated_at": "2026-04-05T14:09:06",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: ㅎ로ㅓ",
+      "일정 유형: vacation",
+      "시작일: 2026-04-23",
+      "종료일: 2026-04-24"
+    ]
+  },
+  {
+    "title": "일정 삭제",
+    "kind": "removed",
+    "scope": "일정 관리",
+    "updated_at": "2026-04-05T14:09:08",
+    "details": [
+      "작업자: 우형일 (hiss0723@poliot.co.kr)",
+      "제목: [연차] 26년 03월 04일~05일 연차 사용 신청의 건",
+      "일정 유형: vacation",
+      "시작일: 2026-03-28",
+      "종료일: 2026-03-28"
+    ]
   }
 ]
