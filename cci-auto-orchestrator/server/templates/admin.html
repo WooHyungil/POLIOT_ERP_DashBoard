@@ -4,12 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CCI Admin Panel</title>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+  <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <link rel="stylesheet" href="/static/styles.css?v=20260329a" />
-  <link rel="stylesheet" href="/static/admin-form-styles.css?v=20260405a" />
+  <link rel="stylesheet" href="/static/admin-form-styles.css?v=20260406a" />
   <link rel="stylesheet" href="/static/admin-ui-theme.css?v=20260320a" />
-  <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
-  <script src="/static/auto_logout.js"></script>
+  <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js" defer></script>
+  <script src="/static/auto_logout.js" defer></script>
 </head>
 <body class="has-side-nav">
   {% include "components/side_nav.html" %}
@@ -108,139 +110,118 @@
       </article>
 
       <article class="card" id="adminIssueTab">
-        <div class="admin-issue-hero">
-          <div>
-            <h2>인원별 이슈</h2>
-            <p class="hint">DefectList_Raw 업로드 데이터를 기준으로 회사 인원별 이슈 수, 중복/Not a Bug 비중, 점수, 순위를 날짜별로 조회합니다.</p>
-          </div>
-          <div class="admin-issue-hero-actions">
-            <button type="button" class="btn-secondary" id="adminIssueRefreshBtn">새로고침</button>
-            <button type="button" class="btn-ghost" id="adminIssueExportBtn">엑셀 내보내기</button>
-          </div>
-        </div>
-
-        <div class="admin-issue-toolbar" role="group" aria-label="회사 인원 관리">
-          <input type="text" id="adminCompanyMemberInput" list="adminCompanyMemberList" placeholder="회사 인원명 입력 (예: 홍길동)" />
-          <datalist id="adminCompanyMemberList"></datalist>
-          <button type="button" class="btn-ghost" id="adminCompanyMemberAddBtn">인원 추가</button>
-          <button type="button" class="btn-ghost" id="adminCompanyMemberRemoveBtn">인원 제거</button>
-          <span class="hint" id="adminCompanyMemberHint">회사 인원 목록을 불러오는 중...</span>
-        </div>
-
-        <div class="admin-issue-stats">
-          <div class="admin-people-stats">
-            <article class="admin-people-stat-card">
-              <p class="admin-people-stat-label">총 티켓</p>
-              <strong class="admin-people-stat-value" id="adminIssueStatTotal">-</strong>
-            </article>
-            <article class="admin-people-stat-card approved">
-              <p class="admin-people-stat-label">Definite problem</p>
-              <strong class="admin-people-stat-value" id="adminIssueStatMembers">-</strong>
-            </article>
-            <article class="admin-people-stat-card pending">
-              <p class="admin-people-stat-label">Mistake rate</p>
-              <strong class="admin-people-stat-value" id="adminIssueStatPending">-</strong>
-            </article>
-            <article class="admin-people-stat-card blocked">
-              <p class="admin-people-stat-label">Score</p>
-              <strong class="admin-people-stat-value" id="adminIssueStatClosed">-</strong>
-            </article>
-          </div>
-        </div>
-
-        <div class="admin-issue-toolbar" role="group" aria-label="인원별 이슈 필터">
-          <input type="search" id="adminIssueSearchInput" placeholder="키, 요약, 상태, 브랜드, Assignee 검색" />
-          <select id="adminIssueAuthorFilter" aria-label="리포터 필터">
-            <option value="">전체 리포터</option>
-          </select>
-          <select id="adminIssueStatusFilter" aria-label="상태 필터">
-            <option value="all">전체 상태</option>
-          </select>
-          <select id="adminIssueSortFilter" aria-label="정렬">
-            <option value="score_desc">점수 높은 순</option>
-            <option value="total_desc">티켓 많은 순</option>
-            <option value="rank_asc">랭킹 순</option>
-            <option value="latest_desc">최근 등록순</option>
-            <option value="name_asc">이름순</option>
-          </select>
-          <input type="date" id="adminIssueStartDate" aria-label="시작일" />
-          <input type="date" id="adminIssueEndDate" aria-label="종료일" />
-          <button type="button" class="btn-ghost" id="adminIssueResetBtn">필터 초기화</button>
-        </div>
-
-        <div class="admin-issue-toolbar" role="group" aria-label="빠른 날짜 범위">
-          <div class="admin-issue-quick-range">
-            <button type="button" class="btn-ghost admin-issue-range-btn active" data-range="all">전체</button>
-            <button type="button" class="btn-ghost admin-issue-range-btn" data-range="today">오늘</button>
-            <button type="button" class="btn-ghost admin-issue-range-btn" data-range="7">7일</button>
-            <button type="button" class="btn-ghost admin-issue-range-btn" data-range="30">30일</button>
-            <button type="button" class="btn-ghost admin-issue-range-btn" data-range="90">90일</button>
-          </div>
-          <div class="admin-issue-toolbar-meta">
-            <span class="hint" id="adminIssuePeriodHint">기간: -</span>
-            <span class="hint" id="adminIssueResultCount">조회 결과 0건 · 0명</span>
-          </div>
-        </div>
-
-        <div class="admin-issue-source-bar">
-          <span class="hint" id="adminIssueSourceHint">데이터 출처: -</span>
-          <span class="hint" id="adminIssueUpdatedHint">갱신: -</span>
-        </div>
-
-        <div class="admin-issue-perf-panel" id="adminIssuePerfPanel">
-          <div class="admin-issue-perf-head">
-            <div class="admin-issue-perf-title-wrap">
-              <strong>응답 성능 모니터</strong>
-              <span class="admin-issue-perf-level-badge" id="adminIssuePerfLevelBadge">-</span>
-            </div>
-            <div class="admin-issue-perf-window" role="group" aria-label="성능 집계 구간">
-              <button type="button" class="btn-ghost admin-issue-perf-window-btn active" data-window-sec="60">1분</button>
-              <button type="button" class="btn-ghost admin-issue-perf-window-btn" data-window-sec="300">5분</button>
-              <button type="button" class="btn-ghost admin-issue-perf-window-btn" data-window-sec="900">15분</button>
+        <!-- ── 헤더 ── -->
+        <div class="mi-header">
+          <div class="mi-header-title">
+            <i class="fas fa-chart-bar mi-header-icon"></i>
+            <div>
+              <h2>인원별 이슈 현황</h2>
+              <p class="hint">DefectList_Raw 기준 · 회사 인원별 점수 및 순위 집계</p>
             </div>
           </div>
-          <div class="admin-issue-perf-meta" id="adminIssuePerfMeta">p95 -ms · hit -% · 샘플 0건</div>
-          <div class="admin-issue-perf-endpoints" id="adminIssuePerfEndpointCards">
-            <span class="hint">성능 샘플을 수집하는 중...</span>
+          <div class="mi-header-actions">
+            <button type="button" class="btn-secondary" id="adminIssueRefreshBtn"><i class="fas fa-sync-alt"></i> 새로고침</button>
+            <button type="button" class="btn-ghost" id="adminIssueExportBtn"><i class="fas fa-file-excel"></i> 엑셀 내보내기</button>
           </div>
         </div>
 
-        <div class="admin-issue-filter-chips" id="adminIssueQuickMembers">
-          <span class="hint">리포터 빠른 선택을 불러오는 중...</span>
+        <!-- ── 전체 통계 카드 ── -->
+        <div class="mi-stat-grid">
+          <div class="mi-stat-card mi-stat-total">
+            <div class="mi-stat-icon"><i class="fas fa-ticket-alt"></i></div>
+            <div class="mi-stat-body">
+              <span class="mi-stat-label">총 티켓</span>
+              <strong class="mi-stat-value" id="adminIssueStatTotal">-</strong>
+            </div>
+          </div>
+          <div class="mi-stat-card mi-stat-definite">
+            <div class="mi-stat-icon"><i class="fas fa-check-circle"></i></div>
+            <div class="mi-stat-body">
+              <span class="mi-stat-label">Definite Problem</span>
+              <strong class="mi-stat-value" id="adminIssueStatMembers">-</strong>
+            </div>
+          </div>
+          <div class="mi-stat-card mi-stat-mistake">
+            <div class="mi-stat-icon"><i class="fas fa-exclamation-triangle"></i></div>
+            <div class="mi-stat-body">
+              <span class="mi-stat-label">Mistake Rate</span>
+              <strong class="mi-stat-value" id="adminIssueStatPending">-</strong>
+            </div>
+          </div>
+          <div class="mi-stat-card mi-stat-score">
+            <div class="mi-stat-icon"><i class="fas fa-star"></i></div>
+            <div class="mi-stat-body">
+              <span class="mi-stat-label">Team Score</span>
+              <strong class="mi-stat-value" id="adminIssueStatClosed">-</strong>
+            </div>
+          </div>
         </div>
 
-        <div class="admin-issue-podium" id="adminIssuePodium">
-          <p class="hint">상위 랭킹 데이터를 불러오는 중...</p>
+        <!-- ── 필터 바 ── -->
+        <div class="mi-filter-bar">
+          <div class="mi-filter-left">
+            <input type="search" id="adminIssueSearchInput" class="mi-search" placeholder="이름, 상태, 브랜드, Assignee 검색…" />
+            <select id="adminIssueAuthorFilter" class="mi-select" aria-label="리포터 필터">
+              <option value="">전체 리포터</option>
+            </select>
+            <select id="adminIssueStatusFilter" class="mi-select" aria-label="상태 필터">
+              <option value="all">전체 상태</option>
+            </select>
+            <select id="adminIssueSortFilter" class="mi-select" aria-label="정렬">
+              <option value="score_desc">점수 높은 순</option>
+              <option value="total_desc">티켓 많은 순</option>
+              <option value="rank_asc">랭킹 순</option>
+              <option value="latest_desc">최근 등록순</option>
+              <option value="name_asc">이름순</option>
+            </select>
+          </div>
+          <div class="mi-filter-right">
+            <input type="date" id="adminIssueStartDate" class="mi-date" aria-label="시작일" />
+            <span class="mi-date-sep">~</span>
+            <input type="date" id="adminIssueEndDate" class="mi-date" aria-label="종료일" />
+            <div class="mi-range-btns" role="group" aria-label="빠른 날짜 범위">
+              <button type="button" class="mi-range-btn admin-issue-range-btn active" data-range="all">전체</button>
+              <button type="button" class="mi-range-btn admin-issue-range-btn" data-range="today">오늘</button>
+              <button type="button" class="mi-range-btn admin-issue-range-btn" data-range="7">7일</button>
+              <button type="button" class="mi-range-btn admin-issue-range-btn" data-range="30">30일</button>
+              <button type="button" class="mi-range-btn admin-issue-range-btn" data-range="90">90일</button>
+            </div>
+            <button type="button" class="btn-ghost mi-reset-btn" id="adminIssueResetBtn" title="필터 초기화"><i class="fas fa-undo"></i></button>
+          </div>
         </div>
 
-        <div id="adminIssueSummaryVisual" class="admin-issue-summary-visual">
-          <p class="hint">인원별 요약 데이터를 불러오는 중...</p>
+        <!-- ── 메타 바 ── -->
+        <div class="mi-meta-bar">
+          <span class="hint" id="adminIssuePeriodHint">기간: -</span>
+          <span class="hint mi-result-count" id="adminIssueResultCount">조회 결과 0건 · 0명</span>
+          <span class="hint" id="adminIssueSourceHint"></span>
+          <span class="hint" id="adminIssueUpdatedHint"></span>
         </div>
 
-        <div class="card-table">
-          <div class="admin-pending-queue-head">
-            <h3>인원별 요약 랭킹</h3>
-            <span class="hint">중복/Not a Bug/Definite problem/점수 기준 비교</span>
+        <!-- ── 인원별 순위 테이블 ── -->
+        <div class="mi-section">
+          <div class="mi-section-head">
+            <h3><i class="fas fa-trophy"></i> 인원별 순위</h3>
+            <span class="hint">점수 = Highest×2.0 + High×1.8 + Medium×1.6 + Low×1.4 + Lowest×1.2</span>
           </div>
           <div class="table-wrap">
-            <table id="adminIssueMemberTable">
+            <table class="mi-table" id="adminIssueMemberTable">
               <thead>
                 <tr>
+                  <th class="mi-th-rank">순위</th>
                   <th>리포터</th>
-                  <th>Total issue</th>
+                  <th>총 티켓</th>
                   <th>Duplicate</th>
                   <th>Not a Bug</th>
-                  <th>Definite problem</th>
-                  <th>Mistake rate</th>
+                  <th>Definite Problem</th>
+                  <th>Mistake Rate</th>
                   <th>Highest</th>
                   <th>High</th>
                   <th>Medium</th>
                   <th>Low</th>
                   <th>Lowest</th>
-                  <th>Score</th>
-                  <th>Rank</th>
+                  <th class="mi-th-score">Score</th>
                   <th>최근 등록일</th>
-                  <th>최근 이슈 수</th>
                   <th>상세</th>
                 </tr>
               </thead>
@@ -249,17 +230,18 @@
           </div>
         </div>
 
-        <div class="card-table" id="adminIssueDetailCard">
-          <div class="admin-pending-queue-head">
-            <h3>티켓 상세 조회</h3>
-            <div class="admin-issue-detail-head-meta">
+        <!-- ── 티켓 상세 테이블 ── -->
+        <div class="mi-section" id="adminIssueDetailCard">
+          <div class="mi-section-head">
+            <h3><i class="fas fa-list-ul"></i> 티켓 상세 조회</h3>
+            <div class="mi-detail-head-right">
               <span class="hint" id="adminIssueDetailCount">상세 0건 표시 중</span>
-              <button type="button" class="btn-ghost" id="adminIssueDetailToggleBtn">상세 접기</button>
+              <button type="button" class="btn-ghost" id="adminIssueDetailToggleBtn">접기</button>
               <button type="button" class="btn-ghost" id="adminIssueLoadMoreBtn" hidden>더 보기</button>
             </div>
           </div>
           <div class="table-wrap">
-            <table id="adminIssueDetailTable">
+            <table class="mi-table mi-table-sm" id="adminIssueDetailTable">
               <thead>
                 <tr>
                   <th>Key</th>
@@ -272,19 +254,30 @@
                   <th>OS</th>
                   <th>Components</th>
                   <th>Brand</th>
-                  <th>Affects Version/s</th>
-                  <th>Fix Version/s</th>
+                  <th>Affects Version</th>
                   <th>Assignee</th>
                   <th>Created</th>
-                  <th>Labels</th>
-                  <th>Links</th>
-                  <th>비고</th>
                 </tr>
               </thead>
               <tbody id="adminIssueRows"></tbody>
             </table>
           </div>
         </div>
+
+        <!-- 숨겨진 요소 (JS 호환성 유지) -->
+        <datalist id="adminCompanyMemberList"></datalist>
+        <input type="hidden" id="adminCompanyMemberInput" />
+        <input type="hidden" id="adminCompanyMemberAddBtn" />
+        <input type="hidden" id="adminCompanyMemberRemoveBtn" />
+        <span hidden id="adminCompanyMemberHint"></span>
+        <div hidden id="adminIssuePerfPanel">
+          <span id="adminIssuePerfLevelBadge"></span>
+          <span id="adminIssuePerfMeta"></span>
+          <span id="adminIssuePerfEndpointCards"></span>
+        </div>
+        <div hidden id="adminIssueQuickMembers"></div>
+        <div hidden id="adminIssuePodium"></div>
+        <div hidden id="adminIssueSummaryVisual"></div>
       </article>
 
       <article class="card" id="adminAssetApprovalTab">

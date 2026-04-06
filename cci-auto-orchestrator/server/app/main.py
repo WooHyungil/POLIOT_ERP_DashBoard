@@ -92,6 +92,19 @@ AUTH_LOCK = threading.RLock()
 ACTIVE_LOGIN_LOCK = threading.Lock()
 ACTIVE_LOGIN_SESSIONS: dict[str, dict] = {}
 
+# ── 인메모리 캐시 (성능 최적화) ─────────────────────────────────────
+# JSON 파일 범용 읽기 캐시: {path_str: (monotonic_ts, data)}
+_JSON_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_JSON_CACHE_LOCK = threading.Lock()
+_JSON_CACHE_TTL: float = 5.0  # 초
+
+# Users 전용 캐시: 모든 요청마다 디스크 4개 파일을 읽는 병목 방지
+_USERS_CACHE_LOCK = threading.Lock()
+_USERS_CACHE_DATA: list[dict] | None = None
+_USERS_CACHE_TS: float = 0.0
+_USERS_CACHE_TTL: float = 30.0
+_USERS_ENSURE_DONE = threading.Event()  # _ensure_users_file은 최초 1회만 실행
+
 ADMIN_EMAILS = {
     "hiss0723@poliot.co.kr",
 }
@@ -349,12 +362,19 @@ app.add_middleware(
     https_only=SESSION_COOKIE_HTTPS_ONLY,
 )
 
-# Middleware to skip ngrok browser warning
+# Middleware to skip ngrok browser warning + static file cache headers
 class NgrokWarningSkipMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         response.headers["ngrok-skip-browser-warning"] = "true"
         response.headers["ngrok-skip-browser-warning-for-user-agent"] = "*"
+        # 정적 파일에 브라우저 캐시 헤더 부여 (버전 쿼리가 있으면 장기 캐시)
+        path = str(request.url.path)
+        if path.startswith("/static/"):
+            if "v=" in str(request.url.query):
+                response.headers["Cache-Control"] = "public, max-age=86400, immutable"
+            else:
+                response.headers["Cache-Control"] = "public, max-age=3600"
         return response
 
 
@@ -575,15 +595,21 @@ def _verify_password(email: str, password: str, password_hash: str) -> bool:
 
 
 def _load_json_array(path: Path) -> list[dict]:
-    loaded = _parse_json_array_file(path)
-    if loaded is not None:
-        return loaded
+    path_str = str(path)
+    now = time.monotonic()
+    with _JSON_CACHE_LOCK:
+        entry = _JSON_CACHE.get(path_str)
+        if entry is not None and (now - entry[0]) < _JSON_CACHE_TTL:
+            return list(entry[1])
 
-    backup = Path(str(path) + ".bak")
-    loaded_backup = _parse_json_array_file(backup)
-    if loaded_backup is not None:
-        return loaded_backup
-    return []
+    loaded = _parse_json_array_file(path)
+    if loaded is None:
+        backup = Path(str(path) + ".bak")
+        loaded = _parse_json_array_file(backup) or []
+
+    with _JSON_CACHE_LOCK:
+        _JSON_CACHE[path_str] = (time.monotonic(), loaded)
+    return list(loaded)
 
 
 def _parse_json_array_file(path: Path) -> list[dict] | None:
@@ -692,6 +718,13 @@ def _save_json_array(path: Path, items: list[dict]) -> None:
         temp_name = tf.name
     os.replace(temp_name, str(path))
     _save_data_snapshot(path, list(items or []), "post")
+
+    # 저장 후 캐시 무효화 (다음 읽기 시 디스크에서 최신본 로드)
+    path_str = str(path)
+    bak_str = path_str + ".bak"
+    with _JSON_CACHE_LOCK:
+        _JSON_CACHE.pop(path_str, None)
+        _JSON_CACHE.pop(bak_str, None)
 
 
 def _iter_users_snapshot_files() -> list[Path]:
@@ -832,9 +865,22 @@ def _ensure_users_file() -> None:
 
 
 def _load_users() -> list[dict]:
-    _ensure_users_file()
-    # 읽기 시에는 절대 파일을 재저장하지 않는다. (데이터 유실 방지)
-    return _load_users_merged_from_sources(include_snapshots=True)
+    global _USERS_CACHE_DATA, _USERS_CACHE_TS
+    now = time.monotonic()
+    with _USERS_CACHE_LOCK:
+        if _USERS_CACHE_DATA is not None and (now - _USERS_CACHE_TS) < _USERS_CACHE_TTL:
+            return list(_USERS_CACHE_DATA)
+
+    # _ensure_users_file은 최초 1회만 실행 (파일 유무·관리자 계정 확인용)
+    if not _USERS_ENSURE_DONE.is_set():
+        _ensure_users_file()
+        _USERS_ENSURE_DONE.set()
+
+    result = _load_users_merged_from_sources(include_snapshots=True)
+    with _USERS_CACHE_LOCK:
+        _USERS_CACHE_DATA = result
+        _USERS_CACHE_TS = time.monotonic()
+    return list(result)
 
 
 def _save_users(users: list[dict], preserve_missing: bool = True) -> None:
@@ -863,6 +909,12 @@ def _save_users(users: list[dict], preserve_missing: bool = True) -> None:
     _save_json_array(USERS_FILE, merged)
     _save_json_array(LEGACY_USERS_FILE, merged)
     _save_users_snapshot(merged, "saved")
+
+    # 저장 후 users 캐시 무효화
+    global _USERS_CACHE_DATA, _USERS_CACHE_TS
+    with _USERS_CACHE_LOCK:
+        _USERS_CACHE_DATA = None
+        _USERS_CACHE_TS = 0.0
 
 
 def _find_user(email: str) -> dict | None:

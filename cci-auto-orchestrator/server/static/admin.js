@@ -635,13 +635,14 @@ function esc(value) {
 		const totals = stats || {};
 		if (!rows.length) {
 			renderAdminIssueSummaryVisual([], totals);
-			adminIssueMemberRows.innerHTML = '<tr><td colspan="16">조회된 인원별 이슈 데이터가 없습니다.</td></tr>';
+			adminIssueMemberRows.innerHTML = '<tr><td colspan="15">조회된 인원별 이슈 데이터가 없습니다.</td></tr>';
 			return;
 		}
 		renderAdminIssueSummaryVisual(rows, totals);
 		const totalRow = `
 			<tr class="admin-issue-total-row">
-				<td>총</td>
+				<td class="mi-th-rank"><span class="mi-rank-badge">합계</span></td>
+				<td>-</td>
 				<td>${esc(totals?.total_issue ?? 0)}</td>
 				<td>${esc(totals?.duplicate ?? 0)}</td>
 				<td>${esc(totals?.not_a_bug ?? 0)}</td>
@@ -652,22 +653,23 @@ function esc(value) {
 				<td>${formatOneDecimal(totals?.medium ?? 0)}</td>
 				<td>${formatOneDecimal(totals?.low ?? 0)}</td>
 				<td>${formatOneDecimal(totals?.lowest ?? 0)}</td>
-				<td>${formatOneDecimal(totals?.score ?? 0)}</td>
-				<td>-</td>
-				<td>-</td>
+				<td class="mi-score-cell">${formatOneDecimal(totals?.score ?? 0)}</td>
 				<td>-</td>
 				<td>-</td>
 			</tr>
 		`;
 
 		adminIssueMemberRows.innerHTML = totalRow + rows.map((item) => {
-			const titles = Array.isArray(item?.recent_titles) ? item.recent_titles : [];
-			const recentCount = titles.filter((x) => String(x || "").trim()).length;
 			const reporter = String(item?.reporter || "").trim();
 			const rank = Number(item?.rank ?? 0);
+			const rankBadge = rank === 1 ? '<span class="mi-rank-badge mi-rank-gold">🥇 1위</span>'
+				: rank === 2 ? '<span class="mi-rank-badge mi-rank-silver">🥈 2위</span>'
+				: rank === 3 ? '<span class="mi-rank-badge mi-rank-bronze">🥉 3위</span>'
+				: rank > 0 ? `<span class="mi-rank-badge">${rank}위</span>` : '<span class="mi-rank-badge mi-rank-none">-</span>';
 			return `
 				<tr class="admin-issue-summary-row" data-reporter="${esc(reporter)}">
-					<td><button type="button" class="btn-ghost admin-issue-author-link" data-reporter="${esc(reporter)}">${esc(reporter || "-")}</button></td>
+					<td class="mi-th-rank">${rankBadge}</td>
+					<td><button type="button" class="btn-ghost admin-issue-author-link mi-reporter-btn" data-reporter="${esc(reporter)}">${esc(reporter || "-")}</button></td>
 					<td>${esc(item?.total_issue ?? 0)}</td>
 					<td>${esc(item?.duplicate ?? 0)}</td>
 					<td>${esc(item?.not_a_bug ?? 0)}</td>
@@ -678,11 +680,9 @@ function esc(value) {
 					<td>${formatOneDecimal(item?.medium ?? 0)}</td>
 					<td>${formatOneDecimal(item?.low ?? 0)}</td>
 					<td>${formatOneDecimal(item?.lowest ?? 0)}</td>
-					<td>${formatOneDecimal(item?.score ?? 0)}</td>
-					<td class="admin-issue-rank-cell ${rank > 0 && rank <= 3 ? `top-${rank}` : ""}">${rank > 0 ? rank : "-"}</td>
+					<td class="mi-score-cell">${formatOneDecimal(item?.score ?? 0)}</td>
 					<td>${esc(formatDisplayDate(item?.latest_created_at || ""))}</td>
-					<td class="admin-issue-recent-titles"><span class="admin-issue-recent-count">${recentCount > 0 ? `${recentCount}건` : '-'}</span></td>
-					<td><button type="button" class="btn-secondary admin-issue-member-filter-btn" data-reporter="${esc(reporter)}">티켓 보기</button></td>
+					<td><button type="button" class="btn-secondary admin-issue-member-filter-btn" data-reporter="${esc(reporter)}">보기</button></td>
 				</tr>
 			`;
 		}).join("");
@@ -692,7 +692,7 @@ function esc(value) {
 	function buildAdminIssueRowMarkup(item) {
 		const keyText = String(item?.key || item?.id || "-").trim();
 		const summaryText = String(item?.summary || "-").trim();
-		const summaryShort = summaryText.length > 120 ? `${summaryText.slice(0, 117)}...` : summaryText;
+		const summaryShort = summaryText.length > 100 ? `${summaryText.slice(0, 97)}...` : summaryText;
 		const linkUrl = String(item?.link_url || "").trim();
 		const keyMarkup = linkUrl
 			? `<a class="admin-issue-external-link" href="${esc(linkUrl)}" target="_blank" rel="noreferrer">${esc(keyText)}</a>`
@@ -713,12 +713,8 @@ function esc(value) {
 				<td>${esc(item?.components || "-")}</td>
 				<td>${esc(item?.brand || "-")}</td>
 				<td>${esc(item?.affects_versions || "-")}</td>
-				<td>${esc(item?.fix_versions || "-")}</td>
 				<td>${esc(item?.assignee || "-")}</td>
 				<td>${esc(formatDisplayDate(item?.created || ""))}</td>
-				<td>${esc(item?.labels || "-")}</td>
-				<td class="admin-issue-files-cell">${renderIssueLinkCell(item)}</td>
-				<td class="admin-issue-reason-cell">${formatMultilineText(item?.remarks || "-")}</td>
 			</tr>
 		`;
 	}
@@ -728,10 +724,10 @@ function esc(value) {
 		const rows = Array.isArray(items) ? items : [];
 		const renderToken = ++adminIssueRowRenderToken;
 		if (!rows.length) {
-			adminIssueRows.innerHTML = '<tr><td colspan="17">조회된 티켓이 없습니다.</td></tr>';
+			adminIssueRows.innerHTML = '<tr><td colspan="13">조회된 티켓이 없습니다.</td></tr>';
 			return;
 		}
-		adminIssueRows.innerHTML = '<tr><td colspan="17">상세 목록을 정리하는 중...</td></tr>';
+		adminIssueRows.innerHTML = '<tr><td colspan="13">상세 목록을 정리하는 중...</td></tr>';;
 		const appendChunk = (startIndex) => {
 			if (renderToken !== adminIssueRowRenderToken) return;
 			const chunk = rows.slice(startIndex, startIndex + ADMIN_ISSUE_ROW_CHUNK_SIZE);
@@ -981,7 +977,7 @@ function esc(value) {
 			adminIssuePeriodHint.textContent = `기간: ${start || "-"} ~ ${end || "-"}`;
 		}
 		if (adminIssueRows) {
-			adminIssueRows.innerHTML = '<tr><td colspan="17">상세 목록을 불러오는 중...</td></tr>';
+			adminIssueRows.innerHTML = '<tr><td colspan="13">상세 목록을 불러오는 중...</td></tr>';
 		}
 		if (adminIssueDetailCount) {
 			adminIssueDetailCount.textContent = `상세 0건 표시 중 / 전체 ${Number(data?.detail_total_count ?? 0)}건`;
@@ -1043,7 +1039,7 @@ function esc(value) {
 			adminIssueSummaryAbortController.abort();
 		}
 		adminIssueSummaryAbortController = new AbortController();
-		adminIssueMemberRows.innerHTML = '<tr><td colspan="16">요약을 불러오는 중...</td></tr>';
+		adminIssueMemberRows.innerHTML = '<tr><td colspan="15">요약을 불러오는 중...</td></tr>';
 		const summaryUrl = query ? `/api/admin/board/member-issues/summary?${query}` : "/api/admin/board/member-issues/summary";
 		const summaryData = await requestJson(summaryUrl, {
 			method: "GET",
@@ -1135,8 +1131,8 @@ function esc(value) {
 				return;
 			}
 			renderAdminIssueStats({ total_tickets: 0, definite_problem: 0, mistake_rate: 0, score: 0 });
-			adminIssueMemberRows.innerHTML = `<tr><td colspan="16">${esc(error?.message || "인원별 이슈 요약을 불러오지 못했습니다.")}</td></tr>`;
-			adminIssueRows.innerHTML = `<tr><td colspan="17">${esc(error?.message || "인원별 이슈 목록을 불러오지 못했습니다.")}</td></tr>`;
+			adminIssueMemberRows.innerHTML = `<tr><td colspan="15">${esc(error?.message || "인원별 이슈 요약을 불러오지 못했습니다.")}</td></tr>`;
+			adminIssueRows.innerHTML = `<tr><td colspan="13">${esc(error?.message || "인원별 이슈 목록을 불러오지 못했습니다.")}</td></tr>`;
 			if (adminIssuePeriodHint) {
 				adminIssuePeriodHint.textContent = "기간: -";
 			}
@@ -1167,7 +1163,7 @@ function esc(value) {
 		}
 		fetchAdminIssueDetail(summaryData, detailQuery, forceRefresh, requestToken).catch((error) => {
 			if (error?.name === "AbortError") return;
-			adminIssueRows.innerHTML = `<tr><td colspan="17">${esc(error?.message || "상세 목록을 불러오지 못했습니다.")}</td></tr>`;
+			adminIssueRows.innerHTML = `<tr><td colspan="13">${esc(error?.message || "상세 목록을 불러오지 못했습니다.")}</td></tr>`;
 		});
 	}
 

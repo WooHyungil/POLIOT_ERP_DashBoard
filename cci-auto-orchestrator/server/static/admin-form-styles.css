@@ -227,3 +227,322 @@
     width: 100%;
   }
 }
+
+/* ==================== 인원별 이슈 재디자인 (mi-*) ==================== */
+
+/* 헤더 */
+.mi-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.mi-header h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #1e3a5f;
+}
+.mi-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* 상단 통계 카드 그리드 */
+.mi-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.mi-stat-card {
+  background: #fff;
+  border: 1px solid #e4e9f0;
+  border-radius: 10px;
+  padding: 18px 20px 14px;
+  position: relative;
+  overflow: hidden;
+  border-top: 4px solid #cbd5e1;
+  transition: box-shadow 0.15s;
+}
+.mi-stat-card:hover {
+  box-shadow: 0 4px 18px rgba(30,58,95,0.1);
+}
+.mi-stat-card.mi-stat-total  { border-top-color: #1e3a5f; }
+.mi-stat-card.mi-stat-definite{ border-top-color: #16a34a; }
+.mi-stat-card.mi-stat-mistake { border-top-color: #f59e0b; }
+.mi-stat-card.mi-stat-score   { border-top-color: #2d6bbf; }
+
+.mi-stat-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.mi-stat-value {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #1e293b;
+  line-height: 1.1;
+}
+.mi-stat-sub {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+/* 필터 바 */
+.mi-filter-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid #e4e9f0;
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+.mi-filter-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mi-filter-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mi-filter-bar input[type="text"],
+.mi-filter-bar select {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: #fff;
+  color: #334155;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.mi-filter-bar input[type="text"]:focus,
+.mi-filter-bar select:focus {
+  border-color: #2d6bbf;
+}
+.mi-filter-bar input[type="date"] {
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: #fff;
+  color: #334155;
+  outline: none;
+}
+
+/* 날짜 범위 버튼 그룹 */
+.mi-range-btns {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.mi-range-btn {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.mi-range-btn:hover {
+  background: #eff6ff;
+  border-color: #2d6bbf;
+  color: #2d6bbf;
+}
+.mi-range-btn.active {
+  background: #1e3a5f;
+  border-color: #1e3a5f;
+  color: #fff;
+  font-weight: 700;
+}
+
+/* 메타 바 */
+.mi-meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: #64748b;
+  padding: 8px 4px;
+  margin-bottom: 8px;
+}
+.mi-meta-bar span + span::before {
+  content: "·";
+  margin: 0 6px;
+  color: #b0bec5;
+}
+
+/* 섹션 */
+.mi-section {
+  margin-top: 22px;
+}
+.mi-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.mi-section-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e3a5f;
+}
+.mi-detail-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 테이블 */
+.mi-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+  background: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 6px rgba(30,58,95,0.06);
+}
+.mi-table thead tr {
+  background: #1e3a5f;
+  color: #fff;
+}
+.mi-table thead th {
+  padding: 10px 12px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  text-align: left;
+  white-space: nowrap;
+  border-right: 1px solid rgba(255,255,255,0.12);
+}
+.mi-table thead th:last-child { border-right: none; }
+.mi-table tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.1s;
+}
+.mi-table tbody tr:hover {
+  background: #f0f6ff;
+}
+.mi-table tbody td {
+  padding: 9px 12px;
+  vertical-align: middle;
+  color: #334155;
+}
+
+/* 합계 행 */
+.mi-table tbody tr.admin-issue-total-row {
+  background: #eef3fb;
+  font-weight: 700;
+  border-bottom: 2px solid #bdd0f0;
+}
+.mi-table tbody tr.admin-issue-total-row:hover {
+  background: #e2ecfa;
+}
+
+/* 순위 열 */
+.mi-th-rank {
+  text-align: center !important;
+  width: 72px;
+}
+
+/* 점수 열 강조 */
+.mi-score-cell {
+  font-weight: 800;
+  color: #2d6bbf;
+  font-size: 0.95rem;
+}
+
+/* 순위 배지 */
+.mi-rank-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: #e2e8f0;
+  color: #475569;
+  white-space: nowrap;
+}
+.mi-rank-gold   { background: linear-gradient(135deg, #fef3c7, #fde68a); color: #92400e; }
+.mi-rank-silver { background: linear-gradient(135deg, #f1f5f9, #cbd5e1); color: #334155; }
+.mi-rank-bronze { background: linear-gradient(135deg, #fef3c7 0%, #fed7aa 100%); color: #7c3a1e; }
+.mi-rank-none   { background: #f8fafc; color: #94a3b8; }
+
+/* 리포터 버튼 */
+.mi-reporter-btn {
+  font-weight: 600;
+  color: #2d6bbf;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-size: 0.85rem;
+}
+.mi-reporter-btn:hover {
+  color: #1e3a5f;
+}
+
+/* 작은 테이블 (상세 목록) */
+.mi-table-sm thead th {
+  font-size: 0.76rem;
+  padding: 8px 10px;
+}
+.mi-table-sm tbody td {
+  padding: 7px 10px;
+  font-size: 0.82rem;
+}
+
+/* 반응형 */
+@media (max-width: 900px) {
+  .mi-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .mi-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .mi-filter-left,
+  .mi-filter-right {
+    width: 100%;
+  }
+}
+@media (max-width: 540px) {
+  .mi-stat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .mi-stat-value {
+    font-size: 1.5rem;
+  }
+}
