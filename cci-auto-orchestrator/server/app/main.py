@@ -8096,6 +8096,21 @@ def qa_full_tc_color_stats(force: bool = False, history_id: str = ""):
             "detail_row_count": len(detail_rows),
         },
     }
+
+
+def _record_full_tc_bridge_sample(elapsed_ms: float, summary_ok: bool, defect_ok: bool) -> None:
+    with FULL_TC_BRIDGE_PERF_LOCK:
+        FULL_TC_BRIDGE_PERF_SAMPLES.append(
+            {
+                "ts": time.time(),
+                "elapsed_ms": round(float(elapsed_ms or 0.0), 2),
+                "summary_ok": bool(summary_ok),
+                "defect_ok": bool(defect_ok),
+            }
+        )
+
+
+def _build_full_tc_bridge_perf_snapshot(window_sec: int = 300) -> dict:
     selected = max(30, min(3600, int(window_sec or 300)))
     cutoff = time.time() - float(selected)
     with FULL_TC_BRIDGE_PERF_LOCK:
