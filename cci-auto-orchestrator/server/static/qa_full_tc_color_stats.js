@@ -389,9 +389,9 @@
           <td>${esc(row.direction)}</td>
           <td>${esc(row.brand)}</td>
           <td>${esc(row.priority)}</td>
-          <td>${esc(row.pre_condition)}</td>
-          <td>${esc(row.tc_procedure)}</td>
-          <td>${esc(row.expected_result)}</td>
+          <td class="cs-wrap cs-wrap-sm">${esc(row.pre_condition)}</td>
+          <td class="cs-wrap">${esc(row.tc_procedure)}</td>
+          <td class="cs-wrap">${esc(row.expected_result)}</td>
           <td>${chip(row.base_result)}</td>
           <td>${chip(row.koa_result)}</td>
           <td>${chip(row.koa_android)}</td>
@@ -404,9 +404,9 @@
           <td>${chip(row.goa_ios)}</td>
           <td>${esc(row.closed_jira_no)}</td>
           <td>${esc(row.jira_no)}</td>
-          <td>${esc(row.nt_na_reason)}</td>
-          <td>${esc(row.nt_na_filter)}</td>
-          <td>${esc(row.label)}</td>
+          <td class="cs-wrap cs-wrap-sm">${esc(row.nt_na_reason)}</td>
+          <td class="cs-wrap cs-wrap-sm">${esc(row.nt_na_filter)}</td>
+          <td class="cs-wrap cs-wrap-sm">${esc(row.label)}</td>
         </tr>
       `;
     }).join("");

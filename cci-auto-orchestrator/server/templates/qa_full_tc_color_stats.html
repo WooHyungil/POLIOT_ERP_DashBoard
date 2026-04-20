@@ -241,6 +241,20 @@
       font-size: 12px;
     }
 
+    /* Full_TC 원본 드릴다운의 장문 셀은 줄바꿈 허용 */
+    #colorStatsDrillTable td.cs-wrap {
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      text-align: left;
+      max-width: 360px;
+      line-height: 1.35;
+    }
+
+    #colorStatsDrillTable td.cs-wrap-sm {
+      max-width: 220px;
+    }
+
     .colorstats-rate {
       font-weight: 800;
       color: #1f5e97;
