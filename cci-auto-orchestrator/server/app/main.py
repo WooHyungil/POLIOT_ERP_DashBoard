@@ -7980,42 +7980,6 @@ def _build_full_tc_summary_data(force: bool = False, file_path: "Path | None" = 
     FULL_TC_SUMMARY_CACHE["data"] = data
     return data
 
-
-@app.get("/api/qa/full-tc/summary")
-def qa_full_tc_summary(force: bool = False):
-    return _build_full_tc_summary_data(force=bool(force))
-
-
-@app.get("/api/qa/full-tc/color-stats")
-def qa_full_tc_color_stats(force: bool = False):
-    summary = _build_full_tc_summary_data(force=bool(force))
-    if not summary.get("ok"):
-        return summary
-    rows = list(summary.get("brand_component_color_rows") or [])
-    detail_rows = list(summary.get("detail_rows") or [])
-    return {
-        "ok": True,
-        "detail": "ok",
-        "source_type": summary.get("source_type", "uploaded_excel"),
-        "source": summary.get("source", ""),
-        "uploaded_at": summary.get("uploaded_at", ""),
-        "updated_at": summary.get("updated_at", ""),
-        "rows": rows,
-        "detail_rows": detail_rows,
-        "totals": {
-            "row_count": len(rows),
-            "brand_count": len({str(x.get("brand", "") or "") for x in rows}),
-            "component_count": len({str(x.get("component", "") or "") for x in rows}),
-            "detail_row_count": len(detail_rows),
-        },
-    }
-
-
-@app.get("/api/qa/full-tc/color_stats")
-def qa_full_tc_color_stats_alias_underscore(force: bool = False):
-    return qa_full_tc_color_stats(force=force)
-
-
 @app.get("/api/qa/full-tc/versions")
 def qa_full_tc_versions(request: Request):
     """업로드 히스토리에서 사이클/버전 목록을 반환합니다 (로그인 사용자 접근 가능)."""
@@ -8096,6 +8060,11 @@ def qa_full_tc_color_stats(force: bool = False, history_id: str = ""):
             "detail_row_count": len(detail_rows),
         },
     }
+
+
+@app.get("/api/qa/full-tc/color_stats")
+def qa_full_tc_color_stats_alias_underscore(force: bool = False, history_id: str = ""):
+    return qa_full_tc_color_stats(force=force, history_id=history_id)
 
 
 def _record_full_tc_bridge_sample(elapsed_ms: float, summary_ok: bool, defect_ok: bool) -> None:
