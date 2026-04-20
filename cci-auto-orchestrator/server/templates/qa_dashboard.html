@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
   <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260404u" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260420a" />
 </head>
 <body class="has-side-nav qa-dashboard-page">
   {% include "components/side_nav.html" %}
@@ -39,15 +39,21 @@
     <section class="grid grid-wide" id="recentIssueChartSection">
       <article class="card card-table" style="grid-column: 1 / -1;">
         <div class="qa-section-head">
-          <h2>최근 이슈 통계 차트</h2>
-          <button id="recentIssueRefreshBtn" type="button" class="btn-secondary btn-sm"><i class="fa fa-rotate-right"></i> 새로고침</button>
-          <div class="qa-filter-tools">
-            <div class="qa-filter-item">
-              <label>시작</label>
+          <div class="qa-recent-head-left">
+            <h2>최근 이슈 통계 차트</h2>
+            <p class="hint qa-recent-head-sub">기간과 그룹 필터를 조합해 상태별 티켓 분포와 상세 목록을 빠르게 조회합니다.</p>
+          </div>
+          <div class="qa-recent-head-right">
+            <button id="recentIssueRefreshBtn" type="button" class="btn-secondary btn-sm"><i class="fa fa-rotate-right"></i> 새로고침</button>
+            <button id="recentApplyFiltersBtn" type="button" class="btn-secondary btn-sm qa-recent-apply-btn"><i class="fa fa-magnifying-glass"></i> 조회</button>
+          </div>
+          <div class="qa-filter-tools qa-recent-filter-tools">
+            <div class="qa-filter-item qa-filter-item-date">
+              <label for="recentStartDate">시작</label>
               <input type="date" id="recentStartDate" />
             </div>
-            <div class="qa-filter-item">
-              <label>종료</label>
+            <div class="qa-filter-item qa-filter-item-date">
+              <label for="recentEndDate">종료</label>
               <input type="date" id="recentEndDate" />
             </div>
             <div class="qa-date-presets" id="recentDatePresetRow">
@@ -58,7 +64,11 @@
             </div>
           </div>
         </div>
-        <div id="issueChart" class="chart-bars"></div>
+        <div id="recentQuerySummary" class="qa-recent-query-summary">조회 조건: 상태 Open · 기간 전체 · 그룹 전체 · 지역 전체</div>
+        <div id="recentVersionToolbar" class="qa-version-filter-row">
+          <button type="button" class="qa-version-chip active" data-version="">전체</button>
+        </div>
+        <div id="issueChart" class="chart-bars"><p class="hint">최근 이슈 통계를 불러오는 중...</p></div>
         <hr />
 
         <div class="qa-region-filter-wrap">
@@ -70,6 +80,8 @@
           <span class="qa-chip-section-label"><i class="fa fa-circle-dot" style="color:#94a3b8;font-size:.75em;"></i>&nbsp;티켓 상태 현황</span>
         </div>
         <div class="status-filter-row qa-chip-row" id="recentStatusToolbar">
+          <button type="button" class="recent-group-btn" data-group="">전체</button>
+          <span class="filter-sep"></span>
           <button type="button" class="recent-status-btn" data-status="Open">Open</button>
           <button type="button" class="recent-status-btn" data-status="Resolved">Resolved</button>
           <button type="button" class="recent-status-btn" data-status="In Progress">In Progress</button>
@@ -155,11 +167,34 @@
 
     <section class="grid" id="closingSummarySection">
       <article class="card card-table" style="grid-column: 1 / -1;">
-        <div class="button-row" style="justify-content: space-between; align-items:center; margin-bottom: 8px;">
-          <h2 style="margin:0;">Summary</h2>
-          <button id="closingSummaryRefreshBtn" type="button" class="btn-secondary btn-sm"><i class="fa fa-rotate-right"></i> 새로고침</button>
+        <div class="qa-section-head qa-closing-head">
+          <div class="qa-recent-head-left">
+            <h2>Summary</h2>
+            <p class="hint qa-recent-head-sub">코드 다중 선택과 날짜 범위를 조합해 마감 이슈 분포와 상세 티켓을 함께 조회합니다.</p>
+          </div>
+          <div class="qa-recent-head-right">
+            <button id="closingSummaryRefreshBtn" type="button" class="btn-secondary btn-sm"><i class="fa fa-rotate-right"></i> 새로고침</button>
+            <button id="closingSummaryApplyFiltersBtn" type="button" class="btn-secondary btn-sm qa-recent-apply-btn"><i class="fa fa-magnifying-glass"></i> 조회</button>
+          </div>
+          <div class="qa-filter-tools qa-closing-filter-tools">
+            <div class="qa-filter-item qa-filter-item-date">
+              <label for="closingSummaryStartDate">시작</label>
+              <input type="date" id="closingSummaryStartDate" />
+            </div>
+            <div class="qa-filter-item qa-filter-item-date">
+              <label for="closingSummaryEndDate">종료</label>
+              <input type="date" id="closingSummaryEndDate" />
+            </div>
+            <div class="qa-date-presets" id="closingSummaryDatePresetRow">
+              <button type="button" class="btn-ghost" id="closingPreset7dBtn">최근 7일</button>
+              <button type="button" class="btn-ghost" id="closingPreset30dBtn">최근 30일</button>
+              <button type="button" class="btn-ghost" id="closingPresetAllBtn">전체</button>
+              <button type="button" class="btn-secondary" id="closingClearFiltersBtn">필터 초기화</button>
+            </div>
+          </div>
         </div>
-        <div id="closingSummaryTabs" class="button-row"></div>
+        <div id="closingSummaryQuerySummary" class="qa-recent-query-summary qa-closing-query-summary">조회 조건: 코드 전체 · 기간 전체</div>
+        <div id="closingSummaryTabs" class="button-row qa-closing-cycle-row"></div>
         <div id="closingSummaryCards" class="stats-grid" style="margin-top:10px;"></div>
         <p id="closingSummaryHint" class="hint"></p>
         <div class="table-wrap" style="margin-top:10px;">
@@ -178,6 +213,7 @@
           <button type="button" class="closing-status-btn" data-status="Reopened">Reopened</button>
           <button type="button" class="closing-status-btn" data-status="Pending">Pending</button>
           <span class="filter-sep"></span>
+          <button type="button" class="closing-group-btn" data-group="">전체</button>
           <button type="button" class="closing-group-btn" data-group="KOA">KOA</button>
           <button type="button" class="closing-group-btn" data-group="HOA">HOA</button>
           <button type="button" class="closing-group-btn" data-group="GOA">GOA</button>
@@ -206,6 +242,6 @@
   </main>
   <div id="toastStack" class="toast-stack"></div>
   <script src="/static/side_nav.js?v=20260330a"></script>
-  <script src="/static/qa_dashboard.js?v=20260404i"></script>
+  <script src="/static/qa_dashboard.js?v=20260420a"></script>
 </body>
 </html>

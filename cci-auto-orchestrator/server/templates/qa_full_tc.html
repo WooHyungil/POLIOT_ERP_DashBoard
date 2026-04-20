@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
   <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260404v" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260418a" />
 </head>
 <body class="has-side-nav qa-full-tc-page">
   {% include "components/side_nav.html" %}
@@ -19,14 +19,14 @@
         </div>
         <div>
           <p class="eyebrow">Enterprise QA Orchestration</p>
-          <h1>Full_TC 관리</h1>
+          <h1 id="qaFullTcPageTitle">Full_TC 관리</h1>
         </div>
       </div>
       <nav class="topnav">
         <span id="topbarUserName" class="topbar-username" hidden></span>
         <span id="topbarCountdown" class="topbar-countdown" hidden></span>
-        <a class="navlink btn-ghost" href="/upload/full-tc" data-requires-admin="true">Full_TC 업로드</a>
-        <a class="navlink btn-ghost" href="/upload/defectlist-raw" data-requires-admin="true">Defect 업로드</a>
+        <a class="navlink btn-ghost" href="/upload/full-tc">Full_TC 업로드</a>
+        <a class="navlink btn-ghost" href="/upload/defectlist-raw">Defect 업로드</a>
         <form method="post" action="/auth/logout" style="margin:0;display:contents;">
           <button class="navlink" type="submit">로그아웃</button>
         </form>
@@ -42,7 +42,7 @@
       </div>
       <div class="button-row">
         <button type="button" id="qaFullTcRefreshBtn" class="btn-secondary btn-sm"><i class="fa fa-rotate-right"></i> 새로고침</button>
-        <a class="navlink btn-ghost btn-sm" href="/upload/full-tc" data-requires-admin="true">업로드</a>
+        <a class="navlink btn-ghost btn-sm" href="/upload/full-tc">업로드</a>
       </div>
     </div>
     <div id="qaFullTcIntegrityAlert" class="ftc-integrity-alert" hidden>데이터 무결성 경고</div>
@@ -50,6 +50,12 @@
 
     <!-- ── 탭 패널: 컴포넌트 요약 ── -->
     <div class="ftc-panel" id="panel-summary">
+      <div class="card ftc-summary-view-tabs" role="tablist" aria-label="요약 보기 선택">
+        <button type="button" class="ftc-summary-view-tab" data-summary-view="matrix" role="tab" aria-selected="false">결과 매트릭스</button>
+        <button type="button" class="ftc-summary-view-tab active" data-summary-view="brand" role="tab" aria-selected="true">브랜드 현황</button>
+        <button type="button" class="ftc-summary-view-tab" data-summary-view="category" role="tab" aria-selected="false">카테고리 분석</button>
+        <button type="button" class="ftc-summary-view-tab" data-summary-view="priority" role="tab" aria-selected="false">우선순위 통계</button>
+      </div>
       <div class="ftc-summary-layout">
         <div class="card">
           <div class="ftc-panel-head">
@@ -187,6 +193,83 @@
               </thead>
               <tbody id="qaFullTcBrandCategoryBody"></tbody>
             </table>
+          </div>
+        </div>
+
+        <div class="card card-table ftc-panel-hidden" id="summary-block-priority">
+          <div class="ftc-panel-head">
+            <h2><i class="fa fa-arrow-up-wide-short"></i> TC 우선순위별 컴포넌트/브랜드 통계</h2>
+            <span id="qaFullTcPriorityHint" class="hint"></span>
+          </div>
+          <div class="ftc-priority-filter-bar" id="qaFullTcPriorityFilterBar">
+            <div class="ftc-priority-filter-title">우선순위</div>
+            <div id="qaFullTcPriorityFilters" class="ftc-priority-filter-chips"></div>
+          </div>
+          <div class="table-wrap">
+            <table class="ftc-table ftc-priority-table" id="qaFullTcPriorityTable">
+              <thead>
+                <tr>
+                  <th class="ftc-priority-col-priority">우선순위</th>
+                  <th class="ftc-priority-col-component">컴포넌트</th>
+                  <th class="ftc-priority-col-tc">TC</th>
+                  <th>KOA</th>
+                  <th>HOA</th>
+                  <th>GOA</th>
+                  <th>PASS</th>
+                  <th>FAIL</th>
+                  <th>N/T</th>
+                  <th>N/A</th>
+                  <th>공란</th>
+                  <th>Run Rate</th>
+                  <th>Pass Rate</th>
+                </tr>
+              </thead>
+              <tbody id="qaFullTcPriorityBody"></tbody>
+            </table>
+          </div>
+          <div id="qaFullTcPriorityDrillWrap" class="ftc-priority-drill" hidden>
+            <div class="ftc-panel-head" style="margin-top:12px;">
+              <h2><i class="fa fa-table-list"></i> 선택 항목 Full_TC 원본 행</h2>
+              <span id="qaFullTcPriorityDrillHint" class="hint"></span>
+            </div>
+            <div class="table-wrap">
+              <table class="ftc-table" id="qaFullTcPriorityDrillTable">
+                <thead>
+                  <tr>
+                    <th>컴포넌트</th>
+                    <th>TC ID</th>
+                    <th>행</th>
+                    <th>카테고리</th>
+                    <th>대분류</th>
+                    <th>중분류</th>
+                    <th>소분류</th>
+                    <th>향지</th>
+                    <th>브랜드</th>
+                    <th>우선순위</th>
+                    <th>Pre-condition</th>
+                    <th>TC procedure</th>
+                    <th>Expected result</th>
+                    <th>N(기본)</th>
+                    <th>KOA</th>
+                    <th>KOA AOS</th>
+                    <th>KOA iOS</th>
+                    <th>HOA</th>
+                    <th>HOA AOS</th>
+                    <th>HOA iOS</th>
+                    <th>GOA</th>
+                    <th>GOA AOS</th>
+                    <th>GOA iOS</th>
+                    <th>Closed 지라</th>
+                    <th>지라 NO.</th>
+                    <th>NT/NA 사유</th>
+                    <th>NT/NA 필터</th>
+                    <th>LABEL</th>
+                  </tr>
+                </thead>
+                <tbody id="qaFullTcPriorityDrillBody"></tbody>
+              </table>
+            </div>
+            <div id="qaFullTcPriorityDrillPagination" class="ftc-pagination"></div>
           </div>
         </div>
       </div>
@@ -361,14 +444,31 @@
               <tr>
                 <th>컴포넌트</th>
                 <th>TC ID</th>
+                <th>행</th>
+                <th>카테고리</th>
                 <th>대분류</th>
                 <th>중분류</th>
                 <th>소분류</th>
                 <th>향지</th>
-                <th>기본결과</th>
+                <th>브랜드</th>
+                <th>우선순위</th>
+                <th>Pre-condition</th>
+                <th>TC procedure</th>
+                <th>Expected result</th>
+                <th>N(기본)</th>
                 <th>KOA</th>
+                <th>KOA AOS</th>
+                <th>KOA iOS</th>
                 <th>HOA</th>
+                <th>HOA AOS</th>
+                <th>HOA iOS</th>
                 <th>GOA</th>
+                <th>GOA AOS</th>
+                <th>GOA iOS</th>
+                <th>Closed 지라</th>
+                <th>지라 NO.</th>
+                <th>NT/NA 사유</th>
+                <th>NT/NA 필터</th>
                 <th>LABEL</th>
               </tr>
             </thead>
@@ -393,15 +493,41 @@
       <!-- Defect 조회 툴바 -->
       <div class="card ftc-defect-toolbar">
         <div class="ftc-filter-inline">
-          <input id="defectSearch" type="text" class="ftc-search-input" placeholder="지라 키, 상태, 우선순위 검색" />
-          <input id="defectRangeMin" type="text" class="ftc-search-input ftc-range-input" placeholder="최소 Key (기본: SPAQA-12000)" />
-          <span class="ftc-toolbar-meta">기본 최소 Key: <strong>SPAQA-12000</strong></span>
-          <div class="ftc-defect-status-filter" id="defectStatusFilter">
-            <span class="ftc-col-toggle-label">상태 필터:</span>
-            <button class="ftc-status-chip active" data-status="all">전체</button>
-            <button class="ftc-status-chip is-found" data-status="found">반영됨</button>
-            <button class="ftc-status-chip is-missing" data-status="missing">미반영</button>
+          <div class="ftc-defect-search-stack">
+            <div class="ftc-defect-search-field is-query">
+              <button type="button" id="defectApplySearchBtn" class="ftc-input-search-btn" aria-label="검색 실행">
+                <i class="fa fa-magnifying-glass" aria-hidden="true"></i>
+              </button>
+              <input id="defectSearch" type="text" class="ftc-search-input" placeholder="지라 키, 상태, 우선순위, 담당자 검색" aria-label="Defect 검색" />
+              <button type="button" id="defectSearchClearBtn" class="ftc-input-clear-btn" aria-label="검색어 지우기" hidden>
+                <i class="fa fa-xmark" aria-hidden="true"></i>
+              </button>
+            </div>
+            <div class="ftc-defect-search-meta">
+              <span class="ftc-toolbar-meta">기본 최소 티켓 번호: <strong>SPAQA-12000</strong></span>
+              <span id="defectActiveFilterCount" class="ftc-filter-count-pill">활성 필터 0개</span>
+            </div>
+            <div class="ftc-defect-search-field is-range">
+              <button type="button" id="defectApplyRangeBtn" class="ftc-input-search-btn" aria-label="최소 티켓 번호로 조회">
+                <i class="fa fa-hashtag" aria-hidden="true"></i>
+              </button>
+              <input id="defectRangeMin" type="text" class="ftc-search-input ftc-range-input" placeholder="최소 티켓 번호 입력 (이 번호 이상 조회, 예: SPAQA-19000)" aria-label="최소 티켓 번호" />
+            </div>
           </div>
+
+          <div class="ftc-defect-filter-groups">
+            <div class="ftc-deployment-filter" id="deploymentFilterContainer">
+              <span class="ftc-col-toggle-label">배포 필터:</span>
+              <button class="ftc-deployment-chip" data-deployment="all">전체</button>
+            </div>
+            <div class="ftc-defect-status-filter" id="defectStatusFilter">
+              <span class="ftc-col-toggle-label">상태 필터:</span>
+              <button class="ftc-status-chip active" data-status="all">전체</button>
+              <button class="ftc-status-chip is-found" data-status="found">반영됨</button>
+              <button class="ftc-status-chip is-missing" data-status="missing">미반영</button>
+            </div>
+          </div>
+
           <div class="ftc-defect-actions">
             <button id="defectExportXlsxBtn" class="btn-secondary btn-sm"><i class="fa fa-file-excel"></i> XLSX 다운로드</button>
             <button id="defectExportHtmlBtn" class="btn-secondary btn-sm"><i class="fa fa-file-code"></i> HTML 다운로드</button>
@@ -429,6 +555,6 @@
   </main>
   <div id="toastStack" class="toast-stack"></div>
   <script src="/static/side_nav.js?v=20260330a"></script>
-  <script src="/static/qa_full_tc.js?v=20260404m"></script>
+  <script src="/static/qa_full_tc.js?v=20260418b"></script>
 </body>
 </html>

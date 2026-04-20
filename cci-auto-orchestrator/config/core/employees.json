@@ -1,21 +1,8 @@
 [
   {
-    "id": "emp-sue",
-    "name": "장수경",
-    "birth": "1004",
-    "title": "차장",
-    "employee_no": "230103",
-    "account_email": "sue@poliot.co.kr",
-    "google_email": "sue@poliot.co.kr",
-    "phone": "010-4785-1003",
-    "remote_id": "hae\\9452861",
-    "remote_password": "Poliot12!@",
-    "address": ""
-  },
-  {
     "id": "emp-hiss",
     "name": "우형일",
-    "birth": "2001.07.23",
+    "birth": "2001-07-23",
     "title": "SW품질/책임",
     "employee_no": "240130",
     "account_email": "hiss0723@poliot.co.kr",
@@ -23,6 +10,7 @@
     "phone": "010-8326-5491",
     "remote_id": "hae\\9477402",
     "remote_password": "Poliot12!@",
-    "address": ""
+    "address": "",
+    "email": "hiss0723@poliot.co.kr"
   }
 ]

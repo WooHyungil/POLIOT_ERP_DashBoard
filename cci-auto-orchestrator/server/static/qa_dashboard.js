@@ -15,17 +15,147 @@ let currentRecentRegions = [];
 let currentRecentStartDate = "";
 let currentRecentEndDate = "";
 let currentRegularReleaseData = null;
-let currentClosingCycle = "";
-let currentClosingDetailFilter = { cycle: "", phase: "", group: "", severity: "" };
+let currentClosingCycles = [];
+let currentClosingStartDate = "";
+let currentClosingEndDate = "";
+let currentClosingDetailFilter = { cycles: [], phase: "", group: "", severity: "", startDate: "", endDate: "" };
 let currentClosingTicketRows = [];
-let currentClosingDetailMeta = { cycle: "", phase: "", group: "", severity: "" };
+let currentClosingDetailMeta = { cycles: [], phase: "", group: "", severity: "", startDate: "", endDate: "" };
 let currentClosingStatus = "";
 let currentClosingGroups = [];
 let qaIsAdmin = false;
+let recentIssueRequestSeq = 0;
+let recentStatusOptions = [];
+let currentRecentVersion = "";
+let lastRecentStatusData = null;
+let recentReleaseVersionOptions = [];
+const QA_FETCH_TIMEOUT_MS = 12000;
+const RECENT_STATUS_ALL = "__ALL__";
+const RECENT_DEFAULT_STATUSES = ["Open", "Resolved", "In Progress", "Reopened", "Pending"];
+
+async function fetchWithTimeout(url, options, timeoutMs = QA_FETCH_TIMEOUT_MS) {
+  const opts = options || {};
+  if (typeof AbortController === "undefined") {
+    return fetch(url, opts);
+  }
+  const ctrl = new AbortController();
+  const merged = { ...opts, signal: ctrl.signal };
+  const timer = setTimeout(() => ctrl.abort(), Math.max(1000, Number(timeoutMs) || QA_FETCH_TIMEOUT_MS));
+  try {
+    return await fetch(url, merged);
+  } catch (e) {
+    if (e && e.name === "AbortError") {
+      throw new Error("요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function mergeFetchHeaders(base, extra) {
+  const merged = {};
+  const push = (src) => {
+    if (!src) return;
+    if (typeof Headers !== "undefined" && src instanceof Headers) {
+      src.forEach((value, key) => {
+        merged[String(key)] = String(value);
+      });
+      return;
+    }
+    for (const [key, value] of Object.entries(src)) {
+      merged[String(key)] = String(value);
+    }
+  };
+  push(base);
+  push(extra);
+  return merged;
+}
+
+function withNgrokFetchOptions(options) {
+  const opts = Object.assign({}, options || {});
+  opts.credentials = opts.credentials || "same-origin";
+  opts.headers = mergeFetchHeaders(
+    {
+      "ngrok-skip-browser-warning": "true",
+      "x-requested-with": "XMLHttpRequest",
+      "accept": "application/json",
+    },
+    opts.headers || {}
+  );
+  return opts;
+}
+
+function setRecentIssueLoading(isLoading, message) {
+  const hint = document.getElementById("recentStatusHint");
+  const refreshBtn = document.getElementById("recentIssueRefreshBtn");
+  const applyBtn = document.getElementById("recentApplyFiltersBtn");
+  const clearBtn = document.getElementById("recentClearFiltersBtn");
+  const startInput = document.getElementById("recentStartDate");
+  const endInput = document.getElementById("recentEndDate");
+  const presetIds = ["recentPreset7dBtn", "recentPreset30dBtn", "recentPresetAllBtn"];
+
+  if (isLoading && hint) {
+    hint.innerText = message || "최근 이슈를 조회 중입니다...";
+  }
+  if (refreshBtn instanceof HTMLButtonElement) refreshBtn.disabled = isLoading;
+  if (applyBtn instanceof HTMLButtonElement) applyBtn.disabled = isLoading;
+  if (clearBtn instanceof HTMLButtonElement) clearBtn.disabled = isLoading;
+  if (startInput instanceof HTMLInputElement) startInput.disabled = isLoading;
+  if (endInput instanceof HTMLInputElement) endInput.disabled = isLoading;
+  for (const id of presetIds) {
+    const btn = document.getElementById(id);
+    if (btn instanceof HTMLButtonElement) btn.disabled = isLoading;
+  }
+}
+
+function normalizeRecentDateRange(startDate, endDate) {
+  let start = String(startDate || "").trim();
+  let end = String(endDate || "").trim();
+  if (start && end && start > end) {
+    const temp = start;
+    start = end;
+    end = temp;
+    toast("시작일이 종료일보다 늦어 자동으로 순서를 정정했습니다.", "warn");
+  }
+  return { start, end };
+}
+
+function updateRecentQuerySummary(status, groups, regions, startDate, endDate) {
+  const root = document.getElementById("recentQuerySummary");
+  if (!root) return;
+  const groupLabel = Array.isArray(groups) && groups.length ? groups.join(",") : "전체";
+  const regionLabel = Array.isArray(regions) && regions.length ? regions.join(",") : "전체";
+  const startLabel = String(startDate || "").trim() || "전체";
+  const endLabel = String(endDate || "").trim() || "전체";
+  root.textContent = `조회 조건: 상태 ${status || "Open"} · 기간 ${startLabel} ~ ${endLabel} · 그룹 ${groupLabel} · 지역 ${regionLabel}`;
+}
+
+function applyRecentFilters(options = {}) {
+  const opts = options || {};
+  const force = Boolean(opts.force);
+  const status = String(opts.status || currentRecentStatus || "Open").trim() || "Open";
+  const groups = Array.isArray(opts.groups) ? opts.groups : (currentRecentGroups || []);
+  const regions = Array.isArray(opts.regions) ? opts.regions : (currentRecentRegions || []);
+  const normalized = normalizeRecentDateRange(
+    opts.startDate != null ? opts.startDate : currentRecentStartDate,
+    opts.endDate != null ? opts.endDate : currentRecentEndDate
+  );
+  currentRecentStartDate = normalized.start;
+  currentRecentEndDate = normalized.end;
+
+  const startInput = document.getElementById("recentStartDate");
+  const endInput = document.getElementById("recentEndDate");
+  if (startInput instanceof HTMLInputElement) startInput.value = currentRecentStartDate;
+  if (endInput instanceof HTMLInputElement) endInput.value = currentRecentEndDate;
+
+  updateRecentQuerySummary(status, groups, regions, currentRecentStartDate, currentRecentEndDate);
+  return refreshRecentStatusIssues(status, groups, force, regions, currentRecentStartDate, currentRecentEndDate);
+}
 
 async function fetchJsonOrThrow(url, options, label) {
-  const opts = Object.assign({ credentials: "same-origin" }, options || {});
-  const res = await fetch(url, opts);
+  const opts = withNgrokFetchOptions(options || {});
+  const res = await fetchWithTimeout(url, opts);
   if (res.status === 401 || res.status === 403) {
     throw new Error("로그인이 만료되었습니다. 다시 로그인해 주세요.");
   }
@@ -48,7 +178,7 @@ async function fetchJsonOrThrow(url, options, label) {
 
 async function applyQaRoleGuard() {
   try {
-    const res = await fetch("/api/auth/me", { credentials: "same-origin" });
+    const res = await fetchWithTimeout("/api/auth/me", withNgrokFetchOptions(), 5000);
     if (!res.ok) {
       qaIsAdmin = false;
       return;
@@ -246,15 +376,16 @@ function applyQaHashMode() {
   if (body) body.classList.add("qa-mode-all");
 }
 
-function renderClosingSummaryTabs(cycles, selectedCycle) {
+function renderClosingSummaryTabs(cycles, selectedCycles) {
   const root = document.getElementById("closingSummaryTabs");
   if (!root) return;
   const list = Array.isArray(cycles) ? cycles : [];
-  const activeCycle = String(selectedCycle || "").trim();
-  const allBtn = `<button type="button" class="btn-ghost closing-cycle-btn ${activeCycle ? "" : "active"}" data-cycle="">전체</button>`;
+  const activeSet = new Set(normalizeClosingCycles(selectedCycles));
+  const allBtn = `<button type="button" class="btn-ghost closing-cycle-btn ${activeSet.size ? "" : "active"}" data-cycle="">전체</button>`;
   const cycleBtns = list.map(function (cycle) {
-    const active = String(cycle) === activeCycle;
-    return `<button type="button" class="btn-ghost closing-cycle-btn ${active ? "active" : ""}" data-cycle="${esc(cycle)}">${esc(cycle)}</button>`;
+    const normalizedCycle = String(cycle || "").trim();
+    const active = activeSet.has(normalizedCycle);
+    return `<button type="button" class="btn-ghost closing-cycle-btn ${active ? "active" : ""}" data-cycle="${esc(normalizedCycle)}">${esc(normalizedCycle)}</button>`;
   }).join("");
   root.innerHTML = allBtn + cycleBtns;
 }
@@ -265,11 +396,14 @@ function renderClosingSummaryDetails(data) {
   if (!hint || !body) return;
 
   currentClosingTicketRows = Array.isArray(data?.rows) ? data.rows : [];
+  const selectedCycles = normalizeClosingCycles(data?.cycles || data?.cycle || []);
   currentClosingDetailMeta = {
-    cycle: String(data?.cycle || "").trim(),
+    cycles: selectedCycles,
     phase: String(data?.phase || "").trim(),
     group: String(data?.group || "").trim(),
     severity: String(data?.severity || "").trim(),
+    startDate: String(data?.start_date || "").trim(),
+    endDate: String(data?.end_date || "").trim(),
   };
   currentClosingStatus = "";
   currentClosingGroups = [];
@@ -290,8 +424,13 @@ function applyClosingDetailToolbarState() {
   const groupButtons = Array.from(document.querySelectorAll(".closing-group-btn"));
   for (const btn of groupButtons) {
     if (!(btn instanceof HTMLButtonElement)) continue;
-    const group = normalizeGroupText(btn.dataset.group || "");
-    btn.classList.toggle("active", !!group && groupSet.has(group));
+    const rawGroup = String(btn.dataset.group || "").trim();
+    const group = normalizeGroupText(rawGroup);
+    if (!group) {
+      btn.classList.toggle("active", groupSet.size === 0);
+      continue;
+    }
+    btn.classList.toggle("active", groupSet.has(group));
   }
 }
 
@@ -310,12 +449,14 @@ function applyClosingTicketFilters() {
   if (!hint || !body) return;
 
   const rows = Array.isArray(currentClosingTicketRows) ? currentClosingTicketRows : [];
-  const cycle = String(currentClosingDetailMeta?.cycle || "").trim() || "전체";
+  const cycles = normalizeClosingCycles(currentClosingDetailMeta?.cycles || []);
+  const cycle = cycles.length ? cycles.join(", ") : "전체";
   const phaseMap = { occurred: "발생 이슈", processed: "처리 이슈", remaining: "잔여 이슈" };
   const sevMap = { highest: "Highest", high: "High", medium: "Medium", lowlowest: "Low/Lowest", low: "Low", lowest: "Lowest" };
   const phase = phaseMap[String(currentClosingDetailMeta?.phase || "").trim().toLowerCase()] || "전체";
   const group = String(currentClosingDetailMeta?.group || "").trim() || "전체";
   const sev = sevMap[String(currentClosingDetailMeta?.severity || "").trim().toLowerCase()] || "전체";
+  const dateLabel = getClosingDateLabel(currentClosingDetailMeta?.startDate || "", currentClosingDetailMeta?.endDate || "");
 
   const wantedStatus = normalizeStatusText(currentClosingStatus || "");
   const groupSet = new Set((Array.isArray(currentClosingGroups) ? currentClosingGroups : []).map(normalizeGroupText));
@@ -330,7 +471,7 @@ function applyClosingTicketFilters() {
 
   const statusLabel = currentClosingStatus || "전체";
   const groupLabel = currentClosingGroups.length ? currentClosingGroups.join(",") : "전체";
-  hint.innerText = `Summary 상세 | 코드: ${cycle} | 구분: ${phase} | 그룹: ${group} | 심각도: ${sev} | 상태필터: ${statusLabel} | 그룹필터: ${groupLabel} | 총 ${filteredRows.length}건`;
+  hint.innerText = `Summary 상세 | 코드: ${cycle} | 기간: ${dateLabel} | 구분: ${phase} | 그룹: ${group} | 심각도: ${sev} | 상태필터: ${statusLabel} | 그룹필터: ${groupLabel} | 총 ${filteredRows.length}건`;
 
   if (!filteredRows.length) {
     body.innerHTML = '<tr><td colspan="9" class="hint">조회 결과가 없습니다.</td></tr>';
@@ -361,16 +502,22 @@ async function refreshClosingSummaryDetails(force, filter) {
   const f = filter || {};
   const qs = new URLSearchParams();
   if (force) qs.set("force", "true");
-  if (f.cycle) qs.set("cycle", String(f.cycle));
+  const cycles = normalizeClosingCycles(f.cycles != null ? f.cycles : f.cycle);
+  const cycleValue = getClosingCycleQueryValue(cycles);
+  if (cycleValue) qs.set("cycle", cycleValue);
   if (f.phase) qs.set("phase", String(f.phase));
   if (f.group) qs.set("group", String(f.group));
   if (f.severity) qs.set("severity", String(f.severity));
+  if (f.startDate) qs.set("start_date", String(f.startDate));
+  if (f.endDate) qs.set("end_date", String(f.endDate));
   const data = await fetchJsonOrThrow(`/api/stats/closing-summary/detail?${qs.toString()}`, {}, "Summary 상세");
   currentClosingDetailFilter = {
-    cycle: String(data?.cycle || f.cycle || "").trim(),
+    cycles: normalizeClosingCycles(data?.cycles || cycles),
     phase: String(data?.phase || f.phase || "").trim(),
     group: String(data?.group || f.group || "").trim(),
     severity: String(data?.severity || f.severity || "").trim(),
+    startDate: String(data?.start_date || f.startDate || "").trim(),
+    endDate: String(data?.end_date || f.endDate || "").trim(),
   };
   renderClosingSummaryDetails(data);
 }
@@ -388,23 +535,26 @@ function renderClosingSummary(data) {
   const hint = document.getElementById("closingSummaryHint");
   if (!cards || !head || !body || !hint) return;
 
-  const cycle = String(data?.selected_cycle || "").trim() || "전체";
+  const selectedCycles = normalizeClosingCycles(data?.selected_cycles || data?.selected_cycle || []);
+  const cycle = selectedCycles.length ? selectedCycles.join(", ") : "전체";
+  const cycleSummary = selectedCycles.length > 1 ? `${selectedCycles.length}개 선택` : cycle;
   const rows = Array.isArray(data?.phase_rows) ? data.phase_rows : [];
   const totalRows = Number(data?.total_rows || 0);
   const phaseTotals = data?.phase_totals || {};
   const occurred = Number(phaseTotals?.occurred?.total || 0);
   const processed = Number(phaseTotals?.processed?.total || 0);
   const remaining = Number(phaseTotals?.remaining?.total || 0);
+  const dateLabel = getClosingDateLabel(data?.start_date || "", data?.end_date || "");
 
   cards.innerHTML = [
-    statCard("선택 마감", cycle),
+    statCard("선택 코드", cycleSummary),
     statCard("총 Defect", `${totalRows}건`),
     statCard("발생 이슈", `${occurred}건`),
     statCard("처리 이슈", `${processed}건`),
     statCard("잔여 이슈", `${remaining}건`),
   ].join("");
 
-  hint.innerText = `기준: DefectList_Raw | 코드: ${cycle} | 갱신 ${data?.updated_at || "-"}`;
+  hint.innerText = `기준: DefectList_Raw | 코드: ${cycle} | 기간: ${dateLabel} | 갱신 ${data?.updated_at || "-"}`;
 
   head.innerHTML = `
     <tr>
@@ -463,16 +613,23 @@ function renderClosingSummary(data) {
   body.innerHTML = rendered.join("");
 }
 
-async function refreshClosingSummary(force, cycle) {
-  const selected = String(cycle || currentClosingCycle || "").trim();
+async function refreshClosingSummary(force, cycles, startDate, endDate) {
+  const selectedCycles = normalizeClosingCycles(cycles != null ? cycles : currentClosingCycles);
   const qs = new URLSearchParams();
   if (force) qs.set("force", "true");
-  if (selected) qs.set("cycle", selected);
+  const cycleValue = getClosingCycleQueryValue(selectedCycles);
+  if (cycleValue) qs.set("cycle", cycleValue);
+  if (startDate) qs.set("start_date", String(startDate));
+  if (endDate) qs.set("end_date", String(endDate));
   const data = await fetchJsonOrThrow(`/api/stats/closing-summary?${qs.toString()}`, {}, "Summary");
 
-  const cycles = Array.isArray(data?.cycles) ? data.cycles : [];
-  currentClosingCycle = String(data?.selected_cycle || selected || "").trim();
-  renderClosingSummaryTabs(cycles, currentClosingCycle);
+  const cycleOptions = Array.isArray(data?.cycles) ? data.cycles : [];
+  currentClosingCycles = normalizeClosingCycles(data?.selected_cycles || selectedCycles);
+  currentClosingStartDate = String(data?.start_date || startDate || "").trim();
+  currentClosingEndDate = String(data?.end_date || endDate || "").trim();
+  syncClosingDateInputs();
+  updateClosingSummaryQuerySummary();
+  renderClosingSummaryTabs(cycleOptions, currentClosingCycles);
   renderClosingSummary(data);
 }
 
@@ -499,6 +656,7 @@ function renderIssueChart(defectStats) {
   const stats = defectStats || {};
   const statusTop = (stats.status_top || []).slice(0, 8);
   const severityTop = (stats.severity_top || []).slice(0, 8);
+  recentStatusOptions = statusTop.map((x) => String(x?.name || "").trim()).filter(Boolean);
 
   if (!statusTop.length && !severityTop.length) {
     root.innerHTML = '<p class="hint">이슈 데이터가 없습니다.</p>';
@@ -515,6 +673,56 @@ function renderIssueChart(defectStats) {
       ${makeChartRows(severityTop)}
     </section>
   `;
+}
+
+function setRecentIssueChartLoading(message) {
+  const chartRoot = document.getElementById("issueChart");
+  if (!chartRoot) return;
+  const text = String(message || "최근 이슈 통계를 불러오는 중...").trim();
+  chartRoot.innerHTML = `<p class="hint">${esc(text)}</p>`;
+}
+
+function ensureRecentIssueChartNotBlank() {
+  const chartRoot = document.getElementById("issueChart");
+  if (!chartRoot) return;
+  const visibleText = String(chartRoot.textContent || "").trim();
+  const hasChildren = chartRoot.children && chartRoot.children.length > 0;
+  if (hasChildren && visibleText) return;
+  chartRoot.innerHTML = `
+    <div class="qa-recent-error qa-recent-empty-state">
+      <p>최근 이슈 통계 차트가 비어 있습니다. 다시 조회해 주세요.</p>
+      <div class="qa-recent-error-actions">
+        <button type="button" id="recentIssueInlineRetryBtn" class="btn-secondary btn-sm">다시 조회</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderRecentIssueErrorState(message) {
+  const chartRoot = document.getElementById("issueChart");
+  const hint = document.getElementById("recentStatusHint");
+  const body = document.getElementById("recentStatusBody");
+  const chips = document.getElementById("recentActiveFilters");
+  const text = String(message || "최근 이슈 데이터를 불러오지 못했습니다.").trim();
+  if (chartRoot) {
+    chartRoot.innerHTML = `
+      <div class="qa-recent-error">
+        <p>${esc(text)}</p>
+        <div class="qa-recent-error-actions">
+          <button type="button" id="recentIssueInlineRetryBtn" class="btn-secondary btn-sm">다시 조회</button>
+        </div>
+      </div>
+    `;
+  }
+  if (chips) {
+    chips.innerHTML = '<span class="qa-active-chip">조회 상태: 실패</span>';
+  }
+  if (hint) {
+    hint.innerText = text;
+  }
+  if (body) {
+    body.innerHTML = `<tr><td colspan="12" class="hint">${esc(text)}</td></tr>`;
+  }
 }
 
 function renderMemberChart(stats) {
@@ -559,7 +767,7 @@ function renderMemberChart(stats) {
 
 async function fetchMemberNamesFromAdmin() {
   try {
-    const res = await fetch("/api/company-members", { credentials: "same-origin" });
+    const res = await fetch("/api/company-members", withNgrokFetchOptions());
     if (!res.ok) throw new Error(`company-members unavailable (${res.status})`);
     const data = await res.json();
     const items = Array.isArray(data?.members) ? data.members : [];
@@ -574,7 +782,7 @@ async function fetchMemberNamesFromAdmin() {
     return out;
   } catch {
     try {
-      const res = await fetch("/api/admin/employees", { credentials: "same-origin" });
+      const res = await fetch("/api/admin/employees", withNgrokFetchOptions());
       if (!res.ok) return [];
       const data = await res.json();
       const items = Array.isArray(data?.items) ? data.items : [];
@@ -618,7 +826,13 @@ function setRecentDatePreset(days) {
     startInput.value = currentRecentStartDate;
     endInput.value = currentRecentEndDate;
   }
-  refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], false, currentRecentRegions || [], currentRecentStartDate, currentRecentEndDate)
+  applyRecentFilters({
+    status: currentRecentStatus || "Open",
+    groups: currentRecentGroups || [],
+    regions: currentRecentRegions || [],
+    startDate: currentRecentStartDate,
+    endDate: currentRecentEndDate,
+  })
     .catch((e) => toast(`날짜 조회 실패: ${String(e)}`, "error"));
 }
 
@@ -632,9 +846,116 @@ function clearRecentFilters() {
   const endInput = document.getElementById("recentEndDate");
   if (startInput) startInput.value = "";
   if (endInput) endInput.value = "";
-  refreshRecentStatusIssues("Open", [], false, [], "", "")
+  updateRecentQuerySummary("Open", [], [], "", "");
+  applyRecentFilters({ status: "Open", groups: [], regions: [], startDate: "", endDate: "" })
     .then(() => toast("최근 이슈 필터를 초기화했습니다.", "ok"))
     .catch((e) => toast(`필터 초기화 실패: ${String(e)}`, "error"));
+}
+
+function normalizeClosingCycles(cycles) {
+  const list = Array.isArray(cycles)
+    ? cycles
+    : String(cycles || "").split(",");
+  const seen = new Set();
+  const out = [];
+  for (const item of list) {
+    const cycle = String(item || "").trim();
+    if (!cycle || seen.has(cycle)) continue;
+    seen.add(cycle);
+    out.push(cycle);
+  }
+  return out;
+}
+
+function getClosingCycleQueryValue(cycles) {
+  return normalizeClosingCycles(cycles).join(",");
+}
+
+function getClosingDateLabel(startDate, endDate) {
+  const start = String(startDate || "").trim();
+  const end = String(endDate || "").trim();
+  if (start && end) return `${start} ~ ${end}`;
+  if (start) return `${start} ~`;
+  if (end) return `~ ${end}`;
+  return "전체";
+}
+
+function updateClosingSummaryQuerySummary() {
+  const root = document.getElementById("closingSummaryQuerySummary");
+  if (!root) return;
+  const cycles = normalizeClosingCycles(currentClosingCycles);
+  const cycleLabel = cycles.length ? cycles.join(", ") : "전체";
+  const dateLabel = getClosingDateLabel(currentClosingStartDate, currentClosingEndDate);
+  root.textContent = `조회 조건: 코드 ${cycleLabel} · 기간 ${dateLabel}`;
+}
+
+function syncClosingDateInputs() {
+  const startInput = document.getElementById("closingSummaryStartDate");
+  const endInput = document.getElementById("closingSummaryEndDate");
+  if (startInput instanceof HTMLInputElement) startInput.value = currentClosingStartDate;
+  if (endInput instanceof HTMLInputElement) endInput.value = currentClosingEndDate;
+}
+
+async function applyClosingSummaryFilters(options) {
+  const opts = options || {};
+  const force = !!opts.force;
+  const cycles = normalizeClosingCycles(opts.cycles != null ? opts.cycles : currentClosingCycles);
+  const startDate = String(opts.startDate != null ? opts.startDate : currentClosingStartDate || "").trim();
+  const endDate = String(opts.endDate != null ? opts.endDate : currentClosingEndDate || "").trim();
+
+  currentClosingCycles = cycles;
+  currentClosingStartDate = startDate;
+  currentClosingEndDate = endDate;
+  syncClosingDateInputs();
+  updateClosingSummaryQuerySummary();
+
+  await refreshClosingSummary(force, cycles, startDate, endDate);
+
+  const detailFilter = {
+    cycles,
+    phase: String(opts.phase != null ? opts.phase : currentClosingDetailFilter?.phase || "").trim(),
+    group: String(opts.group != null ? opts.group : currentClosingDetailFilter?.group || "").trim(),
+    severity: String(opts.severity != null ? opts.severity : currentClosingDetailFilter?.severity || "").trim(),
+    startDate,
+    endDate,
+  };
+  return refreshClosingSummaryDetails(force, detailFilter);
+}
+
+function setClosingDatePreset(days) {
+  if (!days || days <= 0) {
+    currentClosingStartDate = "";
+    currentClosingEndDate = "";
+  } else {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - (days - 1));
+    currentClosingStartDate = toIsoDate(start);
+    currentClosingEndDate = toIsoDate(end);
+  }
+  syncClosingDateInputs();
+  applyClosingSummaryFilters({ force: true }).catch((e) => toast(`Summary 날짜 조회 실패: ${String(e)}`, "error"));
+}
+
+function clearClosingSummaryFilters() {
+  currentClosingCycles = [];
+  currentClosingStartDate = "";
+  currentClosingEndDate = "";
+  currentClosingStatus = "";
+  currentClosingGroups = [];
+  syncClosingDateInputs();
+  updateClosingSummaryQuerySummary();
+  applyClosingSummaryFilters({
+    force: true,
+    cycles: [],
+    startDate: "",
+    endDate: "",
+    phase: "",
+    group: "",
+    severity: "",
+  })
+    .then(() => toast("Summary 필터를 초기화했습니다.", "ok"))
+    .catch((e) => toast(`Summary 필터 초기화 실패: ${String(e)}`, "error"));
 }
 
 function setMemberDateRange(days) {
@@ -694,8 +1015,145 @@ function exportMemberSearchTable() {
 
 async function refreshIssueStats(force) {
   const qs = force ? "?force=true" : "";
-  const data = await fetchJsonOrThrow(`/api/stats/defects${qs}`, {}, "최근 이슈 통계");
-  renderIssueChart(data);
+  setRecentIssueChartLoading("최근 이슈 통계를 조회 중입니다...");
+  try {
+    const data = await fetchJsonOrThrow(`/api/stats/defects${qs}`, {}, "최근 이슈 통계");
+    if (!data?.ok) {
+      throw new Error(String(data?.detail || "이슈 통계 데이터를 불러오지 못했습니다 (ok=false)"));
+    }
+    renderIssueChart(data);
+    if (currentRecentVersion && lastRecentStatusData) {
+      const rows = (Array.isArray(lastRecentStatusData?.rows) ? lastRecentStatusData.rows : [])
+        .filter((r) => rowMatchesRecentVersion(r, currentRecentVersion));
+      renderIssueChart(buildIssueChartFromRows(rows));
+    }
+    return data;
+  } catch (primaryError) {
+    // Fallback: 최근 상태 분포만이라도 표시해서 빈 화면을 방지한다.
+    try {
+      const fallback = await fetchJsonOrThrow(`/api/stats/company-defects/status-summary${qs}`, {}, "최근 이슈 상태 요약");
+      if (fallback?.ok === false) {
+        throw new Error(String(fallback?.detail || "상태 요약 데이터 없음"));
+      }
+      renderIssueChart({
+        ...fallback,
+        severity_top: [],
+      });
+      if (currentRecentVersion && lastRecentStatusData) {
+        const rows = (Array.isArray(lastRecentStatusData?.rows) ? lastRecentStatusData.rows : [])
+          .filter((r) => rowMatchesRecentVersion(r, currentRecentVersion));
+        renderIssueChart(buildIssueChartFromRows(rows));
+      }
+      toast(`최근 이슈 통계 일부만 표시합니다: ${String(primaryError?.message || primaryError)}`, "warn");
+      return fallback;
+    } catch (fallbackError) {
+      // 2차 Fallback: 오래된 런타임에서는 /api/dashboard 안의 defect_stats를 사용
+      try {
+        const dashboard = await fetchJsonOrThrow(`/api/dashboard${qs}`, {}, "대시보드 요약");
+        const defectStats = dashboard?.defect_stats;
+        if (!defectStats || defectStats?.ok === false) {
+          throw new Error(String(defectStats?.detail || "대시보드 defect_stats 없음"));
+        }
+        renderIssueChart(defectStats);
+        if (currentRecentVersion && lastRecentStatusData) {
+          const rows = (Array.isArray(lastRecentStatusData?.rows) ? lastRecentStatusData.rows : [])
+            .filter((r) => rowMatchesRecentVersion(r, currentRecentVersion));
+          renderIssueChart(buildIssueChartFromRows(rows));
+        }
+        toast(`최근 이슈 통계를 대시보드 데이터로 표시합니다: ${String(primaryError?.message || primaryError)}`, "warn");
+        return defectStats;
+      } catch (dashboardError) {
+        const detail = String(
+          dashboardError?.message || fallbackError?.message || primaryError?.message || dashboardError || fallbackError || primaryError || "최근 이슈 데이터를 불러오지 못했습니다."
+        ).trim();
+        renderRecentIssueErrorState(detail);
+        throw dashboardError;
+      }
+    }
+  }
+}
+
+function getPreferredRecentStatus() {
+  const preferred = String(currentRecentStatus || "").trim();
+  if (preferred === RECENT_STATUS_ALL) return RECENT_STATUS_ALL;
+  if (preferred) return preferred;
+  const byChart = Array.isArray(recentStatusOptions) ? recentStatusOptions.find(Boolean) : "";
+  if (byChart) return byChart;
+  return "Open";
+}
+
+function getRecentStatusCandidates() {
+  const statusSet = new Map();
+  const push = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return;
+    const key = normalizeStatusText(raw);
+    if (!key || statusSet.has(key)) return;
+    statusSet.set(key, raw);
+  };
+
+  Array.from(document.querySelectorAll(".recent-status-btn"))
+    .forEach((btn) => push(btn instanceof HTMLButtonElement ? btn.dataset.status : ""));
+  (Array.isArray(recentStatusOptions) ? recentStatusOptions : []).forEach(push);
+  RECENT_DEFAULT_STATUSES.forEach(push);
+
+  return Array.from(statusSet.values());
+}
+
+async function fetchRecentStatusDataByTarget(target, groupList, regionList, startDateStr, endDateStr, force) {
+  const qs = new URLSearchParams({ status: target });
+  if (groupList.length) qs.set("groups", groupList.join(","));
+  if (regionList.length) qs.set("regions", regionList.join(","));
+  if (startDateStr) qs.set("start_date", startDateStr);
+  if (endDateStr) qs.set("end_date", endDateStr);
+  if (force) qs.set("force", "true");
+
+  try {
+    return await fetchJsonOrThrow(`/api/stats/company-defects/by-status?${qs.toString()}`, {}, "최근 이슈 상세 조회");
+  } catch (primaryError) {
+    // Fallback for older running instances: aggregate rows per company member via existing detail API.
+    const members = await fetchMemberNamesFromAdmin();
+    if (!members.length) {
+      throw primaryError;
+    }
+    const details = await Promise.all(
+      members.map(async function (name) {
+        const mqs = new URLSearchParams({ name: String(name || "") });
+        const r = await fetch(`/api/stats/company-defects/detail?${mqs.toString()}`, withNgrokFetchOptions());
+        if (!r.ok) return { rows: [] };
+        return r.json();
+      })
+    );
+    const wanted = normalizeStatusText(target);
+    const groupSet = new Set(groupList);
+    const regionSet = new Set(regionList);
+    const rows = [];
+    for (const part of details) {
+      for (const row of Array.isArray(part?.rows) ? part.rows : []) {
+        if (normalizeStatusText(row?.status) !== wanted) continue;
+        const region = String(row?.region ?? "").toUpperCase();
+        if (regionSet.size && !regionSet.has(region)) continue;
+        if (groupSet.size) {
+          const brand = normalizeGroupText(row?.brand);
+          if (!brand || !Array.from(groupSet).some((g) => brand.includes(g))) continue;
+        }
+        if (startDateStr || endDateStr) {
+          const created = String(row?.created || "").slice(0, 10);
+          if (startDateStr && created < startDateStr) continue;
+          if (endDateStr && created > endDateStr) continue;
+        }
+        rows.push(row);
+      }
+    }
+    return {
+      ok: true,
+      fallback_used: true,
+      status: target,
+      count: rows.length,
+      rows,
+      updated_at: new Date().toISOString().slice(0, 19),
+    };
+  }
 }
 
 async function refreshDefectSheetNow(opts) {
@@ -716,8 +1174,8 @@ async function refreshDefectSheetNow(opts) {
       refreshIssueStats(true),
       refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], true),
       refreshRegularRelease(true),
-      refreshClosingSummary(true, currentClosingCycle || ""),
-      refreshClosingSummaryDetails(true, currentClosingDetailFilter || { cycle: currentClosingCycle || "", phase: "", group: "", severity: "" }),
+      refreshClosingSummary(true, currentClosingCycles || [], currentClosingStartDate || "", currentClosingEndDate || ""),
+      refreshClosingSummaryDetails(true, currentClosingDetailFilter || { cycles: currentClosingCycles || [], phase: "", group: "", severity: "", startDate: currentClosingStartDate || "", endDate: currentClosingEndDate || "" }),
     ];
     await Promise.all(jobs);
     if (hint) hint.innerText = `DefectList_Raw 최신화 완료 | rows: ${Number(data?.defect_total_rows || 0)} | ${data?.defect_updated_at || "-"}`;
@@ -745,27 +1203,36 @@ function renderRecentStatusRows(data, status, groups, regions, startDate, endDat
   };
 
   const rows = Array.isArray(data?.rows) ? data.rows : [];
+  const selectedVersion = String(currentRecentVersion || "").trim();
+  const filteredRows = selectedVersion
+    ? rows.filter((r) => rowMatchesRecentVersion(r, selectedVersion))
+    : rows;
+  if (selectedVersion) {
+    renderIssueChart(buildIssueChartFromRows(filteredRows));
+  }
   const groupLabel = Array.isArray(groups) && groups.length ? groups.join(",") : "전체";
   const regionLabel = Array.isArray(regions) && regions.length ? regions.join(",") : "전체";
   const startLabel = String(startDate || "").trim() || "전체";
   const endLabel = String(endDate || "").trim() || "전체";
-  hint.innerText = `상태: ${status} | 그룹: ${groupLabel} | 지역: ${regionLabel} | 기간: ${startLabel} ~ ${endLabel} | 총 ${Number(data?.count || 0)}건`;
+  const sourceLabel = data?.fallback_used ? " (대체 조회)" : "";
+  hint.innerText = `상태: ${status} | 그룹: ${groupLabel} | 지역: ${regionLabel} | 기간: ${startLabel} ~ ${endLabel} | 총 ${Number(filteredRows.length || 0)}건${selectedVersion ? ` (버전 ${selectedVersion})` : ""}${sourceLabel} | 갱신 ${data?.updated_at || "-"}`;
   if (chips) {
     const items = [
       `<span class="qa-active-chip">상태: ${esc(status)}</span>`,
       `<span class="qa-active-chip">그룹: ${esc(groupLabel)}</span>`,
       `<span class="qa-active-chip">지역: ${esc(regionLabel)}</span>`,
       `<span class="qa-active-chip">기간: ${esc(startLabel)} ~ ${esc(endLabel)}</span>`,
+      `<span class="qa-active-chip">버전: ${esc(selectedVersion || "전체")}</span>`,
     ];
     chips.innerHTML = items.join("");
   }
 
-  if (!rows.length) {
+  if (!filteredRows.length) {
     body.innerHTML = '<tr><td colspan="12" class="hint">조회 결과가 없습니다.</td></tr>';
     return;
   }
 
-  body.innerHTML = rows.slice(0, 300).map((r) => `
+  body.innerHTML = filteredRows.slice(0, 300).map((r) => `
     <tr>
       <td>${esc(cellText(r.key))}</td>
       <td>${esc(cellText(r.status))}</td>
@@ -783,6 +1250,77 @@ function renderRecentStatusRows(data, status, groups, regions, startDate, endDat
   `).join("");
 }
 
+function rowMatchesRecentVersion(row, selectedVersion) {
+  const version = String(selectedVersion || "").trim();
+  if (!version) return true;
+  const merged = [
+    row?.affects_versions,
+    row?.affects_version,
+    row?.fix_versions,
+    row?.fix_version,
+    row?.summary,
+    row?.components,
+    row?.labels,
+  ].map((x) => String(x || "")).join(" ");
+  const re = new RegExp(`(^|[^0-9])${version}([^0-9]|$)`);
+  return re.test(merged);
+}
+
+function buildIssueChartFromRows(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const statusMap = new Map();
+  const severityMap = new Map();
+  const inc = (map, key) => {
+    const k = String(key || "").trim() || "-";
+    map.set(k, Number(map.get(k) || 0) + 1);
+  };
+  for (const row of list) {
+    inc(statusMap, row?.status);
+    inc(severityMap, row?.priority);
+  }
+  const toTop = (map) => Array.from(map.entries())
+    .sort((a, b) => (Number(b[1]) - Number(a[1])) || String(a[0]).localeCompare(String(b[0]), "ko"))
+    .slice(0, 8)
+    .map(([name, count]) => ({ name, count }));
+  return {
+    ok: true,
+    status_top: toTop(statusMap),
+    severity_top: toTop(severityMap),
+  };
+}
+
+function normalizeReleaseVersionLabel(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const m = text.match(/(\d{4})/);
+  return m ? String(m[1]) : "";
+}
+
+function setRecentVersionOptionsFromRegularRelease(rawVersions) {
+  const out = [];
+  const seen = new Set();
+  for (const v of Array.isArray(rawVersions) ? rawVersions : []) {
+    const label = normalizeReleaseVersionLabel(v);
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    out.push(label);
+  }
+  out.sort((a, b) => a.localeCompare(b, "ko"));
+  recentReleaseVersionOptions = out;
+}
+
+function renderRecentVersionButtons() {
+  const root = document.getElementById("recentVersionToolbar");
+  if (!root) return;
+  const versions = Array.isArray(recentReleaseVersionOptions) ? recentReleaseVersionOptions : [];
+  if (currentRecentVersion && !versions.includes(currentRecentVersion)) {
+    currentRecentVersion = "";
+  }
+  const allBtn = `<button type="button" class="qa-version-chip ${currentRecentVersion ? "" : "active"}" data-version="">전체</button>`;
+  const versionBtns = versions.map((v) => `<button type="button" class="qa-version-chip ${currentRecentVersion === v ? "active" : ""}" data-version="${esc(v)}">${esc(v)}</button>`);
+  root.innerHTML = [allBtn, ...versionBtns].join("");
+}
+
 function setRecentStatusActive(status) {
   const buttons = Array.from(document.querySelectorAll(".recent-status-btn"));
   for (const btn of buttons) {
@@ -797,8 +1335,13 @@ function setRecentGroupActive(groups) {
   const buttons = Array.from(document.querySelectorAll(".recent-group-btn"));
   for (const btn of buttons) {
     if (!(btn instanceof HTMLButtonElement)) continue;
-    const group = normalizeGroupText(btn.dataset.group || "");
-    btn.classList.toggle("active", !!group && set.has(group));
+    const rawGroup = String(btn.dataset.group || "").trim();
+    const group = normalizeGroupText(rawGroup);
+    if (!group) {
+      btn.classList.toggle("active", set.size === 0);
+      continue;
+    }
+    btn.classList.toggle("active", set.has(group));
   }
 }
 
@@ -833,75 +1376,96 @@ function setRecentRegionActive(regions) {
   }
 }
 async function refreshRecentStatusIssues(status, groups, force, regions, startDate, endDate) {
+  const requestSeq = ++recentIssueRequestSeq;
+  setRecentIssueLoading(true, "최근 이슈를 조회 중입니다...");
   const target = String(status || "").trim();
-  if (!target) return;
-  const groupList = Array.isArray(groups) ? groups.map(normalizeGroupText).filter(Boolean) : [];
+  if (!target) {
+    setRecentIssueLoading(false);
+    return;
+  }
+  const isAllMode = target === RECENT_STATUS_ALL;
+  const groupList = isAllMode ? [] : (Array.isArray(groups) ? groups.map(normalizeGroupText).filter(Boolean) : []);
   const regionList = Array.isArray(regions) ? regions.map((r) => String(r).toUpperCase()).filter(Boolean) : [];
-  const startDateStr = String(startDate || "").trim();
-  const endDateStr = String(endDate || "").trim();
+  const normalizedRange = normalizeRecentDateRange(startDate, endDate);
+  const startDateStr = normalizedRange.start;
+  const endDateStr = normalizedRange.end;
   let data;
   try {
-    const qs = new URLSearchParams({ status: target });
-    if (groupList.length) qs.set("groups", groupList.join(","));
-    if (regionList.length) qs.set("regions", regionList.join(","));
-    if (startDateStr) qs.set("start_date", startDateStr);
-    if (endDateStr) qs.set("end_date", endDateStr);
-    if (force) qs.set("force", "true");
-    const res = await fetch(`/api/stats/company-defects/by-status?${qs.toString()}`);
-    if (!res.ok) {
-      throw new Error(`status endpoint unavailable (${res.status})`);
-    }
-    data = await res.json();
-  } catch {
-    // Fallback for older running instances: aggregate rows per company member via existing detail API.
-    const members = await fetchMemberNamesFromAdmin();
-    const details = await Promise.all(
-      members.map(async function (name) {
-        const qs = new URLSearchParams({ name: String(name || "") });
-        const r = await fetch(`/api/stats/company-defects/detail?${qs.toString()}`);
-        if (!r.ok) return { rows: [] };
-        return r.json();
-      })
-    );
-    const wanted = normalizeStatusText(target);
-    const groupSet = new Set(groupList);
-    const regionSet = new Set(regionList);
-    const rows = [];
-    for (const part of details) {
-      for (const row of Array.isArray(part?.rows) ? part.rows : []) {
-        if (normalizeStatusText(row?.status) !== wanted) continue;
-        const region = String(row?.region ?? "").toUpperCase();
-        if (regionSet.size && !regionSet.has(region)) continue;
-        if (groupSet.size) {
-          const brand = normalizeGroupText(row?.brand);
-          if (!brand || !Array.from(groupSet).some((g) => brand.includes(g))) continue;
+    if (isAllMode) {
+      const statuses = getRecentStatusCandidates();
+      const results = await Promise.allSettled(
+        statuses.map((s) => fetchRecentStatusDataByTarget(s, [], regionList, startDateStr, endDateStr, force))
+      );
+      const mergedRows = [];
+      let usedFallback = false;
+      let successCount = 0;
+      for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        const part = result.value || {};
+        successCount += 1;
+        if (part?.fallback_used) usedFallback = true;
+        for (const row of Array.isArray(part?.rows) ? part.rows : []) {
+          mergedRows.push(row);
         }
-        if (startDateStr || endDateStr) {
-          const created = String(row?.created || "").slice(0, 10);
-          if (startDateStr && created < startDateStr) continue;
-          if (endDateStr && created > endDateStr) continue;
-        }
-        rows.push(row);
       }
+      if (!successCount) {
+        throw new Error("전체 상태 조회에 실패했습니다.");
+      }
+      const uniq = new Map();
+      for (const row of mergedRows) {
+        const key = [
+          String(row?.key || "").trim(),
+          normalizeStatusText(row?.status),
+          String(row?.summary || "").trim(),
+          String(row?.created || "").trim(),
+        ].join("||");
+        if (!uniq.has(key)) uniq.set(key, row);
+      }
+      data = {
+        ok: true,
+        fallback_used: usedFallback,
+        status: "전체",
+        count: uniq.size,
+        rows: Array.from(uniq.values()),
+        updated_at: new Date().toISOString().slice(0, 19),
+      };
+    } else {
+      data = await fetchRecentStatusDataByTarget(target, groupList, regionList, startDateStr, endDateStr, force);
     }
-    data = {
-      ok: true,
-      status: target,
-      count: rows.length,
-      rows,
-      updated_at: new Date().toISOString().slice(0, 19),
-    };
+  } catch (primaryError) {
+    if (isAllMode) {
+      throw primaryError;
+    }
+    throw primaryError;
   }
-  currentRecentStatus = target;
-  currentRecentGroups = groupList;
-  currentRecentRegions = regionList;
-  currentRecentStartDate = startDateStr;
-  currentRecentEndDate = endDateStr;
-  setRecentStatusActive(target);
-  setRecentGroupActive(groupList);
-  setRecentRegionActive(regionList);
-  renderRecentRegionButtons(data);
-  renderRecentStatusRows(data, target, groupList, regionList, startDateStr, endDateStr);
+  try {
+    if (requestSeq !== recentIssueRequestSeq) {
+      return;
+    }
+    currentRecentStatus = isAllMode ? RECENT_STATUS_ALL : target;
+    currentRecentGroups = groupList;
+    currentRecentRegions = regionList;
+    currentRecentStartDate = startDateStr;
+    currentRecentEndDate = endDateStr;
+    setRecentStatusActive(isAllMode ? "" : target);
+    setRecentGroupActive(groupList);
+    setRecentRegionActive(regionList);
+    lastRecentStatusData = data;
+    renderRecentVersionButtons();
+    renderRecentRegionButtons(data);
+    const statusLabel = isAllMode ? "전체" : target;
+    renderRecentStatusRows(data, statusLabel, groupList, regionList, startDateStr, endDateStr);
+    updateRecentQuerySummary(statusLabel, groupList, regionList, startDateStr, endDateStr);
+  } catch (error) {
+    if (requestSeq === recentIssueRequestSeq) {
+      renderRecentIssueErrorState(String(error?.message || error || "최근 이슈 상세를 불러오지 못했습니다."));
+    }
+    throw error;
+  } finally {
+    if (requestSeq === recentIssueRequestSeq) {
+      setRecentIssueLoading(false);
+    }
+  }
 }
 
 async function refreshMemberStats(force) {
@@ -916,7 +1480,7 @@ async function refreshMemberStats(force) {
     if (forceFlag) params.set("force", "true");
     if (filters.start) params.set("start_date", filters.start);
     if (filters.end) params.set("end_date", filters.end);
-    const res = await fetch(`/api/stats/company-defects?${params.toString()}`, { credentials: "same-origin" });
+    const res = await fetch(`/api/stats/company-defects?${params.toString()}`, withNgrokFetchOptions());
     if (!res.ok) {
       throw new Error(`인원별 이슈 통계 요청 실패 (${res.status})`);
     }
@@ -1051,6 +1615,8 @@ function renderRegularRelease(data) {
     if (aOrder !== bOrder) return aOrder - bOrder;
     return aText.localeCompare(bText, "ko");
   });
+  setRecentVersionOptionsFromRegularRelease(versions);
+  renderRecentVersionButtons();
   head.innerHTML = `
     <tr>
       <th>날짜</th>
@@ -1419,10 +1985,19 @@ document.getElementById("closingSummaryTabs")?.addEventListener("click", functio
   const btn = el.closest(".closing-cycle-btn");
   if (!(btn instanceof HTMLButtonElement)) return;
   const cycle = String(btn.dataset.cycle || "").trim();
-  refreshClosingSummary(false, cycle)
-    .then(function () {
-      return refreshClosingSummaryDetails(false, { cycle, phase: "", group: "", severity: "" });
-    })
+  let nextCycles = [];
+  if (cycle) {
+    const set = new Set(normalizeClosingCycles(currentClosingCycles));
+    if (set.has(cycle)) set.delete(cycle);
+    else set.add(cycle);
+    nextCycles = Array.from(set).sort();
+  }
+  applyClosingSummaryFilters({
+    cycles: nextCycles,
+    phase: "",
+    group: "",
+    severity: "",
+  })
     .catch((e) => toast(`마감 통계 조회 실패: ${String(e)}`, "error"));
 });
 
@@ -1435,10 +2010,12 @@ document.getElementById("closingSummaryBody")?.addEventListener("click", functio
   const group = String(btn.dataset.group || "").trim().toUpperCase();
   const severity = String(btn.dataset.severity || "").trim().toLowerCase();
   refreshClosingSummaryDetails(false, {
-    cycle: currentClosingCycle || "",
+    cycles: currentClosingCycles || [],
     phase,
     group,
     severity,
+    startDate: currentClosingStartDate || "",
+    endDate: currentClosingEndDate || "",
   }).catch((e) => toast(`Summary 상세 조회 실패: ${String(e)}`, "error"));
 });
 
@@ -1458,8 +2035,14 @@ document.getElementById("closingSummaryDetailToolbar")?.addEventListener("click"
 
   const groupBtn = el.closest(".closing-group-btn");
   if (groupBtn instanceof HTMLButtonElement) {
-    const group = normalizeGroupText(groupBtn.dataset.group || "");
-    if (!group) return;
+    const rawGroup = String(groupBtn.dataset.group || "").trim();
+    const group = normalizeGroupText(rawGroup);
+    if (!group) {
+      currentClosingGroups = [];
+      applyClosingDetailToolbarState();
+      applyClosingTicketFilters();
+      return;
+    }
     const set = new Set((currentClosingGroups || []).map(normalizeGroupText));
     if (set.has(group)) set.delete(group);
     else set.add(group);
@@ -1482,8 +2065,12 @@ document.getElementById("recentStatusToolbar")?.addEventListener("click", functi
 
   const groupBtn = el.closest(".recent-group-btn");
   if (groupBtn instanceof HTMLButtonElement) {
-    const group = normalizeGroupText(groupBtn.dataset.group || "");
-    if (!group) return;
+    const rawGroup = String(groupBtn.dataset.group || "").trim();
+    const group = normalizeGroupText(rawGroup);
+    if (!group) {
+      refreshRecentStatusIssues(RECENT_STATUS_ALL, [], false, currentRecentRegions, currentRecentStartDate, currentRecentEndDate).catch((e) => toast(`상태 조회 실패: ${String(e)}`, "error"));
+      return;
+    }
     const set = new Set((currentRecentGroups || []).map(normalizeGroupText));
     if (set.has(group)) set.delete(group);
     else set.add(group);
@@ -1504,47 +2091,117 @@ document.getElementById("recentStatusToolbar")?.addEventListener("click", functi
   }
 });
 
+document.getElementById("recentVersionToolbar")?.addEventListener("click", function (event) {
+  const el = event.target;
+  if (!(el instanceof HTMLElement)) return;
+  const btn = el.closest(".qa-version-chip");
+  if (!(btn instanceof HTMLButtonElement)) return;
+  currentRecentVersion = String(btn.dataset.version || "").trim();
+  const buttons = Array.from(document.querySelectorAll("#recentVersionToolbar .qa-version-chip"));
+  for (const b of buttons) {
+    if (!(b instanceof HTMLButtonElement)) continue;
+    const same = String(b.dataset.version || "") === currentRecentVersion;
+    b.classList.toggle("active", same);
+  }
+  if (lastRecentStatusData) {
+    const statusLabel = currentRecentStatus === RECENT_STATUS_ALL ? "전체" : (currentRecentStatus || "Open");
+    renderRecentStatusRows(
+      lastRecentStatusData,
+      statusLabel,
+      currentRecentGroups || [],
+      currentRecentRegions || [],
+      currentRecentStartDate || "",
+      currentRecentEndDate || ""
+    );
+  }
+  if (!currentRecentVersion) {
+    refreshIssueStats(false).catch(function () {});
+  }
+});
+
 async function bootstrapQaDashboard() {
   applyDateFilterFromStorage();
-  await applyQaRoleGuard();
+  // 권한 체크 지연/실패가 차트 초기 렌더를 막지 않도록 비동기로 분리한다.
+  applyQaRoleGuard().catch(function () {});
   applyQaHashMode();
   window.addEventListener("hashchange", applyQaHashMode);
 
-  refreshIssueStats(false).catch((e) => toast(`최근 이슈 통계 조회 실패: ${String(e)}`, "error"));
-  refreshRecentStatusIssues("Open", [], false, [], "", "").catch((e) => toast(`상태 조회 실패: ${String(e)}`, "error"));
+  let recentStatsData = null;
+  try {
+    recentStatsData = await refreshIssueStats(false);
+  } catch (e) {
+    toast(`최근 이슈 통계 조회 실패: ${String(e)}`, "error");
+  }
+  const bootstrapStatus = String(
+    recentStatsData?.status_top?.[0]?.name || getPreferredRecentStatus()
+  ).trim() || "Open";
+  updateRecentQuerySummary(bootstrapStatus, [], [], "", "");
+  applyRecentFilters({ status: bootstrapStatus, groups: [], regions: [], startDate: "", endDate: "" }).catch((e) => toast(`상태 조회 실패: ${String(e)}`, "error"));
   refreshRegularRelease(false).catch((e) => toast(`정기배포 조회 실패: ${String(e)}`, "error"));
-  refreshClosingSummary(false, "").catch((e) => toast(`마감 통계 조회 실패: ${String(e)}`, "error"));
-  refreshClosingSummaryDetails(false, { cycle: "", phase: "", group: "", severity: "" }).catch((e) => toast(`Summary 상세 조회 실패: ${String(e)}`, "error"));
+  updateClosingSummaryQuerySummary();
+  applyClosingSummaryFilters({ cycles: [], startDate: "", endDate: "", phase: "", group: "", severity: "" }).catch((e) => toast(`Summary 상세 조회 실패: ${String(e)}`, "error"));
 
   setInterval(function () {
     refreshIssueStats(false).catch(function () {});
   }, 30000);
   setInterval(function () {
-    refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], false, currentRecentRegions || [], currentRecentStartDate || "", currentRecentEndDate || "").catch(function () {});
+    applyRecentFilters({
+      status: currentRecentStatus || "Open",
+      groups: currentRecentGroups || [],
+      regions: currentRecentRegions || [],
+      startDate: currentRecentStartDate || "",
+      endDate: currentRecentEndDate || "",
+    }).catch(function () {});
   }, 20000);
   setInterval(function () {
     refreshRegularRelease(false).catch(function () {});
   }, 30000);
   setInterval(function () {
-    refreshClosingSummary(false, currentClosingCycle || "").catch(function () {});
+    refreshClosingSummary(false, currentClosingCycles || [], currentClosingStartDate || "", currentClosingEndDate || "").catch(function () {});
   }, 30000);
   setInterval(function () {
-    refreshClosingSummaryDetails(false, currentClosingDetailFilter || { cycle: currentClosingCycle || "", phase: "", group: "", severity: "" }).catch(function () {});
+    refreshClosingSummaryDetails(false, currentClosingDetailFilter || { cycles: currentClosingCycles || [], phase: "", group: "", severity: "", startDate: currentClosingStartDate || "", endDate: currentClosingEndDate || "" }).catch(function () {});
   }, 30000);
 }
 
 bootstrapQaDashboard().catch((e) => toast(`초기화 실패: ${String(e)}`, "error"));
+setTimeout(ensureRecentIssueChartNotBlank, 1500);
+setTimeout(ensureRecentIssueChartNotBlank, 4500);
 
 document.getElementById("recentStartDate")?.addEventListener("change", function () {
   const startDate = this.value || "";
   currentRecentStartDate = startDate;
-  refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], false, currentRecentRegions || [], currentRecentStartDate, currentRecentEndDate).catch((e) => toast(`날짜 조회 실패: ${String(e)}`, "error"));
+  applyRecentFilters({
+    status: currentRecentStatus || "Open",
+    groups: currentRecentGroups || [],
+    regions: currentRecentRegions || [],
+    startDate: currentRecentStartDate,
+    endDate: currentRecentEndDate,
+  }).catch((e) => toast(`날짜 조회 실패: ${String(e)}`, "error"));
 });
 
 document.getElementById("recentEndDate")?.addEventListener("change", function () {
   const endDate = this.value || "";
   currentRecentEndDate = endDate;
-  refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], false, currentRecentRegions || [], currentRecentStartDate, currentRecentEndDate).catch((e) => toast(`날짜 조회 실패: ${String(e)}`, "error"));
+  applyRecentFilters({
+    status: currentRecentStatus || "Open",
+    groups: currentRecentGroups || [],
+    regions: currentRecentRegions || [],
+    startDate: currentRecentStartDate,
+    endDate: currentRecentEndDate,
+  }).catch((e) => toast(`날짜 조회 실패: ${String(e)}`, "error"));
+});
+
+document.getElementById("recentStartDate")?.addEventListener("keydown", function (event) {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  applyRecentFilters({ force: true }).catch((e) => toast(`조회 실패: ${String(e)}`, "error"));
+});
+
+document.getElementById("recentEndDate")?.addEventListener("keydown", function (event) {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  applyRecentFilters({ force: true }).catch((e) => toast(`조회 실패: ${String(e)}`, "error"));
 });
 
 document.getElementById("recentPreset7dBtn")?.addEventListener("click", function () {
@@ -1560,16 +2217,82 @@ document.getElementById("recentPresetAllBtn")?.addEventListener("click", functio
 });
 
 document.getElementById("recentClearFiltersBtn")?.addEventListener("click", clearRecentFilters);
+document.getElementById("recentApplyFiltersBtn")?.addEventListener("click", function () {
+  applyRecentFilters({
+    force: true,
+    status: currentRecentStatus || "Open",
+    groups: currentRecentGroups || [],
+    regions: currentRecentRegions || [],
+    startDate: document.getElementById("recentStartDate")?.value || currentRecentStartDate || "",
+    endDate: document.getElementById("recentEndDate")?.value || currentRecentEndDate || "",
+  }).catch((e) => toast(`조회 실패: ${String(e)}`, "error"));
+});
 document.getElementById("recentIssueRefreshBtn")?.addEventListener("click", function () {
   refreshIssueStats(true).catch((e) => toast(`최근 이슈 통계 조회 실패: ${String(e)}`, "error"));
-  refreshRecentStatusIssues(currentRecentStatus || "Open", currentRecentGroups || [], true, currentRecentRegions || [], currentRecentStartDate || "", currentRecentEndDate || "")
+  applyRecentFilters({
+    force: true,
+    status: currentRecentStatus || "Open",
+    groups: currentRecentGroups || [],
+    regions: currentRecentRegions || [],
+    startDate: currentRecentStartDate || "",
+    endDate: currentRecentEndDate || "",
+  })
     .catch((e) => toast(`상태 조회 실패: ${String(e)}`, "error"));
 });
-document.getElementById("closingSummaryRefreshBtn")?.addEventListener("click", function () {
-  refreshClosingSummary(true, currentClosingCycle || "").catch((e) => toast(`마감 통계 조회 실패: ${String(e)}`, "error"));
-  refreshClosingSummaryDetails(true, currentClosingDetailFilter || { cycle: currentClosingCycle || "", phase: "", group: "", severity: "" })
-    .catch((e) => toast(`Summary 상세 조회 실패: ${String(e)}`, "error"));
+document.addEventListener("click", function (event) {
+  const target = event?.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (target.id !== "recentIssueInlineRetryBtn") return;
+  refreshIssueStats(true).catch((e) => toast(`최근 이슈 통계 조회 실패: ${String(e)}`, "error"));
+  applyRecentFilters({ force: true }).catch((e) => toast(`상태 조회 실패: ${String(e)}`, "error"));
 });
+document.getElementById("closingSummaryRefreshBtn")?.addEventListener("click", function () {
+  applyClosingSummaryFilters({ force: true }).catch((e) => toast(`마감 통계 조회 실패: ${String(e)}`, "error"));
+});
+
+document.getElementById("closingSummaryApplyFiltersBtn")?.addEventListener("click", function () {
+  applyClosingSummaryFilters({
+    force: true,
+    startDate: document.getElementById("closingSummaryStartDate")?.value || currentClosingStartDate || "",
+    endDate: document.getElementById("closingSummaryEndDate")?.value || currentClosingEndDate || "",
+  }).catch((e) => toast(`Summary 조회 실패: ${String(e)}`, "error"));
+});
+
+document.getElementById("closingSummaryStartDate")?.addEventListener("change", function () {
+  currentClosingStartDate = this.value || "";
+  applyClosingSummaryFilters({ startDate: currentClosingStartDate, endDate: currentClosingEndDate }).catch((e) => toast(`Summary 날짜 조회 실패: ${String(e)}`, "error"));
+});
+
+document.getElementById("closingSummaryEndDate")?.addEventListener("change", function () {
+  currentClosingEndDate = this.value || "";
+  applyClosingSummaryFilters({ startDate: currentClosingStartDate, endDate: currentClosingEndDate }).catch((e) => toast(`Summary 날짜 조회 실패: ${String(e)}`, "error"));
+});
+
+document.getElementById("closingSummaryStartDate")?.addEventListener("keydown", function (event) {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  applyClosingSummaryFilters({ force: true }).catch((e) => toast(`Summary 조회 실패: ${String(e)}`, "error"));
+});
+
+document.getElementById("closingSummaryEndDate")?.addEventListener("keydown", function (event) {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  applyClosingSummaryFilters({ force: true }).catch((e) => toast(`Summary 조회 실패: ${String(e)}`, "error"));
+});
+
+document.getElementById("closingPreset7dBtn")?.addEventListener("click", function () {
+  setClosingDatePreset(7);
+});
+
+document.getElementById("closingPreset30dBtn")?.addEventListener("click", function () {
+  setClosingDatePreset(30);
+});
+
+document.getElementById("closingPresetAllBtn")?.addEventListener("click", function () {
+  setClosingDatePreset(0);
+});
+
+document.getElementById("closingClearFiltersBtn")?.addEventListener("click", clearClosingSummaryFilters);
 // ===== 공용 테이블 컬럼 필터 시스템 =====
 // recentStatusTable, regularReleaseDetailTable, closingSummaryDetailTable 에 적용
 
@@ -1775,8 +2498,8 @@ for (const t of _qaFilterTables) {
 
 // 렌더 후 필터 재적용을 위해 원본 함수 래핑
 const _origRenderRecentStatusRows = renderRecentStatusRows;
-window.renderRecentStatusRows = function (data, status, groups) {
-  _origRenderRecentStatusRows(data, status, groups);
+window.renderRecentStatusRows = function (data, status, groups, regions, startDate, endDate) {
+  _origRenderRecentStatusRows(data, status, groups, regions, startDate, endDate);
   _qaApplyFilter(document.getElementById("recentStatusTable"));
 };
 

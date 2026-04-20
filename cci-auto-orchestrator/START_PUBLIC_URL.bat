@@ -8,20 +8,31 @@ start "" powershell -WindowStyle Hidden -NoLogo -NoProfile -ExecutionPolicy Bypa
 
 timeout /t 2 /nobreak >nul
 
-echo Starting CCI Public Tunnel (background mode)...
-start "" powershell -WindowStyle Hidden -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\scripts\tunnel\start_public_tunnel.ps1 -Provider ngrok -NgrokDomain unshirred-examiningly-kyoko.ngrok-free.dev -LocalPort 8000 -StopExisting
+echo Starting CCI Tunnel Watchdog (background mode)...
+start "" powershell -WindowStyle Hidden -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\scripts\tunnel\start_tunnel_watchdog.ps1 -Provider localtunnel -LocalPort 8000 -CheckIntervalSec 30 -ForceRefreshMinutes 240
 
 timeout /t 3 /nobreak >nul
 echo [✓] Both services started (running in background).
 echo.
+set "PUBLIC_URL_FILE=runtime\public_url.txt"
+set "PUBLIC_URL="
+for /f "usebackq delims=" %%i in ("%PUBLIC_URL_FILE%") do (
+	set "PUBLIC_URL=%%i"
+	goto :url_read_done
+)
+:url_read_done
+
 echo Server + Tunnel Details:
 echo   Local port: 8000
-echo   Mode: Public (ngrok tunnel)
-echo   Access: http://unshirred-examiningly-kyoko.ngrok-free.dev/auth/login
+echo   Mode: Public watchdog (localtunnel primary + fallback chain)
+echo   Access URL file: runtime\public_url.txt
+if not "%PUBLIC_URL%"=="" (
+	echo   Active URL: %PUBLIC_URL%
+)
 echo.
 echo Monitoring:
 echo   Watchdog log: runtime\server_watchdog.log
-echo   Tunnel log: runtime\server_tunnel_startup.log
+echo   Tunnel watchdog log: runtime\tunnel_watchdog.log
 echo.
 echo Press Ctrl+C to stop monitoring this window.
 echo Services will continue running in background.

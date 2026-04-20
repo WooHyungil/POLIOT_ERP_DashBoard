@@ -1,1 +1,1 @@
-http://serveousercontent.com:8000
+https://cci-desktop-j9b33d7.loca.lt

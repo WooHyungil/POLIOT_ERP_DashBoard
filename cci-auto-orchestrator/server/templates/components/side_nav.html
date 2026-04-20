@@ -1,6 +1,9 @@
-<aside class="side-nav" id="sideNav" aria-label="주요 메뉴">
-	<button id="sideNavToggle" class="side-nav-toggle" type="button" aria-expanded="false">☰</button>
+<!-- 모바일 햄버거 버튼 (aside 밖에 위치 - overflow 클리핑 방지) -->
+<button id="sideNavToggle" class="side-nav-toggle" type="button" aria-expanded="false" aria-label="메뉴 열기">☰</button>
+<!-- 모바일 드로어 열릴 때 배경 딤 오버레이 -->
+<div id="sideNavOverlay" class="side-nav-overlay" aria-hidden="true"></div>
 
+<aside class="side-nav" id="sideNav" aria-label="주요 메뉴">
 	<!-- 주 메뉴 -->
 	<nav class="side-nav-menu">
 		<!-- 개요 -->
@@ -31,20 +34,22 @@
 			</button>
 			<div class="side-nav-submenu" id="qaFullTcSubmenu">
 				<a class="side-nav-sublink" data-path="/qa/full-tc" data-query="view=summary" href="/qa/full-tc?view=summary">Statistics</a>
+				<a class="side-nav-sublink" data-path="/qa/full-tc/color-stats" href="/qa/full-tc/color-stats">브랜드 색상 통계</a>
+				<a class="side-nav-sublink" data-path="/qa/full-tc" data-query="view=summary&summary=priority" href="/qa/full-tc?view=summary&summary=priority">Full_TC 우선순위</a>
 				<a class="side-nav-sublink" data-path="/qa/full-tc" data-query="view=group" href="/qa/full-tc?view=group">카테고리 분석</a>
 				<a class="side-nav-sublink" data-path="/qa/full-tc" data-query="view=label" href="/qa/full-tc?view=label">LABEL 통계</a>
 				<a class="side-nav-sublink" data-path="/qa/full-tc" data-query="view=missing" href="/qa/full-tc?view=missing">Defect Key 누락 보기</a>
 			</div>
 		</div>
 
-		<button class="side-nav-link side-nav-parent" type="button" data-path="/upload" data-submenu-target="uploadSubmenu" data-requires-admin="true" title="업로드 관리">
+		<button class="side-nav-link side-nav-parent" type="button" data-path="/upload" data-submenu-target="uploadSubmenu" title="업로드 관리">
 			<span class="side-nav-icon">📤</span>
 			<span class="side-nav-text">업로드</span>
 			<span class="side-nav-caret">▼</span>
 		</button>
-		<div class="side-nav-submenu" id="uploadSubmenu" data-requires-admin="true">
-			<a class="side-nav-sublink" data-path="/upload/defectlist-raw" href="/upload/defectlist-raw" data-requires-admin="true">📄 DefectList_Raw 업로드</a>
-			<a class="side-nav-sublink" data-path="/upload/full-tc" href="/upload/full-tc" data-requires-admin="true">📚 Full_TC 업로드</a>
+		<div class="side-nav-submenu" id="uploadSubmenu">
+			<a class="side-nav-sublink" data-path="/upload/defectlist-raw" href="/upload/defectlist-raw">📄 DefectList_Raw 업로드</a>
+			<a class="side-nav-sublink" data-path="/upload/full-tc" href="/upload/full-tc">📚 Full_TC 업로드</a>
 		</div>
 
 		<!-- 섹션: 커뮤니케이션 -->

@@ -1,4 +1,4 @@
-/* upload_defectlist_raw.js v20260320b */
+/* upload_defectlist_raw.js v20260408a */
 (function () {
   /* ── DOM refs ── */
   const dropZone    = document.getElementById("drDrop");
@@ -45,6 +45,26 @@
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  async function parseApiResponse(res, defaultErrorMsg) {
+    const rawText = await res.text();
+    let data = null;
+    try {
+      data = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      data = null;
+    }
+
+    if (res.ok && data && data.ok !== false) {
+      return data;
+    }
+
+    const detail = String((data && (data.detail || data.message)) || "").trim();
+    if (detail) {
+      throw new Error(detail);
+    }
+    throw new Error(defaultErrorMsg);
   }
 
   /* ── 파일 선택 ── */
@@ -107,8 +127,7 @@
   async function loadStatus() {
     try {
       const res  = await fetch("/api/upload/source-status", { credentials: "same-origin" });
-      const data = await res.json();
-      if (!res.ok || !data?.ok) throw new Error("상태 조회 실패");
+      const data = await parseApiResponse(res, "상태 조회 실패");
       const raw = data?.defect_raw || {};
 
       /* 배지 */
@@ -132,25 +151,39 @@
     }
   }
 
+  async function loadHistoryFromStatic() {
+    const res = await fetch("/uploads/defectlist_raw_upload_history.json", { cache: "no-store" });
+    if (!res.ok) throw new Error("업로드 이력 파일이 없습니다");
+    const data = await res.json();
+    if (!Array.isArray(data)) throw new Error("업로드 이력 형식이 올바르지 않습니다");
+    return data;
+  }
+
   /* ── 업로드 이력 ── */
   async function loadHistory() {
     try {
       const res  = await fetch("/api/upload/defectlist-raw/history", { credentials: "same-origin" });
-      const data = await res.json();
-      if (!res.ok || !data?.ok) throw new Error("이력 조회 실패");
+      const data = await parseApiResponse(res, "이력 조회 실패");
       const list = data.history || [];
 
       /* 총 횟수 카드 */
       if (dsHistoryCount) dsHistoryCount.textContent = list.length ? `${list.length}회` : "0회";
 
       if (!list.length) {
-        historyBody.innerHTML = `<tr><td colspan="6" class="dr-empty">아직 업로드 이력이 없습니다</td></tr>`;
+        historyBody.innerHTML = `<tr><td colspan="7" class="dr-empty">아직 업로드 이력이 없습니다</td></tr>`;
         return;
       }
       historyBody.innerHTML = list.map((h, i) => {
         const name  = esc(h.uploader_name  || "-");
         const email = esc(h.uploader_email || "");
         const who   = email ? `${name}<br><small style="color:#94a3b8;">${email}</small>` : name;
+        const fallbackDownload = h?.snapshot_file
+          ? `/uploads/defectlist_raw_history/${encodeURIComponent(String(h.snapshot_file))}`
+          : "";
+        const downloadUrl = String(h.download_url || fallbackDownload || "").trim();
+        const downloadBtn = downloadUrl
+          ? `<a class="dr-mini-btn" href="${esc(downloadUrl)}" style="text-decoration:none;">⬇️ 파일</a>`
+          : `<span style="color:#94a3b8;">-</span>`;
         return `<tr>
           <td class="h-no">${i + 1}</td>
           <td class="h-at">${fmt(h.uploaded_at)}</td>
@@ -158,6 +191,7 @@
           <td class="h-file" title="${esc(h.original_filename)}">${esc(h.original_filename || "-")}</td>
           <td class="h-num">${Number(h.defect_total_rows || 0).toLocaleString()}</td>
           <td class="h-num">${Number(h.raw_issue_total_rows || 0).toLocaleString()}</td>
+          <td>${downloadBtn}</td>
         </tr>`;
       }).join("");
 
@@ -166,7 +200,38 @@
         dsRows.textContent = Number(list[0].defect_total_rows || 0).toLocaleString();
       }
     } catch (err) {
-      historyBody.innerHTML = `<tr><td colspan="6" class="dr-empty">오류: ${esc(String(err?.message || err))}</td></tr>`;
+      const msg = String(err?.message || "").trim();
+      if (msg.toLowerCase() === "not found") {
+        try {
+          const list = await loadHistoryFromStatic();
+          if (dsHistoryCount) dsHistoryCount.textContent = list.length ? `${list.length}회` : "0회";
+          if (!list.length) {
+            historyBody.innerHTML = `<tr><td colspan="7" class="dr-empty">아직 업로드 이력이 없습니다</td></tr>`;
+            return;
+          }
+          historyBody.innerHTML = list.map((h, i) => {
+            const fallbackDownload = h?.snapshot_file
+              ? `/uploads/defectlist_raw_history/${encodeURIComponent(String(h.snapshot_file))}`
+              : "";
+            const downloadBtn = fallbackDownload
+              ? `<a class="dr-mini-btn" href="${esc(fallbackDownload)}" style="text-decoration:none;">⬇️ 파일</a>`
+              : `<span style="color:#94a3b8;">-</span>`;
+            return `<tr>
+              <td class="h-no">${i + 1}</td>
+              <td class="h-at">${fmt(h.uploaded_at)}</td>
+              <td class="h-who">-</td>
+              <td class="h-file" title="${esc(h.original_filename)}">${esc(h.original_filename || "-")}</td>
+              <td class="h-num">${Number(h.defect_total_rows || 0).toLocaleString()}</td>
+              <td class="h-num">${Number(h.raw_issue_total_rows || 0).toLocaleString()}</td>
+              <td>${downloadBtn}</td>
+            </tr>`;
+          }).join("");
+          return;
+        } catch {
+          // keep message below
+        }
+      }
+      historyBody.innerHTML = `<tr><td colspan="7" class="dr-empty">오류: ${esc(msg || "이력 조회 실패")}</td></tr>`;
     }
   }
 

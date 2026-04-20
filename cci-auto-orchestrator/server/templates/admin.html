@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
   <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260329a" />
-  <link rel="stylesheet" href="/static/admin-form-styles.css?v=20260406a" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260413o" />
+  <link rel="stylesheet" href="/static/admin-form-styles.css?v=20260418a" />
   <link rel="stylesheet" href="/static/admin-ui-theme.css?v=20260320a" />
   <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js" defer></script>
   <script src="/static/auto_logout.js" defer></script>
@@ -161,6 +161,7 @@
         <div class="mi-filter-bar">
           <div class="mi-filter-left">
             <input type="search" id="adminIssueSearchInput" class="mi-search" placeholder="이름, 상태, 브랜드, Assignee 검색…" />
+            <button type="button" class="btn-secondary mi-apply-btn" id="adminIssueApplyBtn" aria-label="최근 이슈 조회 적용"><i class="fas fa-search"></i> 조회</button>
             <select id="adminIssueAuthorFilter" class="mi-select" aria-label="리포터 필터">
               <option value="">전체 리포터</option>
             </select>
@@ -221,6 +222,7 @@
                   <th>Low</th>
                   <th>Lowest</th>
                   <th class="mi-th-score">Score</th>
+                  <th>TC 반영률</th>
                   <th>최근 등록일</th>
                   <th>상세</th>
                 </tr>
@@ -238,6 +240,24 @@
               <span class="hint" id="adminIssueDetailCount">상세 0건 표시 중</span>
               <button type="button" class="btn-ghost" id="adminIssueDetailToggleBtn">접기</button>
               <button type="button" class="btn-ghost" id="adminIssueLoadMoreBtn" hidden>더 보기</button>
+            </div>
+          </div>
+          <div id="adminIssueReporterInsights" class="mi-reporter-insights" hidden>
+            <div class="mi-reporter-insights-head">
+              <strong id="adminIssueSelectedReporter">리포터 선택 대기</strong>
+              <span id="adminIssueFullTcCount" class="hint">Full_TC 반영 0건</span>
+            </div>
+            <div class="mi-reporter-insights-body">
+              <div id="adminIssueResolutionDonut" class="mi-resolution-donut" aria-label="Resolution 원형 통계">
+                <div class="mi-resolution-donut-center">
+                  <strong id="adminIssueResolutionTotal">0</strong>
+                  <span class="mi-resolution-donut-label">Resolution</span>
+                </div>
+              </div>
+              <div class="mi-resolution-panel">
+                <div id="adminIssueResolutionFilters"></div>
+                <span id="adminIssueResolutionHint" class="hint">보기 버튼을 누르면 Resolution 필터가 활성화됩니다.</span>
+              </div>
             </div>
           </div>
           <div class="table-wrap">
@@ -275,9 +295,6 @@
           <span id="adminIssuePerfMeta"></span>
           <span id="adminIssuePerfEndpointCards"></span>
         </div>
-        <div hidden id="adminIssueQuickMembers"></div>
-        <div hidden id="adminIssuePodium"></div>
-        <div hidden id="adminIssueSummaryVisual"></div>
       </article>
 
       <article class="card" id="adminAssetApprovalTab">
@@ -404,6 +421,8 @@
       <div class="modal-body">
         <form id="memberEditForm" class="admin-member-edit-form">
           <input type="hidden" id="memberEditEmail" />
+          <input type="hidden" id="memberEditUserId" />
+          <input type="hidden" id="memberEditExpectedCreatedAt" />
           <div class="admin-member-edit-grid">
             <div class="admin-member-edit-field">
               <label for="memberEditName">이름</label>
@@ -556,6 +575,6 @@
   </section>
 
   <script src="/static/side_nav.js?v=20260320h"></script>
-  <script src="/static/admin.js?v=20260405c"></script>
+  <script src="/static/admin.js?v=20260419a"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@ import base64
 import hashlib
 import hmac
 import secrets
+import unicodedata
 import ipaddress
 import tempfile
 import logging
@@ -198,8 +199,15 @@ GOOGLE_DEFECTLIST_DATA_RANGE = os.getenv("GOOGLE_DEFECTLIST_DATA_RANGE", "B18:Z"
 UPLOADED_DEFECT_RAW_FILE = UPLOAD_DIR / "defectlist_raw_uploaded.xlsx"
 UPLOADED_FULL_TC_FILE = UPLOAD_DIR / "full_tc_uploaded.xlsx"
 DEFECT_RAW_UPLOAD_HISTORY_FILE = UPLOAD_DIR / "defectlist_raw_upload_history.json"
+DEFECT_RAW_UPLOAD_HISTORY_DIR = UPLOAD_DIR / "defectlist_raw_history"
+DEFECT_RAW_UPLOAD_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 DEFECT_RAW_UPLOAD_HISTORY_LOCK = threading.Lock()
 MAX_DEFECT_RAW_UPLOAD_HISTORY = 50
+FULL_TC_UPLOAD_HISTORY_FILE = UPLOAD_DIR / "full_tc_upload_history.json"
+FULL_TC_UPLOAD_HISTORY_DIR = UPLOAD_DIR / "full_tc_history"
+FULL_TC_UPLOAD_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+FULL_TC_UPLOAD_HISTORY_LOCK = threading.Lock()
+MAX_FULL_TC_UPLOAD_HISTORY = 80
 GOOGLE_RAW_STATUS_RANGE = os.getenv("GOOGLE_RAW_STATUS_RANGE", "B:R")
 GOOGLE_DEFECT_SHEET_GID = os.getenv("GOOGLE_DEFECT_SHEET_GID", "").strip()
 GOOGLE_DEFECT_RAW_UPLOAD_ONLY = str(os.getenv("GOOGLE_DEFECT_RAW_UPLOAD_ONLY", "1")).strip().lower() in {"1", "true", "yes", "y", "on"}
@@ -368,6 +376,8 @@ class NgrokWarningSkipMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["ngrok-skip-browser-warning"] = "true"
         response.headers["ngrok-skip-browser-warning-for-user-agent"] = "*"
+        # localtunnel(loca.lt) bypass – 브라우저에서 "Click to Continue" 페이지 없이 바로 접속
+        response.headers["Bypass-Tunnel-Password"] = "true"
         # 정적 파일에 브라우저 캐시 헤더 부여 (버전 쿼리가 있으면 장기 캐시)
         path = str(request.url.path)
         if path.startswith("/static/"):
@@ -464,6 +474,7 @@ def _is_public_share_request(request: Request) -> bool:
         ".lhr.life",
         ".serveousercontent.com",
         ".ngrok-free.app",
+        ".ngrok-free.dev",
         ".ngrok.app",
         ".ngrok.dev",
     )
@@ -515,8 +526,15 @@ def _is_valid_email(email: str) -> bool:
     return bool(EMAIL_REGEX.fullmatch(str(email or "").strip().lower()))
 
 
+def _normalize_password_for_auth(password: str) -> str:
+    # 모바일/IME 입력에서 흔한 전각·호환문자/앞뒤 공백 차이를 흡수해
+    # 비밀번호 변경 후 로그인 불일치를 줄인다.
+    text = unicodedata.normalize("NFKC", str(password or ""))
+    return text.strip()
+
+
 def _is_valid_password(password: str) -> bool:
-    return bool(PASSWORD_REGEX.fullmatch(str(password or "")))
+    return bool(PASSWORD_REGEX.fullmatch(_normalize_password_for_auth(password)))
 
 
 def _password_policy_text() -> str:
@@ -558,15 +576,44 @@ def _is_valid_birth(birth: str) -> bool:
         return False
 
 
+def _normalize_phone_value(phone: str) -> str:
+    text = str(phone or "").strip()
+    if not text:
+        return ""
+    digits = re.sub(r"\D", "", text)
+    if "-" not in text:
+        if len(digits) == 11:
+            return f"{digits[:3]}-{digits[3:7]}-{digits[7:]}"
+        if len(digits) == 10:
+            return f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
+    return text
+
+
+def _normalize_birth_value(birth: str) -> str:
+    text = str(birth or "").strip()
+    if not text:
+        return ""
+    digits = re.sub(r"\D", "", text)
+    if "-" not in text and len(digits) == 8:
+        return f"{digits[:4]}-{digits[4:6]}-{digits[6:]}"
+    # Legacy dotted format (YYYY.MM.DD) normalization.
+    m = re.fullmatch(r"(\d{4})[./](\d{1,2})[./](\d{1,2})", text)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    return text
+
+
 def _legacy_hash_password(email: str, password: str) -> str:
-    key = f"{email.strip().lower()}::{password}::poliot"
+    normalized_password = _normalize_password_for_auth(password)
+    key = f"{email.strip().lower()}::{normalized_password}::poliot"
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
 def _hash_password(email: str, password: str) -> str:
     # PBKDF2 with per-password random salt.
     normalized_email = str(email or "").strip().lower()
-    base = f"{normalized_email}::{password}::poliot".encode("utf-8")
+    normalized_password = _normalize_password_for_auth(password)
+    base = f"{normalized_email}::{normalized_password}::poliot".encode("utf-8")
     salt_hex = secrets.token_hex(16)
     rounds = 260000
     derived = hashlib.pbkdf2_hmac("sha256", base, bytes.fromhex(salt_hex), rounds)
@@ -578,20 +625,30 @@ def _verify_password(email: str, password: str, password_hash: str) -> bool:
     if not stored:
         return False
 
+    raw_password = str(password or "")
+    normalized_password = _normalize_password_for_auth(raw_password)
+    candidates: list[str] = [raw_password]
+    if normalized_password != raw_password:
+        candidates.append(normalized_password)
+
     if stored.startswith("pbkdf2_sha256$"):
         try:
             _algo, rounds_text, salt_hex, expected_hex = stored.split("$", 3)
             rounds = int(rounds_text)
             if rounds <= 0:
                 return False
-            base = f"{str(email or '').strip().lower()}::{password}::poliot".encode("utf-8")
-            candidate = hashlib.pbkdf2_hmac("sha256", base, bytes.fromhex(salt_hex), rounds).hex()
-            return hmac.compare_digest(candidate, expected_hex)
+            normalized_email = str(email or "").strip().lower()
+            for candidate_password in candidates:
+                base = f"{normalized_email}::{candidate_password}::poliot".encode("utf-8")
+                candidate = hashlib.pbkdf2_hmac("sha256", base, bytes.fromhex(salt_hex), rounds).hex()
+                if hmac.compare_digest(candidate, expected_hex):
+                    return True
+            return False
         except Exception:
             return False
 
     # Backward compatibility for existing deterministic SHA256 hashes.
-    return hmac.compare_digest(stored, _legacy_hash_password(email, password))
+    return any(hmac.compare_digest(stored, _legacy_hash_password(email, p)) for p in candidates)
 
 
 def _load_json_array(path: Path) -> list[dict]:
@@ -755,11 +812,13 @@ def _save_users_snapshot(items: list[dict], reason: str) -> None:
 
 
 def _load_users_merged_from_sources(include_snapshots: bool = False) -> list[dict]:
+    # NOTE:
+    # _load_json_array already falls back to "<path>.bak" when the primary file
+    # is missing or unreadable. Keep only canonical files here so backups never
+    # override fresher primary records during merge.
     sources = [
         LEGACY_USERS_FILE,
-        Path(str(LEGACY_USERS_FILE) + ".bak"),
         USERS_FILE,
-        Path(str(USERS_FILE) + ".bak"),
     ]
 
     merged_by_email: dict[str, dict] = {}
@@ -769,7 +828,8 @@ def _load_users_merged_from_sources(include_snapshots: bool = False) -> list[dic
             if not email:
                 continue
             prev = merged_by_email.get(email) or {}
-            merged_by_email[email] = {**prev, **row, "email": email}
+            merged_row = {**prev, **row, "email": email}
+            merged_by_email[email] = _normalize_user_identity(merged_row)
 
     if include_snapshots and len(merged_by_email) <= len(ADMIN_EMAILS):
         for snap in _iter_users_snapshot_files():
@@ -779,7 +839,7 @@ def _load_users_merged_from_sources(include_snapshots: bool = False) -> list[dic
                     continue
                 if email in merged_by_email:
                     continue
-                merged_by_email[email] = {**row, "email": email}
+                merged_by_email[email] = _normalize_user_identity({**row, "email": email})
 
     return list(merged_by_email.values())
 
@@ -788,12 +848,34 @@ def _load_employees_merged_by_email() -> dict[str, dict]:
     merged: dict[str, dict] = {}
     for path in (LEGACY_EMPLOYEES_FILE, EMPLOYEES_FILE):
         for row in _load_json_array(path):
-            email = str(row.get("account_email", "")).strip().lower()
+            email = str(
+                row.get("account_email", "")
+                or row.get("email", "")
+                or row.get("user_email", "")
+                or ""
+            ).strip().lower()
             if not email:
                 continue
             prev = merged.get(email) or {}
-            merged[email] = {**prev, **row, "account_email": email}
+            merged[email] = {**prev, **row, "account_email": email, "email": email}
     return merged
+
+
+def _new_user_id() -> str:
+    return f"user-{uuid.uuid4().hex[:12]}"
+
+
+def _normalize_user_identity(row: dict) -> dict:
+    normalized = dict(row or {})
+    email = str(normalized.get("email", "")).strip().lower()
+    if email:
+        normalized["email"] = email
+
+    user_id = str(normalized.get("user_id", "") or "").strip()
+    if not user_id:
+        # user_id is immutable identity for admin mutations; generate once when absent.
+        normalized["user_id"] = _new_user_id()
+    return normalized
 
 
 def _ensure_users_file() -> None:
@@ -808,6 +890,7 @@ def _ensure_users_file() -> None:
         for admin_email in sorted(ADMIN_EMAILS):
             if admin_email not in by_email:
                 by_email[admin_email] = {
+                    "user_id": _new_user_id(),
                     "email": admin_email,
                     "password_hash": _hash_password(admin_email, "Poliot12!@"),
                     "role": "admin",
@@ -823,6 +906,9 @@ def _ensure_users_file() -> None:
                 # Core admin game permission policy is deterministic:
                 # only the designated manager can access game features.
                 by_email[admin_email]["game_access"] = admin_email == GAME_ACCESS_MANAGER_EMAIL
+                if not str(by_email[admin_email].get("user_id", "") or "").strip():
+                    by_email[admin_email]["user_id"] = _new_user_id()
+                    changed = True
 
         # 유실 복구: 관리자만 남은 비정상 상태면 employees를 기준으로 사용자 골격을 복원한다.
         non_admin_count = sum(1 for e in by_email.keys() if e not in ADMIN_EMAILS)
@@ -832,6 +918,7 @@ def _ensure_users_file() -> None:
                 if email in by_email:
                     continue
                 by_email[email] = {
+                    "user_id": _new_user_id(),
                     "email": email,
                     "password_hash": "",
                     "role": "user",
@@ -846,6 +933,11 @@ def _ensure_users_file() -> None:
                     "shortcut_items": [],
                     "shortcut_windows": [],
                 }
+                changed = True
+        for email, row in list(by_email.items()):
+            normalized = _normalize_user_identity(row)
+            if normalized != row:
+                by_email[email] = normalized
                 changed = True
         merged = list(by_email.values())
 
@@ -891,7 +983,7 @@ def _save_users(users: list[dict], preserve_missing: bool = True) -> None:
         email = str(row.get("email", "")).strip().lower()
         if not email:
             continue
-        incoming_by_email[email] = {**row, "email": email}
+        incoming_by_email[email] = _normalize_user_identity({**row, "email": email})
 
     if preserve_missing:
         current_by_email: dict[str, dict] = {}
@@ -899,7 +991,7 @@ def _save_users(users: list[dict], preserve_missing: bool = True) -> None:
             email = str(row.get("email", "")).strip().lower()
             if not email:
                 continue
-            current_by_email[email] = {**row, "email": email}
+            current_by_email[email] = _normalize_user_identity({**row, "email": email})
         current_by_email.update(incoming_by_email)
         merged = list(current_by_email.values())
     else:
@@ -977,7 +1069,13 @@ def _merge_user_profile_fields(user: dict | None) -> dict:
     if email:
         for path in (EMPLOYEES_FILE, LEGACY_EMPLOYEES_FILE):
             for row in _load_json_array(path):
-                if str(row.get("account_email", "")).strip().lower() == email:
+                row_email = str(
+                    row.get("account_email", "")
+                    or row.get("email", "")
+                    or row.get("user_email", "")
+                    or ""
+                ).strip().lower()
+                if row_email == email:
                     employee = {**employee, **row}
 
     def pick_text(*values: object) -> str:
@@ -987,12 +1085,15 @@ def _merge_user_profile_fields(user: dict | None) -> dict:
                 return text
         return ""
 
+    normalized_phone = _normalize_phone_value(pick_text(user.get("phone"), employee.get("phone")))
+    normalized_birth = _normalize_birth_value(pick_text(user.get("birth"), employee.get("birth")))
+
     return {
         "email": email,
         "name": pick_text(user.get("name"), employee.get("name"), email.split("@")[0] if email else ""),
         "title": pick_text(user.get("title"), employee.get("title")),
-        "phone": pick_text(user.get("phone"), employee.get("phone")),
-        "birth": pick_text(user.get("birth"), employee.get("birth")),
+        "phone": normalized_phone,
+        "birth": normalized_birth,
         "address": pick_text(user.get("address"), employee.get("address")),
     }
 
@@ -1004,8 +1105,8 @@ def _sync_employee_profile(*, email: str, name: str = "", title: str = "", phone
 
     name = str(name or "").strip()
     title = str(title or "").strip()
-    phone = str(phone or "").strip()
-    birth = str(birth or "").strip()
+    phone = _normalize_phone_value(phone)
+    birth = _normalize_birth_value(birth)
     address = str(address or "").strip()
 
     found_any = False
@@ -1016,9 +1117,16 @@ def _sync_employee_profile(*, email: str, name: str = "", title: str = "", phone
         changed = False
         found_here = False
         for row in items:
-            if str(row.get("account_email", "")).strip().lower() != target:
+            row_email = str(
+                row.get("account_email", "")
+                or row.get("email", "")
+                or row.get("user_email", "")
+                or ""
+            ).strip().lower()
+            if row_email != target:
                 continue
             row["account_email"] = target
+            row["email"] = target
             if name:
                 row["name"] = name
             row["title"] = title
@@ -1037,6 +1145,7 @@ def _sync_employee_profile(*, email: str, name: str = "", title: str = "", phone
                     "name": name or target.split("@")[0],
                     "title": title,
                     "account_email": target,
+                    "email": target,
                     "phone": phone,
                     "birth": birth,
                     "address": address,
@@ -1056,6 +1165,7 @@ def _sync_employee_profile(*, email: str, name: str = "", title: str = "", phone
                     "name": name or target.split("@")[0],
                     "title": title,
                     "account_email": target,
+                    "email": target,
                     "phone": phone,
                     "birth": birth,
                     "address": address,
@@ -1203,6 +1313,19 @@ def _require_game_access(request: Request) -> dict:
 
 def _is_public_path(path: str) -> bool:
     if path in {"/favicon.ico", "/auth/login", "/auth/register", "/auth/logout"}:
+        return True
+    # Full_TC read APIs should always be reachable from dashboard pages.
+    # Keep write/admin endpoints excluded.
+    full_tc_read_prefixes = (
+        "/api/qa/full-tc/",
+        "/api/qa/full_tc/",
+        "/api/qa/fulltc/",
+    )
+    full_tc_blocked_suffixes = (
+        "/defect-export",
+        "/agents/run",
+    )
+    if path.startswith(full_tc_read_prefixes) and not path.endswith(full_tc_blocked_suffixes):
         return True
     for prefix in ("/static", "/reports", "/artifacts", "/uploads", "/exports", "/auth"):
         if path.startswith(prefix):
@@ -1662,7 +1785,11 @@ async def auth_guard_middleware(request: Request, call_next):
             request.session.clear()
         if path.startswith("/api"):
             return JSONResponse(status_code=401, content={"ok": False, "detail": "session expired"})
-        next_path = quote(str(request.url.path or "/"), safe="/:#?=&")
+        next_raw = str(request.url.path or "/")
+        query_raw = str(request.url.query or "").strip()
+        if query_raw:
+            next_raw = f"{next_raw}?{query_raw}"
+        next_path = quote(next_raw, safe="/:#?=&")
         msg = quote("1시간 동안 사용하지 않아 자동 로그아웃되었습니다. 다시 로그인해 주세요.", safe="")
         return RedirectResponse(url=f"/auth/login?next={next_path}&message={msg}", status_code=303)
 
@@ -1670,7 +1797,11 @@ async def auth_guard_middleware(request: Request, call_next):
     if not user:
         if path.startswith("/api"):
             return JSONResponse(status_code=401, content={"ok": False, "detail": "login required"})
-        next_path = quote(str(request.url.path or "/"), safe="/:#?=&")
+        next_raw = str(request.url.path or "/")
+        query_raw = str(request.url.query or "").strip()
+        if query_raw:
+            next_raw = f"{next_raw}?{query_raw}"
+        next_path = quote(next_raw, safe="/:#?=&")
         return RedirectResponse(url=f"/auth/login?next={next_path}", status_code=303)
 
     request.state.current_user = user
@@ -1900,9 +2031,9 @@ def auth_register_submit(
 ):
     normalized = str(email or "").strip().lower()
     clean_name = str(name or "").strip()
-    clean_phone = str(phone or "").strip()
+    clean_phone = _normalize_phone_value(phone)
     clean_title = str(title or "").strip()
-    clean_birth = str(birth or "").strip()
+    clean_birth = _normalize_birth_value(birth)
     clean_address = str(address or "").strip()
     # 상세 주소 합치기
     _clean_addr_detail = str(address_detail or "").strip()
@@ -1911,19 +2042,6 @@ def auth_register_submit(
     # 직책 기본값
     if not clean_title:
         clean_title = "SW품질/책임"
-    # 전화번호 정규화 (숫자 11자리 → 010-XXXX-XXXX, 10자리 → 0XX-XXX-XXXX)
-    _digits_only = re.sub(r"\D", "", clean_phone)
-    if clean_phone and not re.search(r"-", clean_phone):
-        if len(_digits_only) == 11:
-            clean_phone = f"{_digits_only[:3]}-{_digits_only[3:7]}-{_digits_only[7:]}"
-        elif len(_digits_only) == 10:
-            clean_phone = f"{_digits_only[:3]}-{_digits_only[3:6]}-{_digits_only[6:]}"
-    # 생년월일 정규화 (숫자 8자리 → YYYY-MM-DD)
-    if clean_birth and not re.search(r"-", clean_birth):
-        _d = re.sub(r"\D", "", clean_birth)
-        if len(_d) == 8:
-            clean_birth = f"{_d[:4]}-{_d[4:6]}-{_d[6:]}"
-
     redirect_to = str(next or "/").strip() or "/"
     if not redirect_to.startswith("/"):
         redirect_to = "/"
@@ -1955,6 +2073,7 @@ def auth_register_submit(
     is_admin_seed = normalized in ADMIN_EMAILS
     users.append(
         {
+            "user_id": _new_user_id(),
             "email": normalized,
             "password_hash": _hash_password(normalized, password),
             "role": "admin" if is_admin_seed else "user",
@@ -2094,12 +2213,12 @@ async def user_self_update(request: Request):
         if "title" in payload:
             row["title"] = str(payload.get("title", "") or "").strip()
         if "phone" in payload:
-            next_phone = str(payload.get("phone", "") or "").strip()
+            next_phone = _normalize_phone_value(str(payload.get("phone", "") or "").strip())
             if next_phone and not _is_valid_phone(next_phone):
                 raise HTTPException(status_code=400, detail=_phone_policy_text())
             row["phone"] = next_phone
         if "birth" in payload:
-            next_birth = str(payload.get("birth", "") or "").strip()
+            next_birth = _normalize_birth_value(str(payload.get("birth", "") or "").strip())
             if next_birth and not _is_valid_birth(next_birth):
                 raise HTTPException(status_code=400, detail=_birth_policy_text())
             row["birth"] = next_birth
@@ -2144,51 +2263,28 @@ def admin_users(request: Request):
     current_user_email = str((current_user or {}).get("email", "")).strip().lower()
     can_manage_game_access = current_user_email == GAME_ACCESS_MANAGER_EMAIL
 
-    # Read both primary and legacy stores so admin page can always show signup fields.
-    users_by_email: dict[str, dict] = {}
-    for path in (LEGACY_USERS_FILE, USERS_FILE):
-        for row in _load_json_array(path):
-            email = str(row.get("email", "")).strip().lower()
-            if not email:
-                continue
-            prev = users_by_email.get(email) or {}
-            users_by_email[email] = {**prev, **row, "email": email}
-
-    employees_by_email: dict[str, dict] = {}
-    for path in (LEGACY_EMPLOYEES_FILE, EMPLOYEES_FILE):
-        for row in _load_json_array(path):
-            email = str(row.get("account_email", "")).strip().lower()
-            if not email:
-                continue
-            prev = employees_by_email.get(email) or {}
-            employees_by_email[email] = {**prev, **row, "account_email": email}
-
     out = []
-    for row in users_by_email.values():
+    for row in _load_users():
         email = str(row.get("email", "")).strip().lower()
+        if not email:
+            continue
+        profile = _merge_user_profile_fields(row)
         password_hash = str(row.get("password_hash", "") or "")
-        password_hash_preview = password_hash if password_hash else "(없음)"
-        employee = employees_by_email.get(email) or {}
-
-        title = str(row.get("title", "") or "").strip() or str(employee.get("title", "") or "").strip()
-        phone = str(row.get("phone", "") or "").strip() or str(employee.get("phone", "") or "").strip()
-        birth = str(row.get("birth", "") or "").strip() or str(employee.get("birth", "") or "").strip()
-        address = str(row.get("address", "") or "").strip() or str(employee.get("address", "") or "").strip()
-
         out.append(
             {
+                "user_id": str(row.get("user_id", "") or ""),
                 "email": email,
-            "name": str(row.get("name", "") or employee.get("name", "") or ""),
+                "name": str(profile.get("name", "") or row.get("name", "") or ""),
                 "role": "admin" if str(row.get("role", "user")).strip().lower() == "admin" else "user",
                 "created_at": str(row.get("created_at", "")),
                 "approved": _is_user_approved(row),
                 "can_login": _can_user_login(row),
                 "game_access": _has_game_access(row) if can_manage_game_access else None,
-                "title": title,
-                "phone": phone,
-                "birth": birth,
-                "address": address,
-                "password_hash_preview": password_hash_preview,
+                "title": str(profile.get("title", "") or ""),
+                "phone": str(profile.get("phone", "") or ""),
+                "birth": str(profile.get("birth", "") or ""),
+                "address": str(profile.get("address", "") or ""),
+                "password_hash_preview": password_hash if password_hash else "(없음)",
             }
         )
     out.sort(key=lambda x: str(x.get("created_at", "")), reverse=True)
@@ -2215,21 +2311,9 @@ async def admin_user_create(request: Request):
         raise HTTPException(status_code=400, detail=_password_policy_text())
     if not str(payload.get("name", "") or "").strip():
         raise HTTPException(status_code=400, detail="이름은 필수 입력입니다.")
-    create_phone = str(payload.get("phone", "") or "").strip()
-    create_birth = str(payload.get("birth", "") or "").strip()
+    create_phone = _normalize_phone_value(str(payload.get("phone", "") or "").strip())
+    create_birth = _normalize_birth_value(str(payload.get("birth", "") or "").strip())
     create_title = str(payload.get("title", "") or "").strip() or "SW품질/책임"
-    # 전화번호 정규화 (숫자 10/11자리 입력 지원)
-    if create_phone and "-" not in create_phone:
-        _phone_digits = re.sub(r"\D", "", create_phone)
-        if len(_phone_digits) == 11:
-            create_phone = f"{_phone_digits[:3]}-{_phone_digits[3:7]}-{_phone_digits[7:]}"
-        elif len(_phone_digits) == 10:
-            create_phone = f"{_phone_digits[:3]}-{_phone_digits[3:6]}-{_phone_digits[6:]}"
-    # 생년월일 정규화 (YYYYMMDD 입력 지원)
-    if create_birth and "-" not in create_birth:
-        _birth_digits = re.sub(r"\D", "", create_birth)
-        if len(_birth_digits) == 8:
-            create_birth = f"{_birth_digits[:4]}-{_birth_digits[4:6]}-{_birth_digits[6:]}"
     if create_phone and not _is_valid_phone(create_phone):
         raise HTTPException(status_code=400, detail=_phone_policy_text())
     if create_birth and not _is_valid_birth(create_birth):
@@ -2251,6 +2335,7 @@ async def admin_user_create(request: Request):
         can_login = True
 
     created = {
+        "user_id": _new_user_id(),
         "email": email,
         "password_hash": _hash_password(email, password),
         "role": role,
@@ -2279,6 +2364,7 @@ async def admin_user_create(request: Request):
     )
 
     item = {
+        "user_id": str(created.get("user_id", "") or ""),
         "email": email,
         "name": str(created.get("name", "")),
         "role": "admin" if str(created.get("role", "user")).strip().lower() == "admin" else "user",
@@ -2316,12 +2402,28 @@ async def admin_user_update(user_email: str, request: Request):
     if not target:
         raise HTTPException(status_code=400, detail="invalid user")
 
+    payload_target = str(payload.get("target_email", "") or "").strip().lower()
+    if payload_target and payload_target != target:
+        raise HTTPException(status_code=400, detail="target mismatch")
+
+    payload_target_user_id = str(payload.get("target_user_id", "") or "").strip()
+
+    expected_created_at = str(payload.get("expected_created_at", "") or "").strip()
+
     users = _load_users()
     updated = None
     for row in users:
         email = str(row.get("email", "")).strip().lower()
         if email != target:
             continue
+
+        row_user_id = str(row.get("user_id", "") or "").strip()
+        if payload_target_user_id and row_user_id and payload_target_user_id != row_user_id:
+            raise HTTPException(status_code=409, detail="stale member row; refresh and retry")
+
+        row_created_at = str(row.get("created_at", "") or "").strip()
+        if expected_created_at and row_created_at != expected_created_at:
+            raise HTTPException(status_code=409, detail="stale member row; refresh and retry")
 
         before = dict(row)
         is_core_admin = target in ADMIN_EMAILS
@@ -2334,12 +2436,12 @@ async def admin_user_update(user_email: str, request: Request):
         if "title" in payload:
             row["title"] = str(payload.get("title", "") or "").strip()
         if "phone" in payload:
-            next_phone = str(payload.get("phone", "") or "").strip()
+            next_phone = _normalize_phone_value(str(payload.get("phone", "") or "").strip())
             if next_phone and not _is_valid_phone(next_phone):
                 raise HTTPException(status_code=400, detail=_phone_policy_text())
             row["phone"] = next_phone
         if "birth" in payload:
-            next_birth = str(payload.get("birth", "") or "").strip()
+            next_birth = _normalize_birth_value(str(payload.get("birth", "") or "").strip())
             if next_birth and not _is_valid_birth(next_birth):
                 raise HTTPException(status_code=400, detail=_birth_policy_text())
             row["birth"] = next_birth
@@ -2378,6 +2480,7 @@ async def admin_user_update(user_email: str, request: Request):
             row["approved_at"] = str(row.get("approved_at", "")).strip() or datetime.utcnow().isoformat(timespec="seconds")
 
         updated = {
+            "user_id": str(row.get("user_id", "") or ""),
             "email": email,
             "name": str(row.get("name", "")),
             "role": "admin" if str(row.get("role", "user")).strip().lower() == "admin" else "user",
@@ -2433,7 +2536,7 @@ async def admin_user_update(user_email: str, request: Request):
 
 
 @app.delete("/api/admin/users/{user_email}")
-def admin_user_delete(user_email: str, request: Request):
+async def admin_user_delete(user_email: str, request: Request):
     admin_user = _require_admin(request)
     target = str(user_email or "").strip().lower()
     actor_email = str((admin_user or {}).get("email", "")).strip().lower()
@@ -2444,19 +2547,56 @@ def admin_user_delete(user_email: str, request: Request):
     if target in ADMIN_EMAILS:
         raise HTTPException(status_code=400, detail="hiss0723 account is immutable")
 
+    payload: dict = {}
+    try:
+        loaded = await request.json()
+        if isinstance(loaded, dict):
+            payload = loaded
+    except Exception:
+        payload = {}
+
+    payload_target = str(payload.get("target_email", "") or "").strip().lower()
+    if payload_target and payload_target != target:
+        raise HTTPException(status_code=400, detail="target mismatch")
+    payload_target_user_id = str(payload.get("target_user_id", "") or "").strip()
+    expected_created_at = str(payload.get("expected_created_at", "") or "").strip()
+
     users = _load_users()
+    target_row = None
+    for row in users:
+        if str(row.get("email", "")).strip().lower() == target:
+            target_row = row
+            break
+    if target_row:
+        row_user_id = str(target_row.get("user_id", "") or "").strip()
+        row_created_at = str(target_row.get("created_at", "") or "").strip()
+        if payload_target_user_id and row_user_id and payload_target_user_id != row_user_id:
+            raise HTTPException(status_code=409, detail="stale member row; refresh and retry")
+        if expected_created_at and row_created_at != expected_created_at:
+            raise HTTPException(status_code=409, detail="stale member row; refresh and retry")
+
     next_users = [x for x in users if str(x.get("email", "")).strip().lower() != target]
     employees = _load_json_array(EMPLOYEES_FILE)
     legacy_employees = _load_json_array(LEGACY_EMPLOYEES_FILE)
     next_employees = [
         x
         for x in employees
-        if str(x.get("account_email", "")).strip().lower() != target
+        if str(
+            x.get("account_email", "")
+            or x.get("email", "")
+            or x.get("user_email", "")
+            or ""
+        ).strip().lower() != target
     ]
     next_legacy_employees = [
         x
         for x in legacy_employees
-        if str(x.get("account_email", "")).strip().lower() != target
+        if str(
+            x.get("account_email", "")
+            or x.get("email", "")
+            or x.get("user_email", "")
+            or ""
+        ).strip().lower() != target
     ]
     _save_users(next_users, preserve_missing=False)
     if len(next_employees) != len(employees):
@@ -3084,6 +3224,7 @@ async def admin_employee_create(request: Request):
     item["id"] = item_id
     account_email = str(item.get("account_email", "")).strip().lower()
     item["account_email"] = account_email
+    item["email"] = account_email
 
     if password:
         if not _is_valid_password(password):
@@ -3129,6 +3270,7 @@ async def admin_employee_update(item_id: str, request: Request):
             merged = {**row, **safe_payload}
             merged["id"] = str(item_id)
             merged["account_email"] = str(merged.get("account_email", "")).strip().lower()
+            merged["email"] = str(merged.get("account_email", "")).strip().lower()
             items[idx] = merged
             updated = merged
             change_lines = _build_change_lines(before, merged, sorted({*before.keys(), *merged.keys()}))
@@ -4395,7 +4537,9 @@ def _build_admin_board_member_issues_payload(
     base_data = _get_prepared_admin_member_issue_base(raw_data)
     prepared_items = list(base_data.get("prepared_items") or [])
 
-    reporter_filter = str(reporter or author_email or "").strip().lower()
+    reporter_raw = str(reporter or author_email or "").strip()
+    reporter_filter = reporter_raw.lower()
+    reporter_filter_key = _normalize_company_member_name(reporter_raw)
     status_filter = str(status or "all").strip().lower() or "all"
     normalized_sort = str(sort_by or "score_desc").strip().lower() or "score_desc"
     if normalized_sort not in {"score_desc", "total_desc", "latest_desc", "name_asc", "rank_asc"}:
@@ -4434,7 +4578,12 @@ def _build_admin_board_member_issues_payload(
 
     filtered_items: list[dict] = []
     for item in prepared_items:
-        if reporter_filter and str(item.get("reporter_key", "") or "") != reporter_filter:
+        item_reporter_key = str(item.get("reporter_key", "") or "")
+        item_reporter_name = str(item.get("reporter", "") or "").strip().lower()
+        if reporter_filter and reporter_filter_key:
+            if item_reporter_key != reporter_filter_key and item_reporter_name != reporter_filter:
+                continue
+        elif reporter_filter and item_reporter_name != reporter_filter:
             continue
         if status_filter != "all" and str(item.get("status_key", "") or "") != status_filter:
             continue
@@ -4478,9 +4627,32 @@ def _build_admin_board_member_issues_payload(
         visible_items = filtered_items[detail_offset_value:detail_offset_value + detail_limit_value]
     shown_count = detail_offset_value + len(visible_items)
 
-    reporter_names = sorted({str(item.get("reporter", "") or "").strip() or "미지정" for item in filtered_items})
+    reporter_groups: dict[str, dict] = {}
+    for item in filtered_items:
+        reporter_name = str(item.get("reporter", "") or "").strip() or "미지정"
+        reporter_key_value = str(item.get("reporter_key", "") or "")
+        group = reporter_groups.get(reporter_name)
+        if group is None:
+            group = {"reporter_key": reporter_key_value, "items": []}
+            reporter_groups[reporter_name] = group
+        group["items"].append(item)
+        if not group.get("reporter_key") and reporter_key_value:
+            group["reporter_key"] = reporter_key_value
+
+    reporter_names = sorted(reporter_groups.keys())
     ranked_core = _build_member_summary_from_issue_rows(filtered_items, reporter_names)
     ranked_by_name = {str(row.get("name", "") or "").strip(): row for row in ranked_core}
+
+    defect_reflection_map: dict[str, bool] = {}
+    try:
+        defect_match_data = _build_defect_match_data(force=False)
+        for row in list(defect_match_data.get("rows") or []):
+            issue_key = _normalize_issue_key_token(str(row.get("key", "") or ""))
+            if not issue_key:
+                continue
+            defect_reflection_map[issue_key] = bool(row.get("in_full_tc"))
+    except Exception:
+        defect_reflection_map = {}
 
     member_meta_map: dict[str, dict] = {}
     for item in filtered_items:
@@ -4516,6 +4688,19 @@ def _build_admin_board_member_issues_payload(
             "rank": 0,
         }
         meta = member_meta_map.get(reporter_name) or {"latest_created_at": "", "recent_titles": []}
+        reporter_group = reporter_groups.get(reporter_name) or {"reporter_key": "", "items": []}
+        reporter_items = list(reporter_group.get("items") or [])
+        reporter_key_value = str(reporter_group.get("reporter_key", "") or "")
+        reflection_total = 0
+        reflection_linked = 0
+        for reporter_item in reporter_items:
+            issue_key = _normalize_issue_key_token(str(reporter_item.get("key", "") or ""))
+            if not issue_key:
+                continue
+            reflection_total += 1
+            if defect_reflection_map.get(issue_key):
+                reflection_linked += 1
+        reflection_rate = round((reflection_linked / reflection_total) * 100.0, 1) if reflection_total else 0.0
         total_issue_member = int(rec.get("total_issue", 0) or 0)
         duplicate_member = int(rec.get("duplicate", 0) or 0)
         not_a_bug_member = int(rec.get("not_a_bug", 0) or 0)
@@ -4532,6 +4717,7 @@ def _build_admin_board_member_issues_payload(
         member_items.append(
             {
                 "reporter": reporter_name,
+                "reporter_key": reporter_key_value,
                 "total_issue": total_issue_member,
                 "duplicate": duplicate_member,
                 "not_a_bug": not_a_bug_member,
@@ -4550,6 +4736,9 @@ def _build_admin_board_member_issues_payload(
                 "open_count": definite_member,
                 "in_progress_count": 0,
                 "closed_count": duplicate_member + not_a_bug_member,
+                "tc_reflection_total": reflection_total,
+                "tc_reflection_linked": reflection_linked,
+                "tc_reflection_rate": reflection_rate,
             }
         )
 
@@ -4635,7 +4824,7 @@ def _build_admin_board_member_issues_payload(
             "reporter_filter_relaxed": bool(base_data.get("reporter_filter_relaxed", False)),
         },
         "filters": {
-            "reporter": reporter_filter,
+            "reporter": reporter_filter_key or reporter_filter,
             "status": status_filter,
             "start_date": str(start_date or ""),
             "end_date": str(end_date or ""),
@@ -5231,13 +5420,11 @@ def excel_center(request: Request):
 
 @app.get("/upload/defectlist-raw", response_class=HTMLResponse)
 def upload_defectlist_raw_page(request: Request):
-    _require_admin(request)
     return templates.TemplateResponse(request, "upload_defectlist_raw.html", {"request": request})
 
 
 @app.get("/upload/full-tc", response_class=HTMLResponse)
 def upload_full_tc_page(request: Request):
-    _require_admin(request)
     return templates.TemplateResponse(request, "upload_full_tc.html", {"request": request})
 
 
@@ -5259,8 +5446,41 @@ def qa_dashboard(request: Request):
 
 
 @app.get("/qa/full-tc", response_class=HTMLResponse)
-def qa_full_tc_dashboard(request: Request):
+def qa_full_tc_dashboard(request: Request, view: str = ""):
+    # 호환 경로: 일부 런타임/캐시 환경에서 전용 라우트 미반영 시에도 바로 접근 가능해야 한다.
+    if str(view or "").strip().lower() in {"color-stats", "color_stats", "colorstats"}:
+        return RedirectResponse(url="/qa/full-tc/color-stats", status_code=307)
     return templates.TemplateResponse(request, "qa_full_tc.html", {"request": request})
+
+
+@app.get("/qa/full-tc/color-stats", response_class=HTMLResponse)
+def qa_full_tc_color_stats_page(request: Request):
+    return templates.TemplateResponse(request, "qa_full_tc_color_stats.html", {"request": request})
+
+
+@app.get("/qa/full-tc/color-stats/", response_class=HTMLResponse)
+def qa_full_tc_color_stats_page_slash(request: Request):
+    return templates.TemplateResponse(request, "qa_full_tc_color_stats.html", {"request": request})
+
+
+@app.get("/qa/full-tc/color_stats", response_class=HTMLResponse)
+def qa_full_tc_color_stats_page_underscore(request: Request):
+    return RedirectResponse(url="/qa/full-tc/color-stats", status_code=307)
+
+
+@app.get("/qa/full-tc/colorstats", response_class=HTMLResponse)
+def qa_full_tc_color_stats_page_compact(request: Request):
+    return RedirectResponse(url="/qa/full-tc/color-stats", status_code=307)
+
+
+@app.get("/qa/full_tc/color-stats", response_class=HTMLResponse)
+def qa_full_tc_color_stats_page_full_tc_alias(request: Request):
+    return RedirectResponse(url="/qa/full-tc/color-stats", status_code=307)
+
+
+@app.get("/qa/fulltc/color-stats", response_class=HTMLResponse)
+def qa_full_tc_color_stats_page_fulltc_alias(request: Request):
+    return RedirectResponse(url="/qa/full-tc/color-stats", status_code=307)
 
 # QA Summary API (프론트엔드 404 대응용 예시)
 @app.get("/qa/summary")
@@ -5708,6 +5928,15 @@ def _uploaded_file_datetime_text(path: Path) -> str:
         return ""
 
 
+def _get_latest_full_tc_source_file(require_exists: bool = True) -> Path:
+    # Full_TC 업로드본을 최우선으로 사용하고, 없을 때만 기본 파일로 폴백한다.
+    if UPLOADED_FULL_TC_FILE.exists():
+        return UPLOADED_FULL_TC_FILE
+    if require_exists and not DEFAULT_EXCEL.exists():
+        raise HTTPException(status_code=404, detail=f"Full_TC source excel not found: {UPLOADED_FULL_TC_FILE} / {DEFAULT_EXCEL}")
+    return DEFAULT_EXCEL
+
+
 def _current_defect_source_info() -> tuple[str, str]:
     if UPLOADED_DEFECT_RAW_FILE.exists():
         return "uploaded-excel", UPLOADED_DEFECT_RAW_FILE.name
@@ -5771,7 +6000,7 @@ def _read_uploaded_excel_range_rows(file_path: Path, sheet_name: str, cell_range
     try:
         resolved_sheet = _resolve_sheet_name(list(wb.sheetnames), sheet_name, default_to_first=True)
         ws = wb[resolved_sheet] if resolved_sheet in wb.sheetnames else wb[wb.sheetnames[0]]
-        max_row = int(end_row or ws.max_row or start_row)
+        max_row = int(end_row if end_row is not None else (ws.max_row or 1048576))
         rows: list[list[str]] = []
         for raw in ws.iter_rows(
             min_row=start_row,
@@ -5896,7 +6125,25 @@ def _load_defect_raw_upload_history() -> list[dict]:
         with DEFECT_RAW_UPLOAD_HISTORY_FILE.open("r", encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, list):
-            return data
+            out = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                out.append(
+                    {
+                        "history_id": str(item.get("history_id") or "").strip(),
+                        "uploaded_at": str(item.get("uploaded_at") or "").strip(),
+                        "uploader_name": str(item.get("uploader_name") or "").strip(),
+                        "uploader_email": str(item.get("uploader_email") or "").strip(),
+                        "original_filename": str(item.get("original_filename") or "").strip(),
+                        "defect_total_rows": int(item.get("defect_total_rows") or 0),
+                        "raw_issue_total_rows": int(item.get("raw_issue_total_rows") or 0),
+                        "snapshot_file": Path(str(item.get("snapshot_file") or "")).name,
+                        "file_hash": str(item.get("file_hash") or "").strip(),
+                        "legacy_key": str(item.get("legacy_key") or "").strip(),
+                    }
+                )
+            return out
     except Exception:
         pass
     return []
@@ -5909,15 +6156,32 @@ def _append_defect_raw_upload_history(
     defect_total_rows: int,
     raw_issue_total_rows: int,
 ) -> None:
+    if not UPLOADED_DEFECT_RAW_FILE.exists():
+        return
+
+    now = datetime.now()
+    history_id = f"dr_{now.strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(3)}"
+    snapshot_file = f"{history_id}.xlsx"
+    snapshot_path = DEFECT_RAW_UPLOAD_HISTORY_DIR / snapshot_file
+
     entry = {
-        "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+        "history_id": history_id,
+        "uploaded_at": now.isoformat(timespec="seconds"),
         "uploader_name": str(uploader_name or ""),
         "uploader_email": str(uploader_email or ""),
         "original_filename": str(original_filename or ""),
         "defect_total_rows": int(defect_total_rows or 0),
         "raw_issue_total_rows": int(raw_issue_total_rows or 0),
+        "snapshot_file": snapshot_file,
+        "file_hash": "",
+        "legacy_key": "",
     }
     with DEFECT_RAW_UPLOAD_HISTORY_LOCK:
+        shutil.copy2(UPLOADED_DEFECT_RAW_FILE, snapshot_path)
+        try:
+            entry["file_hash"] = _hash_file_sha1(snapshot_path)
+        except Exception:
+            entry["file_hash"] = ""
         history = _load_defect_raw_upload_history()
         history.insert(0, entry)
         history = history[:MAX_DEFECT_RAW_UPLOAD_HISTORY]
@@ -5929,6 +6193,335 @@ def _append_defect_raw_upload_history(
             )
         except Exception:
             pass
+
+        keep_files = {Path(str(x.get("snapshot_file") or "")).name for x in history if str(x.get("snapshot_file") or "").strip()}
+        for old_file in DEFECT_RAW_UPLOAD_HISTORY_DIR.glob("*.xlsx"):
+            if old_file.name in keep_files:
+                continue
+            try:
+                old_file.unlink()
+            except Exception:
+                pass
+
+
+def _collect_defect_raw_legacy_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    uploaded_bak = UPLOADED_DEFECT_RAW_FILE.with_suffix(UPLOADED_DEFECT_RAW_FILE.suffix + ".bak")
+
+    if UPLOADED_DEFECT_RAW_FILE.exists():
+        candidates.append(UPLOADED_DEFECT_RAW_FILE)
+    if uploaded_bak.exists():
+        candidates.append(uploaded_bak)
+
+    for p in sorted(UPLOAD_DIR.glob("defectlist_raw_*.xlsx")):
+        if p.exists() and p.is_file():
+            candidates.append(p)
+
+    for p in sorted(DEFECT_RAW_UPLOAD_HISTORY_DIR.glob("*.xlsx")):
+        if p.exists() and p.is_file():
+            candidates.append(p)
+
+    out: list[Path] = []
+    seen: set[str] = set()
+    for p in candidates:
+        key = str(p.resolve()).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return out
+
+
+def _backfill_defect_raw_upload_history_from_legacy_files() -> None:
+    candidates = _collect_defect_raw_legacy_candidates()
+    if not candidates:
+        return
+
+    with DEFECT_RAW_UPLOAD_HISTORY_LOCK:
+        history = _load_defect_raw_upload_history()
+        legacy_keys = {str(x.get("legacy_key") or "").strip() for x in history if str(x.get("legacy_key") or "").strip()}
+        changed = False
+
+        for src in candidates:
+            try:
+                st = src.stat()
+                legacy_key = f"{str(src.resolve()).lower()}|{int(st.st_mtime)}|{int(st.st_size)}"
+            except Exception:
+                continue
+            if legacy_key in legacy_keys:
+                continue
+
+            uploaded_at = datetime.fromtimestamp(float(st.st_mtime)).isoformat(timespec="seconds")
+            history_id = f"legacy_dr_{datetime.fromtimestamp(float(st.st_mtime)).strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(2)}"
+            snapshot_name = f"{history_id}.xlsx"
+            snapshot_path = DEFECT_RAW_UPLOAD_HISTORY_DIR / snapshot_name
+
+            try:
+                if str(src.resolve()).lower() != str(snapshot_path.resolve()).lower():
+                    shutil.copy2(src, snapshot_path)
+                else:
+                    snapshot_name = src.name
+                    snapshot_path = src
+            except Exception:
+                continue
+
+            try:
+                file_hash = _hash_file_sha1(snapshot_path)
+            except Exception:
+                file_hash = ""
+
+            history.insert(
+                0,
+                {
+                    "history_id": history_id,
+                    "uploaded_at": uploaded_at,
+                    "uploader_name": "",
+                    "uploader_email": "",
+                    "original_filename": src.name,
+                    "defect_total_rows": 0,
+                    "raw_issue_total_rows": 0,
+                    "snapshot_file": snapshot_name,
+                    "file_hash": file_hash,
+                    "legacy_key": legacy_key,
+                },
+            )
+            legacy_keys.add(legacy_key)
+            changed = True
+
+        if not changed and DEFECT_RAW_UPLOAD_HISTORY_FILE.exists():
+            return
+
+        history.sort(key=lambda x: str(x.get("uploaded_at") or ""), reverse=True)
+        history = history[:MAX_DEFECT_RAW_UPLOAD_HISTORY]
+        _write_text_atomic(
+            DEFECT_RAW_UPLOAD_HISTORY_FILE,
+            json.dumps(history, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        keep_files = {Path(str(x.get("snapshot_file") or "")).name for x in history if str(x.get("snapshot_file") or "").strip()}
+        for old_file in DEFECT_RAW_UPLOAD_HISTORY_DIR.glob("*.xlsx"):
+            if old_file.name in keep_files:
+                continue
+            try:
+                old_file.unlink()
+            except Exception:
+                pass
+
+
+def _load_full_tc_upload_history() -> list[dict]:
+    if not FULL_TC_UPLOAD_HISTORY_FILE.exists():
+        return []
+    try:
+        with FULL_TC_UPLOAD_HISTORY_FILE.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            out = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                history_id = str(item.get("history_id") or "").strip()
+                snapshot_file = Path(str(item.get("snapshot_file") or "")).name
+                if not history_id or not snapshot_file:
+                    continue
+                out.append(
+                    {
+                        "history_id": history_id,
+                        "uploaded_at": str(item.get("uploaded_at") or "").strip(),
+                        "uploader_name": str(item.get("uploader_name") or "").strip(),
+                        "uploader_email": str(item.get("uploader_email") or "").strip(),
+                        "original_filename": str(item.get("original_filename") or "").strip(),
+                        "stored_filename": str(item.get("stored_filename") or "").strip(),
+                        "sheet_count": int(item.get("sheet_count") or 0),
+                        "snapshot_file": snapshot_file,
+                        "file_hash": str(item.get("file_hash") or "").strip(),
+                        "legacy_key": str(item.get("legacy_key") or "").strip(),
+                    }
+                )
+            return out
+    except Exception:
+        pass
+    return []
+
+
+def _hash_file_sha1(path: Path) -> str:
+    h = hashlib.sha1()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _count_excel_sheets(path: Path) -> int:
+    try:
+        wb = load_workbook(str(path), data_only=True, read_only=True)
+    except Exception:
+        return 0
+    try:
+        return len([x for x in wb.sheetnames if str(x or "").strip()])
+    finally:
+        wb.close()
+
+
+def _collect_full_tc_legacy_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    uploaded_bak = UPLOADED_FULL_TC_FILE.with_suffix(UPLOADED_FULL_TC_FILE.suffix + ".bak")
+
+    if UPLOADED_FULL_TC_FILE.exists():
+        candidates.append(UPLOADED_FULL_TC_FILE)
+    if uploaded_bak.exists():
+        candidates.append(uploaded_bak)
+
+    for p in sorted(UPLOAD_DIR.glob("full_tc_*.xlsx")):
+        if p.exists() and p.is_file():
+            candidates.append(p)
+
+    for p in sorted(FULL_TC_UPLOAD_HISTORY_DIR.glob("*.xlsx")):
+        if p.exists() and p.is_file():
+            candidates.append(p)
+
+    out: list[Path] = []
+    seen: set[str] = set()
+    for p in candidates:
+        key = str(p.resolve()).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return out
+
+
+def _backfill_full_tc_upload_history_from_legacy_files() -> None:
+    candidates = _collect_full_tc_legacy_candidates()
+    if not candidates:
+        return
+
+    with FULL_TC_UPLOAD_HISTORY_LOCK:
+        history = _load_full_tc_upload_history()
+        legacy_keys = {str(x.get("legacy_key") or "").strip() for x in history if str(x.get("legacy_key") or "").strip()}
+        keep_snapshot_names = {Path(str(x.get("snapshot_file") or "")).name for x in history}
+        changed = False
+
+        for src in candidates:
+            try:
+                st = src.stat()
+                legacy_key = f"{str(src.resolve()).lower()}|{int(st.st_mtime)}|{int(st.st_size)}"
+            except Exception:
+                continue
+            if legacy_key in legacy_keys:
+                continue
+
+            uploaded_at = datetime.fromtimestamp(float(st.st_mtime)).isoformat(timespec="seconds")
+            history_id = f"legacy_{datetime.fromtimestamp(float(st.st_mtime)).strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(2)}"
+            snapshot_name = f"{history_id}.xlsx"
+            snapshot_path = FULL_TC_UPLOAD_HISTORY_DIR / snapshot_name
+
+            try:
+                src_resolved = src.resolve()
+                dst_resolved = snapshot_path.resolve()
+                if str(src_resolved).lower() != str(dst_resolved).lower():
+                    shutil.copy2(src, snapshot_path)
+                else:
+                    snapshot_name = src.name
+                    snapshot_path = src
+            except Exception:
+                continue
+
+            try:
+                file_hash = _hash_file_sha1(snapshot_path)
+            except Exception:
+                file_hash = ""
+
+            history.insert(
+                0,
+                {
+                    "history_id": history_id,
+                    "uploaded_at": uploaded_at,
+                    "uploader_name": "",
+                    "uploader_email": "",
+                    "original_filename": src.name,
+                    "stored_filename": UPLOADED_FULL_TC_FILE.name,
+                    "sheet_count": _count_excel_sheets(snapshot_path),
+                    "snapshot_file": snapshot_name,
+                    "file_hash": file_hash,
+                    "legacy_key": legacy_key,
+                },
+            )
+            keep_snapshot_names.add(snapshot_name)
+            legacy_keys.add(legacy_key)
+            changed = True
+
+        if not changed and FULL_TC_UPLOAD_HISTORY_FILE.exists():
+            return
+
+        history.sort(key=lambda x: str(x.get("uploaded_at") or ""), reverse=True)
+        history = history[:MAX_FULL_TC_UPLOAD_HISTORY]
+        _write_text_atomic(
+            FULL_TC_UPLOAD_HISTORY_FILE,
+            json.dumps(history, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        keep_files = {Path(str(x.get("snapshot_file") or "")).name for x in history}
+        for old_file in FULL_TC_UPLOAD_HISTORY_DIR.glob("*.xlsx"):
+            if old_file.name in keep_files:
+                continue
+            try:
+                old_file.unlink()
+            except Exception:
+                pass
+
+
+def _append_full_tc_upload_history(
+    uploader_name: str,
+    uploader_email: str,
+    original_filename: str,
+    sheet_count: int,
+) -> dict:
+    if not UPLOADED_FULL_TC_FILE.exists():
+        return {}
+
+    safe_original = Path(str(original_filename or "")).name
+    now = datetime.now()
+    uploaded_at = now.isoformat(timespec="seconds")
+    history_id = f"ft_{now.strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(3)}"
+    snapshot_file = f"{history_id}.xlsx"
+    snapshot_path = FULL_TC_UPLOAD_HISTORY_DIR / snapshot_file
+
+    with FULL_TC_UPLOAD_HISTORY_LOCK:
+        shutil.copy2(UPLOADED_FULL_TC_FILE, snapshot_path)
+        entry = {
+            "history_id": history_id,
+            "uploaded_at": uploaded_at,
+            "uploader_name": str(uploader_name or ""),
+            "uploader_email": str(uploader_email or ""),
+            "original_filename": safe_original,
+            "stored_filename": UPLOADED_FULL_TC_FILE.name,
+            "sheet_count": int(sheet_count or 0),
+            "snapshot_file": snapshot_file,
+            "file_hash": _hash_file_sha1(snapshot_path),
+            "legacy_key": "",
+        }
+        history = _load_full_tc_upload_history()
+        history.insert(0, entry)
+        history = history[:MAX_FULL_TC_UPLOAD_HISTORY]
+        _write_text_atomic(
+            FULL_TC_UPLOAD_HISTORY_FILE,
+            json.dumps(history, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        keep_files = {Path(str(x.get("snapshot_file") or "")).name for x in history}
+        for old_file in FULL_TC_UPLOAD_HISTORY_DIR.glob("*.xlsx"):
+            if old_file.name in keep_files:
+                continue
+            try:
+                old_file.unlink()
+            except Exception:
+                pass
+    return entry
 
 
 def _fetch_google_sheet_rows(range_ref: str) -> list[list[str]]:
@@ -6428,11 +7021,52 @@ FULL_TC_COMPONENT_SPECS = [
     {"key": "Control", "aliases": ["Control"], "start_row": 21},
     {"key": "Map", "aliases": ["Map"], "start_row": 29},
     {"key": "MyCar", "aliases": ["MyCar", "My Car"], "start_row": 22},
-    {"key": "Home/HL", "aliases": ["Home/HL", "Home / HL", "HomeHL", "Handle Layer / Home", "Handle Layer/Home", "HandleLayer/Home", "Handle Layer Home", "Home", "HL"], "start_row": 19},
+    {"key": "HandleLayer/Home", "aliases": ["Home/HL", "Home / HL", "HomeHL", "Handle Layer / Home", "Handle Layer/Home", "HandleLayer/Home", "Handle Layer Home", "Home", "HL"], "start_row": 19},
     {"key": "Widget", "aliases": ["Widget"], "start_row": 19},
     {"key": "Watch", "aliases": ["Watch"], "start_row": 19},
     {"key": "Common UI", "aliases": ["Common UI", "Common", "CommonUI"], "start_row": 19},
 ]
+
+FULL_TC_COMPONENT_ORDER = [
+    "Control",
+    "Map",
+    "MyCar",
+    "HandleLayer/Home",
+    "Widget",
+    "Watch",
+    "Common UI",
+]
+
+
+def _normalize_full_tc_component_name(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "-"
+    compact = re.sub(r"[\s/_-]+", "", text).lower()
+    if compact == "control":
+        return "Control"
+    if compact == "map":
+        return "Map"
+    if compact == "mycar":
+        return "MyCar"
+    if compact in {"homehl", "handlelayerhome", "handlelayerhl", "home", "hl"}:
+        return "HandleLayer/Home"
+    if compact == "widget":
+        return "Widget"
+    if compact == "watch":
+        return "Watch"
+    if compact in {"commonui", "common"}:
+        return "Common UI"
+    return text
+
+
+def _full_tc_component_sort_key(value: str) -> tuple[int, str]:
+    normalized = _normalize_full_tc_component_name(value)
+    try:
+        rank = FULL_TC_COMPONENT_ORDER.index(normalized)
+    except ValueError:
+        rank = 999
+    return rank, normalized.lower()
 
 FULL_TC_SUMMARY_CACHE: dict[str, dict] = {"ts": 0.0, "uploaded_at": "", "data": {}}
 FULL_TC_SUMMARY_CACHE_TTL_SEC = 300.0  # 5분 캐시 (Excel 파싱 비용 절감)
@@ -6480,6 +7114,31 @@ def _cell_obj_from_tuple(row: tuple, col_index_1_based: int):
     return None
 
 
+def _extract_rgb_hex_from_color(color) -> str:
+    if color is None:
+        return ""
+    rgb_raw = str(getattr(color, "rgb", "") or "").strip().upper()
+    if rgb_raw and re.fullmatch(r"[0-9A-F]{6,8}", rgb_raw):
+        return rgb_raw[-6:]
+    return ""
+
+
+def _extract_rgb_hex_from_cell(cell) -> str:
+    if cell is None:
+        return ""
+    font_color = getattr(getattr(cell, "font", None), "color", None)
+    font_rgb = _extract_rgb_hex_from_color(font_color)
+    if font_rgb:
+        return font_rgb
+    fill = getattr(cell, "fill", None)
+    fg_color = getattr(fill, "fgColor", None)
+    fg_rgb = _extract_rgb_hex_from_color(fg_color)
+    if fg_rgb:
+        return fg_rgb
+    start_color = getattr(fill, "start_color", None)
+    return _extract_rgb_hex_from_color(start_color)
+
+
 def _is_red_color(color) -> bool:
     if color is None:
         return False
@@ -6503,16 +7162,61 @@ def _is_red_font_cell(cell) -> bool:
     return _is_red_color(color)
 
 
+def _is_red_fill_cell(cell) -> bool:
+    if cell is None:
+        return False
+    fill = getattr(cell, "fill", None)
+    if fill is None:
+        return False
+    fg_color = getattr(fill, "fgColor", None)
+    if _is_red_color(fg_color):
+        return True
+    start_color = getattr(fill, "start_color", None)
+    return _is_red_color(start_color)
+
+
+def _is_red_result_cell(cell) -> bool:
+    return _is_red_font_cell(cell) or _is_red_fill_cell(cell)
+
+
+def _color_bucket_from_cell(cell) -> str:
+    if cell is None:
+        return "none"
+    if _is_red_result_cell(cell):
+        return "red"
+    rgb = _extract_rgb_hex_from_cell(cell)
+    if not rgb:
+        return "none"
+    try:
+        r = int(rgb[0:2], 16)
+        g = int(rgb[2:4], 16)
+        b = int(rgb[4:6], 16)
+    except Exception:
+        return "other"
+    # Full_TC 색상 단계: 빨강(가장 이전) -> 주황 -> 노랑 -> 초록(최신)
+    # 빨강은 _is_red_result_cell()에서 먼저 걸러 공란 처리 규칙을 유지한다.
+    if r >= 185 and g >= 105 and g <= 185 and b <= 95 and (r - g) >= 25:
+        return "orange"
+    if r >= 175 and g >= 165 and b <= 120:
+        return "yellow"
+    if g >= 120 and g >= r + 12 and g >= b + 12:
+        return "green"
+    if r >= 120 and r >= g + 20 and r >= b + 20:
+        return "red"
+    return "other"
+
+
 def _result_text_from_tuple(row: tuple, col_index_1_based: int) -> str:
     # 사용자 규칙: 브랜드 결과 셀 텍스트가 빨간색이면 공란 취급
     cell_obj = _cell_obj_from_tuple(row, col_index_1_based)
-    if _is_red_font_cell(cell_obj):
+    if _is_red_result_cell(cell_obj):
         return ""
     return _cell_text_from_tuple(row, col_index_1_based)
 
 
 def _is_n_result(value: str) -> bool:
-    return _normalize_full_tc_result(value) == "fail"
+    compact = re.sub(r"\s+", "", str(value or "").strip()).upper()
+    return compact == "N"
 
 
 def _normalize_full_tc_result(value: str) -> str:
@@ -6522,7 +7226,10 @@ def _normalize_full_tc_result(value: str) -> str:
         return ""
     if text in {"P", "PASS", "OK"}:
         return "pass"
-    if text in {"N", "FAIL", "F"}:
+    # In Full_TC semantics, N should be treated as not-run/blank, not FAIL.
+    if text in {"N"}:
+        return ""
+    if text in {"FAIL", "F"}:
         return "fail"
     if compact in {"NT", "N/T", "NOTTESTED"}:
         return "nt"
@@ -6644,22 +7351,25 @@ def _full_tc_slot_label(slot: str) -> str:
     return "미반영"
 
 
-def _build_full_tc_summary_data(force: bool = False) -> dict:
-    uploaded_at = _full_tc_uploaded_at_text()
-    now = time.monotonic()
-    if not force and uploaded_at:
-        cached = FULL_TC_SUMMARY_CACHE.get("data") or {}
-        cached_ts = float(FULL_TC_SUMMARY_CACHE.get("ts") or 0.0)
-        cached_uploaded_at = str(FULL_TC_SUMMARY_CACHE.get("uploaded_at") or "")
-        if cached and cached_uploaded_at == uploaded_at and (now - cached_ts) < FULL_TC_SUMMARY_CACHE_TTL_SEC:
-            return cached
+def _build_full_tc_summary_data(force: bool = False, file_path: "Path | None" = None) -> dict:
+    use_file = file_path if file_path is not None else UPLOADED_FULL_TC_FILE
+    # 캐시는 기본 파일(최신)에 대해서만 적용
+    if use_file == UPLOADED_FULL_TC_FILE:
+        uploaded_at = _full_tc_uploaded_at_text()
+        now = time.monotonic()
+        if not force and uploaded_at:
+            cached = FULL_TC_SUMMARY_CACHE.get("data") or {}
+            cached_ts = float(FULL_TC_SUMMARY_CACHE.get("ts") or 0.0)
+            cached_uploaded_at = str(FULL_TC_SUMMARY_CACHE.get("uploaded_at") or "")
+            if cached and cached_uploaded_at == uploaded_at and (now - cached_ts) < FULL_TC_SUMMARY_CACHE_TTL_SEC:
+                return cached
 
-    if not UPLOADED_FULL_TC_FILE.exists():
+    if not use_file.exists():
         return {
             "ok": False,
             "detail": "업로드된 Full_TC 파일이 없습니다.",
             "source_type": "uploaded_excel",
-            "source": UPLOADED_FULL_TC_FILE.name,
+            "source": use_file.name,
             "uploaded_at": "",
             "components": [],
             "group_rows": [],
@@ -6668,7 +7378,7 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
             "detail_rows": [],
         }
 
-    wb = load_workbook(str(UPLOADED_FULL_TC_FILE), data_only=True, read_only=True)
+    wb = load_workbook(str(use_file), data_only=True, read_only=True)
     try:
         sheet_names = list(wb.sheetnames)
         component_items: list[dict] = []
@@ -6676,6 +7386,7 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
         brand_group_map: dict[tuple[str, str, str, str, str, str], dict] = {}
         label_map: dict[str, dict] = {}
         brand_result_map: dict[str, dict] = {}
+        brand_component_color_map: dict[tuple[str, str, str, str], dict] = {}
         detail_rows: list[dict] = []
         total_counts = Counter()
         result_fields = (
@@ -6727,31 +7438,21 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
                 pre_condition = _cell_text_from_tuple(row, 10)
                 tc_procedure = _cell_text_from_tuple(row, 12)
                 expected_result = _cell_text_from_tuple(row, 13)
-                base_result_raw = _cell_text_from_tuple(row, 14)
+                # N열(base_result) 원본값을 통계 기준으로 사용한다.
+                base_result_raw = _result_text_from_tuple(row, 14)
+                koa_result_cell = _cell_obj_from_tuple(row, 15)
                 koa_result = _result_text_from_tuple(row, 15)
-                koa_android = _cell_text_from_tuple(row, 16)
-                koa_ios = _cell_text_from_tuple(row, 17)
+                koa_android = _result_text_from_tuple(row, 16)
+                koa_ios = _result_text_from_tuple(row, 17)
+                hoa_result_cell = _cell_obj_from_tuple(row, 18)
                 hoa_result = _result_text_from_tuple(row, 18)
-                hoa_android = _cell_text_from_tuple(row, 19)
-                hoa_ios = _cell_text_from_tuple(row, 20)
+                hoa_android = _result_text_from_tuple(row, 19)
+                hoa_ios = _result_text_from_tuple(row, 20)
+                goa_result_cell = _cell_obj_from_tuple(row, 21)
                 goa_result = _result_text_from_tuple(row, 21)
-                goa_android = _cell_text_from_tuple(row, 22)
-                goa_ios = _cell_text_from_tuple(row, 23)
-                base_result = _derive_full_tc_base_result(
-                    # 사용자 규칙 예시: COUNTIF(P:W)
-                    # -> 16~23열 값을 우선 사용해 N열을 계산
-                    koa_android,
-                    koa_ios,
-                    hoa_result,
-                    hoa_android,
-                    hoa_ios,
-                    goa_result,
-                    goa_android,
-                    goa_ios,
-                )
-                if base_result == "-" and base_result_raw:
-                    # P:W가 비어 있고 N열 원본 값이 존재하는 파일 호환
-                    base_result = base_result_raw
+                goa_android = _result_text_from_tuple(row, 22)
+                goa_ios = _result_text_from_tuple(row, 23)
+                base_result = base_result_raw
                 closed_jira_no = _cell_text_from_tuple(row, 24)
                 jira_no = _cell_text_from_tuple(row, 25)
                 nt_na_reason = _cell_text_from_tuple(row, 26)
@@ -6809,12 +7510,15 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
                     "expected_result": expected_result,
                     "base_result": base_result,
                     "koa_result": koa_result,
+                    "koa_color": _color_bucket_from_cell(koa_result_cell),
                     "koa_android": koa_android,
                     "koa_ios": koa_ios,
                     "hoa_result": hoa_result,
+                    "hoa_color": _color_bucket_from_cell(hoa_result_cell),
                     "hoa_android": hoa_android,
                     "hoa_ios": hoa_ios,
                     "goa_result": goa_result,
+                    "goa_color": _color_bucket_from_cell(goa_result_cell),
                     "goa_android": goa_android,
                     "goa_ios": goa_ios,
                     "closed_jira_no": closed_jira_no,
@@ -6826,6 +7530,46 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
                 detail_rows.append(row_item)
 
                 brand_key = brand or "-"
+                for slot_name, color_bucket, result_text in (
+                    ("KOA", row_item["koa_color"], koa_result),
+                    ("HOA", row_item["hoa_color"], hoa_result),
+                    ("GOA", row_item["goa_color"], goa_result),
+                ):
+                    color_key = (brand_key, component_key, slot_name, color_bucket)
+                    color_entry = brand_component_color_map.get(color_key)
+                    if color_entry is None:
+                        color_entry = {
+                            "brand": brand_key,
+                            "component": component_key,
+                            "slot": slot_name,
+                            "color": color_bucket,
+                            "count": 0,
+                            "empty_result_count": 0,
+                            "non_empty_result_count": 0,
+                            "pass_count": 0,
+                            "fail_count": 0,
+                            "nt_count": 0,
+                            "na_count": 0,
+                            "other_count": 0,
+                        }
+                        brand_component_color_map[color_key] = color_entry
+                    color_entry["count"] += 1
+                    normalized_slot_result = _normalize_full_tc_result(result_text)
+                    if str(result_text or "").strip():
+                        color_entry["non_empty_result_count"] += 1
+                    else:
+                        color_entry["empty_result_count"] += 1
+                    if normalized_slot_result == "pass":
+                        color_entry["pass_count"] += 1
+                    elif normalized_slot_result == "fail":
+                        color_entry["fail_count"] += 1
+                    elif normalized_slot_result == "nt":
+                        color_entry["nt_count"] += 1
+                    elif normalized_slot_result == "na":
+                        color_entry["na_count"] += 1
+                    elif normalized_slot_result == "other":
+                        color_entry["other_count"] += 1
+
                 brand_entry = brand_result_map.get(brand_key)
                 if brand_entry is None:
                     brand_entry = {
@@ -6859,6 +7603,34 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
                     if enabled:
                         component_counts[field_name] += 1
                         total_counts[field_name] += 1
+
+                # PASS Rate는 N열(base_result) 기준 PASS/(PASS+FAIL)로 계산한다.
+                brand_group_key = (brand_key, component_key, category, depth1, depth2, depth3)
+                brand_group_entry = brand_group_map.get(brand_group_key)
+                if brand_group_entry is None:
+                    brand_group_entry = {
+                        "brand": brand_key,
+                        "component": component_key,
+                        "category": category,
+                        "depth1": depth1,
+                        "depth2": depth2,
+                        "depth3": depth3,
+                        "cell_count": 0,
+                        "pass_count": 0,
+                        "fail_count": 0,
+                        "nt_count": 0,
+                        "na_count": 0,
+                        "other_count": 0,
+                        "base_pass_count": 0,
+                        "base_fail_count": 0,
+                    }
+                    brand_group_map[brand_group_key] = brand_group_entry
+                base_bucket = _normalize_full_tc_result(base_result)
+                if base_bucket == "pass":
+                    brand_group_entry["base_pass_count"] += 1
+                elif base_bucket == "fail":
+                    brand_group_entry["base_fail_count"] += 1
+
                 for field_name in result_fields:
                     bucket = _normalize_full_tc_result(row_item.get(field_name, ""))
                     if not bucket:
@@ -6867,25 +7639,6 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
                     brand_entry[f"{bucket}_count"] += 1
                     component_counts[f"result_{bucket}_count"] += 1
                     total_counts[f"result_{bucket}_count"] += 1
-
-                    brand_group_key = (brand_key, component_key, category, depth1, depth2, depth3)
-                    brand_group_entry = brand_group_map.get(brand_group_key)
-                    if brand_group_entry is None:
-                        brand_group_entry = {
-                            "brand": brand_key,
-                            "component": component_key,
-                            "category": category,
-                            "depth1": depth1,
-                            "depth2": depth2,
-                            "depth3": depth3,
-                            "cell_count": 0,
-                            "pass_count": 0,
-                            "fail_count": 0,
-                            "nt_count": 0,
-                            "na_count": 0,
-                            "other_count": 0,
-                        }
-                        brand_group_map[brand_group_key] = brand_group_entry
                     brand_group_entry["cell_count"] += 1
                     brand_group_entry[f"{bucket}_count"] += 1
                 if jira_no:
@@ -6996,7 +7749,7 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
                     "labels_preview": ", ".join(sorted(list(entry.get("labels") or set()))[:4]),
                 }
             )
-        group_rows.sort(key=lambda item: (str(item.get("component", "")), str(item.get("category", "")), str(item.get("depth1", "")), str(item.get("depth2", "")), str(item.get("depth3", "")), str(item.get("brand", ""))))
+        group_rows.sort(key=lambda item: (_full_tc_component_sort_key(str(item.get("component", ""))), str(item.get("category", "")), str(item.get("depth1", "")), str(item.get("depth2", "")), str(item.get("depth3", "")), str(item.get("brand", ""))))
 
         label_rows = []
         for entry in label_map.values():
@@ -7005,7 +7758,7 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
                     "label": entry.get("label", ""),
                     "count": int(entry.get("count", 0)),
                     "task_count": len(entry.get("task_keys") or set()),
-                    "components": ", ".join(sorted(list(entry.get("components") or set()))),
+                    "components": ", ".join(sorted(list(entry.get("components") or set()), key=_full_tc_component_sort_key)),
                     "component_count": len(entry.get("components") or set()),
                     "jira_count": int(entry.get("jira_count", 0)),
                     "closed_jira_count": int(entry.get("closed_jira_count", 0)),
@@ -7033,7 +7786,7 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
                     "na_count": int(entry.get("na_count", 0) or 0),
                     "other_count": int(entry.get("other_count", 0) or 0),
                     "fail_rate": round((fail_count / cell_count) * 100.0, 1) if cell_count else 0.0,
-                    "components": ", ".join(sorted(list(entry.get("components") or set()))),
+                    "components": ", ".join(sorted(list(entry.get("components") or set()), key=_full_tc_component_sort_key)),
                 }
             )
         brand_rows.sort(key=lambda item: (-int(item.get("fail_count", 0)), str(item.get("brand", ""))))
@@ -7042,6 +7795,9 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
         for entry in brand_group_map.values():
             cell_count = int(entry.get("cell_count", 0) or 0)
             pass_count = int(entry.get("pass_count", 0) or 0)
+            base_pass_count = int(entry.get("base_pass_count", 0) or 0)
+            base_fail_count = int(entry.get("base_fail_count", 0) or 0)
+            pass_denominator = base_pass_count + base_fail_count
             brand_group_rows.append(
                 {
                     "brand": entry.get("brand", "-"),
@@ -7056,10 +7812,141 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
                     "nt_count": int(entry.get("nt_count", 0) or 0),
                     "na_count": int(entry.get("na_count", 0) or 0),
                     "other_count": int(entry.get("other_count", 0) or 0),
-                    "pass_rate": round((pass_count / cell_count) * 100.0, 1) if cell_count else 0.0,
+                    "base_pass_count": base_pass_count,
+                    "base_fail_count": base_fail_count,
+                    "pass_rate": round((base_pass_count / pass_denominator) * 100.0, 1) if pass_denominator else 0.0,
                 }
             )
-        brand_group_rows.sort(key=lambda item: (-int(item.get("pass_count", 0)), str(item.get("brand", "")), str(item.get("component", "")), str(item.get("category", "")), str(item.get("depth1", "")), str(item.get("depth2", "")), str(item.get("depth3", ""))))
+        brand_group_rows.sort(key=lambda item: (str(item.get("brand", "")), _full_tc_component_sort_key(str(item.get("component", ""))), str(item.get("category", "")), str(item.get("depth1", "")), str(item.get("depth2", "")), str(item.get("depth3", ""))))
+
+        brand_component_slot_totals: dict[tuple[str, str, str], int] = {}
+        brand_component_slot_metrics: dict[tuple[str, str, str], dict] = {}
+        for entry in brand_component_color_map.values():
+            slot_key = (
+                str(entry.get("brand", "") or ""),
+                str(entry.get("component", "") or ""),
+                str(entry.get("slot", "") or ""),
+            )
+            brand_component_slot_totals[slot_key] = int(brand_component_slot_totals.get(slot_key, 0) or 0) + int(entry.get("count", 0) or 0)
+            slot_entry = brand_component_slot_metrics.get(slot_key)
+            if slot_entry is None:
+                slot_entry = {
+                    "non_empty_result_count": 0,
+                    "pass_count": 0,
+                    "fail_count": 0,
+                }
+                brand_component_slot_metrics[slot_key] = slot_entry
+            slot_entry["non_empty_result_count"] += int(entry.get("non_empty_result_count", 0) or 0)
+            slot_entry["pass_count"] += int(entry.get("pass_count", 0) or 0)
+            slot_entry["fail_count"] += int(entry.get("fail_count", 0) or 0)
+
+        brand_component_color_rows = []
+        for entry in brand_component_color_map.values():
+            slot_key = (
+                str(entry.get("brand", "") or ""),
+                str(entry.get("component", "") or ""),
+                str(entry.get("slot", "") or ""),
+            )
+            slot_total = int(brand_component_slot_totals.get(slot_key, 0) or 0)
+            count = int(entry.get("count", 0) or 0)
+            non_empty_result_count = int(entry.get("non_empty_result_count", 0) or 0)
+            pass_count = int(entry.get("pass_count", 0) or 0)
+            fail_count = int(entry.get("fail_count", 0) or 0)
+            run_denominator = count
+            pass_denominator = pass_count + fail_count
+            slot_metrics = brand_component_slot_metrics.get(slot_key) or {}
+            slot_non_empty_count = int(slot_metrics.get("non_empty_result_count", 0) or 0)
+            slot_pass_count = int(slot_metrics.get("pass_count", 0) or 0)
+            slot_fail_count = int(slot_metrics.get("fail_count", 0) or 0)
+            slot_pass_denominator = slot_pass_count + slot_fail_count
+            brand_component_color_rows.append(
+                {
+                    "brand": str(entry.get("brand", "") or "-"),
+                    "component": str(entry.get("component", "") or "-"),
+                    "slot": str(entry.get("slot", "") or ""),
+                    "color": str(entry.get("color", "") or "none"),
+                    "count": count,
+                    "ratio": round((count / slot_total) * 100.0, 1) if slot_total else 0.0,
+                    "slot_total": slot_total,
+                    "empty_result_count": int(entry.get("empty_result_count", 0) or 0),
+                    "non_empty_result_count": non_empty_result_count,
+                    "pass_count": pass_count,
+                    "fail_count": fail_count,
+                    "nt_count": int(entry.get("nt_count", 0) or 0),
+                    "na_count": int(entry.get("na_count", 0) or 0),
+                    "other_count": int(entry.get("other_count", 0) or 0),
+                    "run_rate": round((non_empty_result_count / run_denominator) * 100.0, 1) if run_denominator else 0.0,
+                    "pass_rate": round((pass_count / pass_denominator) * 100.0, 1) if pass_denominator else 0.0,
+                    "slot_run_rate": round((slot_non_empty_count / slot_total) * 100.0, 1) if slot_total else 0.0,
+                    "slot_pass_rate": round((slot_pass_count / slot_pass_denominator) * 100.0, 1) if slot_pass_denominator else 0.0,
+                }
+            )
+        color_order = {"red": 0, "orange": 1, "yellow": 2, "green": 3, "other": 4, "none": 5}
+        brand_component_color_rows.sort(
+            key=lambda item: (
+                str(item.get("brand", "")),
+                _full_tc_component_sort_key(str(item.get("component", ""))),
+                str(item.get("slot", "")),
+                int(color_order.get(str(item.get("color", "")), 9)),
+            )
+        )
+
+        statistics_formula = {
+            "available": False,
+            "total": 0,
+            "pass": 0,
+            "fail": 0,
+            "na": 0,
+            "nt": 0,
+            "empty": 0,
+            "other": 0,
+            "run_rate": 0.0,
+            "pass_rate": 0.0,
+            "run_numerator": 0,
+            "run_denominator": 0,
+        }
+        try:
+            if "Statistics" in wb.sheetnames:
+                ws_stat = wb["Statistics"]
+
+                def _as_int_cell(addr: str) -> int:
+                    try:
+                        return int(float(ws_stat[addr].value or 0))
+                    except (TypeError, ValueError):
+                        return 0
+
+                total = _as_int_cell("D39")
+                pass_count = _as_int_cell("E39")
+                fail_count = _as_int_cell("F39")
+                na_count = _as_int_cell("G39")
+                nt_count = _as_int_cell("H39")
+                empty_count = _as_int_cell("I39")
+
+                run_denominator = _as_int_cell("D12") + _as_int_cell("D20") + _as_int_cell("D28")
+                if run_denominator <= 0:
+                    run_denominator = max(0, total)
+                run_numerator = max(0, run_denominator - empty_count)
+                run_rate = round((run_numerator / run_denominator) * 100.0, 1) if run_denominator else 0.0
+
+                pass_denominator = pass_count + fail_count
+                pass_rate = round((pass_count / pass_denominator) * 100.0, 1) if pass_denominator else 0.0
+
+                statistics_formula = {
+                    "available": True,
+                    "total": total,
+                    "pass": pass_count,
+                    "fail": fail_count,
+                    "na": na_count,
+                    "nt": nt_count,
+                    "empty": empty_count,
+                    "other": 0,
+                    "run_rate": run_rate,
+                    "pass_rate": pass_rate,
+                    "run_numerator": run_numerator,
+                    "run_denominator": run_denominator,
+                }
+        except Exception:
+            statistics_formula = statistics_formula
 
         data = {
             "ok": True,
@@ -7072,12 +7959,15 @@ def _build_full_tc_summary_data(force: bool = False) -> dict:
             "brand_group_rows": brand_group_rows,
             "label_rows": label_rows,
             "brand_rows": brand_rows,
+            "brand_component_color_rows": brand_component_color_rows,
             "detail_rows": detail_rows,
+            "statistics_formula": statistics_formula,
             "totals": {
                 "row_count": len(detail_rows),
                 "component_count": len([x for x in component_items if x.get("matched_sheet")]),
                 "label_count": len(label_rows),
                 "brand_count": len(brand_rows),
+                "brand_component_color_count": len(brand_component_color_rows),
                 **{k: int(v) for k, v in total_counts.items()},
             },
             "updated_at": datetime.now().isoformat(timespec="seconds"),
@@ -7096,19 +7986,116 @@ def qa_full_tc_summary(force: bool = False):
     return _build_full_tc_summary_data(force=bool(force))
 
 
-def _record_full_tc_bridge_sample(elapsed_ms: float, summary_ok: bool, defect_ok: bool) -> None:
-    with FULL_TC_BRIDGE_PERF_LOCK:
-        FULL_TC_BRIDGE_PERF_SAMPLES.append(
-            {
-                "ts": time.time(),
-                "elapsed_ms": float(elapsed_ms),
-                "summary_ok": bool(summary_ok),
-                "defect_ok": bool(defect_ok),
+@app.get("/api/qa/full-tc/color-stats")
+def qa_full_tc_color_stats(force: bool = False):
+    summary = _build_full_tc_summary_data(force=bool(force))
+    if not summary.get("ok"):
+        return summary
+    rows = list(summary.get("brand_component_color_rows") or [])
+    detail_rows = list(summary.get("detail_rows") or [])
+    return {
+        "ok": True,
+        "detail": "ok",
+        "source_type": summary.get("source_type", "uploaded_excel"),
+        "source": summary.get("source", ""),
+        "uploaded_at": summary.get("uploaded_at", ""),
+        "updated_at": summary.get("updated_at", ""),
+        "rows": rows,
+        "detail_rows": detail_rows,
+        "totals": {
+            "row_count": len(rows),
+            "brand_count": len({str(x.get("brand", "") or "") for x in rows}),
+            "component_count": len({str(x.get("component", "") or "") for x in rows}),
+            "detail_row_count": len(detail_rows),
+        },
+    }
+
+
+@app.get("/api/qa/full-tc/color_stats")
+def qa_full_tc_color_stats_alias_underscore(force: bool = False):
+    return qa_full_tc_color_stats(force=force)
+
+
+@app.get("/api/qa/full-tc/versions")
+def qa_full_tc_versions(request: Request):
+    """업로드 히스토리에서 사이클/버전 목록을 반환합니다 (로그인 사용자 접근 가능)."""
+    _backfill_full_tc_upload_history_from_legacy_files()
+    history = _load_full_tc_upload_history()
+    seen_cycles: dict[str, dict] = {}
+    for item in history:
+        history_id = str(item.get("history_id") or "").strip()
+        if not history_id.startswith("ft_"):
+            continue
+        filename = str(item.get("original_filename") or "").strip()
+        uploaded_at = str(item.get("uploaded_at") or "").strip()
+        # 파일명에서 사이클 코드 추출: _2604, _2603 등 4자리 숫자 패턴
+        m = re.search(r"_(\d{4})(?:[^\d]|$)", filename)
+        cycle = m.group(1) if m else ""
+        if not cycle:
+            continue
+        snapshot_file = str(item.get("snapshot_file") or "").strip()
+        snapshot_path = FULL_TC_UPLOAD_HISTORY_DIR / Path(snapshot_file).name if snapshot_file else None
+        if snapshot_path and not snapshot_path.exists():
+            continue
+        # 같은 사이클에서 가장 최신(첫 번째) 항목만 유지
+        if cycle not in seen_cycles:
+            seen_cycles[cycle] = {
+                "cycle": cycle,
+                "history_id": history_id,
+                "original_filename": filename,
+                "uploaded_at": uploaded_at,
             }
-        )
+    versions = sorted(seen_cycles.values(), key=lambda x: str(x.get("cycle") or ""))
+    return {"ok": True, "versions": versions}
 
 
-def _build_full_tc_bridge_perf_snapshot(window_sec: int = 300) -> dict:
+@app.get("/api/qa/full-tc/summary")
+def qa_full_tc_summary(force: bool = False):
+    return _build_full_tc_summary_data(force=bool(force))
+
+
+@app.get("/api/qa/full-tc/color-stats")
+def qa_full_tc_color_stats(force: bool = False, history_id: str = ""):
+    file_path = None
+    history_label = ""
+    wanted_id = str(history_id or "").strip()
+    if wanted_id:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", wanted_id):
+            raise HTTPException(status_code=400, detail="invalid history_id")
+        with FULL_TC_UPLOAD_HISTORY_LOCK:
+            history = _load_full_tc_upload_history()
+            item = next((x for x in history if str(x.get("history_id") or "") == wanted_id), None)
+        if not item:
+            raise HTTPException(status_code=404, detail="history not found")
+        snap_name = Path(str(item.get("snapshot_file") or "")).name
+        snap_path = FULL_TC_UPLOAD_HISTORY_DIR / snap_name if snap_name else None
+        if not snap_path or not snap_path.exists():
+            raise HTTPException(status_code=404, detail="history file not found")
+        file_path = snap_path
+        history_label = str(item.get("original_filename") or wanted_id)
+    summary = _build_full_tc_summary_data(force=bool(force), file_path=file_path)
+    if not summary.get("ok"):
+        return summary
+    rows = list(summary.get("brand_component_color_rows") or [])
+    detail_rows = list(summary.get("detail_rows") or [])
+    return {
+        "ok": True,
+        "detail": "ok",
+        "history_id": wanted_id,
+        "history_label": history_label,
+        "source_type": summary.get("source_type", "uploaded_excel"),
+        "source": summary.get("source", ""),
+        "uploaded_at": summary.get("uploaded_at", ""),
+        "updated_at": summary.get("updated_at", ""),
+        "rows": rows,
+        "detail_rows": detail_rows,
+        "totals": {
+            "row_count": len(rows),
+            "brand_count": len({str(x.get("brand", "") or "") for x in rows}),
+            "component_count": len({str(x.get("component", "") or "") for x in rows}),
+            "detail_row_count": len(detail_rows),
+        },
+    }
     selected = max(30, min(3600, int(window_sec or 300)))
     cutoff = time.time() - float(selected)
     with FULL_TC_BRIDGE_PERF_LOCK:
@@ -7342,6 +8329,7 @@ def _build_defect_match_data(force: bool = False, summary_data: dict | None = No
                     "tc_id": str(row.get("tc_id", "")),
                     "sheet_row": row.get("sheet_row", ""),
                     "field_label": label,
+                    "label": str(row.get("label", "")),
                 }
                 target_map[val].append(ref_item)
                 if val not in full_tc_key_rows:
@@ -7397,6 +8385,7 @@ def _build_defect_match_data(force: bool = False, summary_data: dict | None = No
     created_idx = col_offset + 13
     labels_idx = col_offset + 14
     raw_headers: list[str] = []
+    deployment_idx = col_offset + 6  # Default: H열
     if has_header:
         headers = [str(x or "").strip() for x in raw_rows[0]]
         raw_headers = list(headers)
@@ -7409,6 +8398,7 @@ def _build_defect_match_data(force: bool = False, summary_data: dict | None = No
         detected_assignee_idx = _find_col_index(headers, ["assignee", "담당자"])
         detected_created_idx = _find_col_index(headers, ["created", "등록일", "생성일"])
         detected_labels_idx = _find_col_index(headers, ["labels", "label", "라벨"])
+        detected_deployment_idx = _find_col_index(headers, ["deployment", "deploy", "배포", "정기배포", "release"])
         if detected_key_idx >= 0:
             key_idx = detected_key_idx
         if detected_status_idx >= 0:
@@ -7427,6 +8417,8 @@ def _build_defect_match_data(force: bool = False, summary_data: dict | None = No
             created_idx = detected_created_idx
         if detected_labels_idx >= 0:
             labels_idx = detected_labels_idx
+        if detected_deployment_idx >= 0:
+            deployment_idx = detected_deployment_idx
         data_rows = raw_rows[1:]
     else:
         header_width = max((len(row) for row in raw_rows), default=0)
@@ -7436,6 +8428,7 @@ def _build_defect_match_data(force: bool = False, summary_data: dict | None = No
     audit_counts = Counter()
     violation_rows: list[dict] = []
     seen_keys: set[str] = set()
+    deployment_labels: set[str] = set()  # 배포 정보 수집
     data_start_row = 2 if has_header else 1
     for raw_idx, raw in enumerate(data_rows):
         key = str(raw[key_idx] if len(raw) > key_idx else "").strip()
@@ -7461,6 +8454,9 @@ def _build_defect_match_data(force: bool = False, summary_data: dict | None = No
         assignee_text = str(raw[assignee_idx] if len(raw) > assignee_idx else "").strip()
         created_text = str(raw[created_idx] if len(raw) > created_idx else "").strip()
         labels_text = str(raw[labels_idx] if len(raw) > labels_idx else "").strip()
+        deployment_text = str(raw[deployment_idx] if len(raw) > deployment_idx else "").strip()
+        if deployment_text:
+            deployment_labels.add(deployment_text)
         raw_sheet_row = data_start_row + raw_idx
         jira_refs = open_key_refs.get(normalized_key, [])
         closed_refs = closed_key_refs.get(normalized_key, [])
@@ -7514,6 +8510,7 @@ def _build_defect_match_data(force: bool = False, summary_data: dict | None = No
             "assignee": assignee_text,
             "created": created_text,
             "labels": labels_text,
+            "deployment": deployment_text,
             "raw_sheet_row": raw_sheet_row,
             "in_full_tc": bool(tc_refs),
             "in_jira_no": in_y,
@@ -7571,6 +8568,9 @@ def _build_defect_match_data(force: bool = False, summary_data: dict | None = No
         )
     )
 
+    # 배포 목록을 정렬
+    sorted_deployments = sorted([d for d in deployment_labels if d])
+
     data = {
         "ok": True,
         "detail": "ok",
@@ -7578,6 +8578,7 @@ def _build_defect_match_data(force: bool = False, summary_data: dict | None = No
         "defect_source": defect_source,
         "defect_uploaded_at": defect_uploaded_at,
         "full_tc_source": summary.get("source", ""),
+        "deployment_labels": sorted_deployments,
         "total_defects": len(rows),
         "matched_count": matched,
         "unmatched_count": unmatched,
@@ -7986,15 +8987,23 @@ def _save_company_members(members: list[str]) -> None:
 
 
 def _is_duplicate_issue(resolution: str, issue_type: str) -> bool:
-    t = str(issue_type or "").lower()
-    r = str(resolution or "").lower()
-    return "duplicate" in r or "중복" in r or "duplicate" in t or "중복" in t
+    t = re.sub(r"\s+", " ", str(issue_type or "").strip()).lower()
+    r = re.sub(r"\s+", " ", str(resolution or "").strip()).lower()
+    t_compact = re.sub(r"[^a-z0-9가-힣]+", "", t)
+    r_compact = re.sub(r"[^a-z0-9가-힣]+", "", r)
+    if "duplicate" in r or "duplicate" in t or "중복" in r or "중복" in t:
+        return True
+    return ("duplicate" in r_compact) or ("duplicate" in t_compact) or ("중복" in r_compact) or ("중복" in t_compact)
 
 
 def _is_not_a_bug(resolution: str, issue_type: str) -> bool:
-    t = str(issue_type or "").lower()
-    r = str(resolution or "").lower()
-    return ("not a bug" in r) or ("notabug" in r) or ("not a bug" in t) or ("notabug" in t)
+    t = re.sub(r"\s+", " ", str(issue_type or "").strip()).lower()
+    r = re.sub(r"\s+", " ", str(resolution or "").strip()).lower()
+    t_compact = re.sub(r"[^a-z0-9가-힣]+", "", t)
+    r_compact = re.sub(r"[^a-z0-9가-힣]+", "", r)
+    if ("not a bug" in r) or ("not a bug" in t):
+        return True
+    return ("notabug" in r_compact) or ("notabug" in t_compact)
 
 
 def _severity_bucket(priority: str) -> str:
@@ -8524,7 +9533,7 @@ def _get_prepared_admin_member_issue_base(raw_data: dict) -> dict:
         status_label = str(item.get("status", "") or "")
         reporter_name = str(item.get("reporter", "") or "")
         if reporter_key and reporter_key not in reporter_options_map:
-            reporter_options_map[reporter_key] = {"value": reporter_name, "name": reporter_name}
+            reporter_options_map[reporter_key] = {"value": reporter_key, "name": reporter_name}
         if status_key and status_key not in status_options_map:
             status_options_map[status_key] = {"value": status_key, "label": status_label}
 
@@ -8789,8 +9798,33 @@ def _closing_group_from_issue_row(row: dict) -> str:
     return "기타"
 
 
-def _build_closing_summary_stats(issue_rows: list[dict], selected_cycle: str = "") -> dict:
-    wanted_cycle = str(selected_cycle or "").strip()
+def _parse_closing_cycle_selection(raw: str | list[str] | tuple[str, ...] | set[str] | None) -> list[str]:
+    if raw is None:
+        return []
+
+    if isinstance(raw, (list, tuple, set)):
+        parts = [str(item or "").strip() for item in raw]
+    else:
+        parts = [str(item or "").strip() for item in str(raw or "").split(",")]
+
+    selected: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        if not part or part in seen:
+            continue
+        seen.add(part)
+        selected.append(part)
+    return selected
+
+
+def _build_closing_summary_stats(
+    issue_rows: list[dict],
+    selected_cycles: list[str] | None = None,
+    start_date: str = "",
+    end_date: str = "",
+) -> dict:
+    wanted_cycles = _parse_closing_cycle_selection(selected_cycles)
+    wanted_cycle_set = set(wanted_cycles)
     groups = ["KOA", "HOA", "GOA", "기타"]
 
     # Build tab candidates first from DefectList_Raw derived rows.
@@ -8805,8 +9839,10 @@ def _build_closing_summary_stats(issue_rows: list[dict], selected_cycle: str = "
             cycle_counter[c] += 1
 
     cycles_sorted = sorted(cycle_counter.keys())
-    if wanted_cycle and wanted_cycle not in cycle_counter:
-        cycles_sorted.append(wanted_cycle)
+    if wanted_cycles:
+        for cycle in wanted_cycles:
+            if cycle not in cycle_counter:
+                cycles_sorted.append(cycle)
         cycles_sorted = sorted(set(cycles_sorted))
 
     def _norm_status(v: str) -> str:
@@ -8848,7 +9884,7 @@ def _build_closing_summary_stats(issue_rows: list[dict], selected_cycle: str = "
                 str(row.get("affects_versions", "")),
                 str(row.get("components", "")),
             )
-            if wanted_cycle and wanted_cycle not in cycles:
+            if wanted_cycle_set and not wanted_cycle_set.intersection(cycles):
                 continue
 
             group_total += 1
@@ -8914,7 +9950,10 @@ def _build_closing_summary_stats(issue_rows: list[dict], selected_cycle: str = "
     return {
         "ok": True,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
-        "selected_cycle": wanted_cycle,
+        "selected_cycle": wanted_cycles[0] if len(wanted_cycles) == 1 else "",
+        "selected_cycles": wanted_cycles,
+        "start_date": str(start_date or "").strip(),
+        "end_date": str(end_date or "").strip(),
         "cycles": cycles_sorted,
         "total_rows": int(totals_rows),
         "groups": group_rows,
@@ -9300,9 +10339,16 @@ def regular_release_detail(version: str = "", date: str = "", full_tc_only: bool
 
 
 @app.get("/api/stats/closing-summary")
-def closing_summary_stats(cycle: str = "", force: bool = False):
+def closing_summary_stats(cycle: str = "", start_date: str = "", end_date: str = "", force: bool = False):
     data = _get_cached_raw_defect_issue_stats(force=bool(force))
-    return _build_closing_summary_stats(data.get("issues", []), selected_cycle=cycle)
+    filtered_rows = _filter_issue_rows_by_date(data.get("issues", []), start_date=start_date, end_date=end_date)
+    selected_cycles = _parse_closing_cycle_selection(cycle)
+    return _build_closing_summary_stats(
+        filtered_rows,
+        selected_cycles=selected_cycles,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 @app.get("/api/stats/closing-summary/detail")
@@ -9311,9 +10357,12 @@ def closing_summary_detail(
     phase: str = "",
     group: str = "",
     severity: str = "",
+    start_date: str = "",
+    end_date: str = "",
     force: bool = False,
 ):
-    selected_cycle = str(cycle or "").strip()
+    selected_cycles = _parse_closing_cycle_selection(cycle)
+    selected_cycle_set = set(selected_cycles)
     selected_phase = str(phase or "").strip().lower()
     selected_group = str(group or "").strip().upper()
     selected_severity = str(severity or "").strip().lower()
@@ -9332,7 +10381,7 @@ def closing_summary_detail(
 
     data = _get_cached_raw_defect_issue_stats(force=bool(force))
     out_rows = []
-    source_rows = data.get("issues", [])
+    source_rows = _filter_issue_rows_by_date(data.get("issues", []), start_date=start_date, end_date=end_date)
     for row in source_rows:
         row_group = _closing_group_from_issue_row(row)
         if selected_group and selected_group != row_group:
@@ -9343,7 +10392,7 @@ def closing_summary_detail(
             str(row.get("affects_versions", "")),
             str(row.get("components", "")),
         )
-        if selected_cycle and selected_cycle not in cycles:
+        if selected_cycle_set and not selected_cycle_set.intersection(cycles):
             continue
 
         status = _norm_status(str(row.get("status", "")))
@@ -9365,10 +10414,13 @@ def closing_summary_detail(
 
     return {
         "ok": True,
-        "cycle": selected_cycle,
+        "cycle": selected_cycles[0] if len(selected_cycles) == 1 else "",
+        "cycles": selected_cycles,
         "phase": selected_phase,
         "group": selected_group,
         "severity": selected_severity,
+        "start_date": start_date or "",
+        "end_date": end_date or "",
         "count": len(out_rows),
         "rows": out_rows,
         "updated_at": data.get("updated_at", ""),
@@ -10225,6 +11277,12 @@ async def upload_testcases(file: UploadFile = File(...)):
 def upload_source_status(request: Request):
     _require_admin(request)
     defect_type, defect_source = _current_defect_source_info()
+    full_tc_sheet_count = 0
+    if UPLOADED_FULL_TC_FILE.exists():
+        try:
+            full_tc_sheet_count = int(_get_full_tc_sheet_list(force=False).get("sheet_count") or 0)
+        except Exception:
+            full_tc_sheet_count = 0
     return {
         "ok": True,
         "defect_raw": {
@@ -10238,6 +11296,7 @@ def upload_source_status(request: Request):
             "source": UPLOADED_FULL_TC_FILE.name if UPLOADED_FULL_TC_FILE.exists() else FULL_TC_APPS_SCRIPT_URL,
             "uploaded_at": _uploaded_file_datetime_text(UPLOADED_FULL_TC_FILE),
             "exists": UPLOADED_FULL_TC_FILE.exists(),
+            "sheet_count": full_tc_sheet_count,
         },
     }
 
@@ -10303,15 +11362,117 @@ async def upload_defectlist_raw_file(request: Request, file: UploadFile = File(.
 @app.get("/api/upload/defectlist-raw/history")
 def upload_defectlist_raw_history(request: Request):
     _require_admin(request)
+    _backfill_defect_raw_upload_history_from_legacy_files()
+    history = _load_defect_raw_upload_history()
+    items = []
+    for item in history:
+        history_id = str(item.get("history_id") or "").strip()
+        snapshot_name = Path(str(item.get("snapshot_file") or "")).name
+        download_url = ""
+        if history_id:
+            download_url = f"/api/upload/defectlist-raw/history/{quote(history_id)}/download"
+        elif snapshot_name:
+            download_url = f"/uploads/defectlist_raw_history/{quote(snapshot_name)}"
+        items.append({**item, "download_url": download_url})
     return {
         "ok": True,
-        "history": _load_defect_raw_upload_history(),
+        "history": items,
     }
+
+
+@app.get("/api/upload/defectlist-raw/history/{history_id}/download")
+def download_defectlist_raw_history_file(history_id: str, request: Request):
+    _require_admin(request)
+    wanted_id = str(history_id or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", wanted_id):
+        raise HTTPException(status_code=400, detail="invalid history id")
+
+    _backfill_defect_raw_upload_history_from_legacy_files()
+    with DEFECT_RAW_UPLOAD_HISTORY_LOCK:
+        history = _load_defect_raw_upload_history()
+        wanted_item = next((x for x in history if str(x.get("history_id") or "") == wanted_id), None)
+    if not wanted_item:
+        raise HTTPException(status_code=404, detail="history not found")
+
+    snapshot_name = Path(str(wanted_item.get("snapshot_file") or "")).name
+    if not snapshot_name:
+        raise HTTPException(status_code=404, detail="history file missing")
+    snapshot_path = DEFECT_RAW_UPLOAD_HISTORY_DIR / snapshot_name
+    if not snapshot_path.exists():
+        raise HTTPException(status_code=404, detail="history file not found")
+
+    download_name = Path(str(wanted_item.get("original_filename") or "")).name
+    if not download_name:
+        download_name = f"defectlist_raw_{wanted_id}.xlsx"
+    if not download_name.lower().endswith(".xlsx"):
+        download_name = f"{download_name}.xlsx"
+
+    return FileResponse(
+        path=str(snapshot_path),
+        filename=download_name,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.get("/api/upload/full-tc/history")
+def upload_full_tc_history(request: Request):
+    _require_admin(request)
+    _backfill_full_tc_upload_history_from_legacy_files()
+    history = _load_full_tc_upload_history()
+    items = []
+    for item in history:
+        history_id = str(item.get("history_id") or "").strip()
+        if not history_id:
+            continue
+        items.append(
+            {
+                **item,
+                "download_url": f"/api/upload/full-tc/history/{quote(history_id)}/download",
+            }
+        )
+    return {
+        "ok": True,
+        "history": items,
+    }
+
+
+@app.get("/api/upload/full-tc/history/{history_id}/download")
+def download_full_tc_history_file(history_id: str, request: Request):
+    _require_admin(request)
+    wanted_id = str(history_id or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", wanted_id):
+        raise HTTPException(status_code=400, detail="invalid history id")
+
+    with FULL_TC_UPLOAD_HISTORY_LOCK:
+        history = _load_full_tc_upload_history()
+        wanted_item = next((x for x in history if str(x.get("history_id") or "") == wanted_id), None)
+    if not wanted_item:
+        raise HTTPException(status_code=404, detail="history not found")
+
+    snapshot_name = Path(str(wanted_item.get("snapshot_file") or "")).name
+    if not snapshot_name:
+        raise HTTPException(status_code=404, detail="history file missing")
+    snapshot_path = FULL_TC_UPLOAD_HISTORY_DIR / snapshot_name
+    if not snapshot_path.exists():
+        raise HTTPException(status_code=404, detail="history file not found")
+
+    download_name = Path(str(wanted_item.get("original_filename") or "")).name
+    if not download_name:
+        download_name = f"full_tc_{wanted_id}.xlsx"
+    if not download_name.lower().endswith(".xlsx"):
+        download_name = f"{download_name}.xlsx"
+
+    return FileResponse(
+        path=str(snapshot_path),
+        filename=download_name,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @app.post("/api/upload/full-tc")
 async def upload_full_tc_file(request: Request, file: UploadFile = File(...)):
-    _require_admin(request)
+    global LAST_UPLOADED_EXCEL
+    admin_user = _require_admin(request)
     filename = str(file.filename or "").strip()
     lower = filename.lower()
     if not (lower.endswith(".xlsx") or lower.endswith(".csv")):
@@ -10340,12 +11501,23 @@ async def upload_full_tc_file(request: Request, file: UploadFile = File(...)):
                 df = pd.read_csv(str(temp_path), dtype=str, encoding="cp949")
             df.to_excel(str(temp_xlsx_path), index=False)
             os.replace(str(temp_xlsx_path), str(UPLOADED_FULL_TC_FILE))
+            try:
+                temp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
         else:
             os.replace(str(temp_path), str(UPLOADED_FULL_TC_FILE))
 
     _reset_full_tc_caches()
+    LAST_UPLOADED_EXCEL = UPLOADED_FULL_TC_FILE
     sheets_data = _get_full_tc_sheet_list(force=True)
     sheets = list(sheets_data.get("sheets") or [])
+    history_entry = _append_full_tc_upload_history(
+        uploader_name=str(admin_user.get("name", "") or admin_user.get("username", "") or ""),
+        uploader_email=str(admin_user.get("email", "") or ""),
+        original_filename=filename,
+        sheet_count=len(sheets),
+    )
 
     return {
         "ok": True,
@@ -10355,6 +11527,14 @@ async def upload_full_tc_file(request: Request, file: UploadFile = File(...)):
         "uploaded_at": _uploaded_file_datetime_text(UPLOADED_FULL_TC_FILE),
         "sheet_count": len(sheets),
         "sheets": sheets[:60],
+        "history_entry": {
+            **history_entry,
+            "download_url": (
+                f"/api/upload/full-tc/history/{quote(str(history_entry.get('history_id') or ''))}/download"
+                if history_entry
+                else ""
+            ),
+        },
     }
 
 
@@ -10453,31 +11633,28 @@ def suggest_rules(top_n: int = 30):
 @app.post("/api/load-default-testcases")
 def load_default_testcases():
     global LAST_UPLOADED_EXCEL
-    if not DEFAULT_EXCEL.exists():
-        raise HTTPException(status_code=404, detail=f"Default excel not found: {DEFAULT_EXCEL}")
-
-    LAST_UPLOADED_EXCEL = DEFAULT_EXCEL
-    testcases = parse_excel_to_testcases(str(DEFAULT_EXCEL))
+    source = _get_latest_full_tc_source_file(require_exists=True)
+    LAST_UPLOADED_EXCEL = source
+    testcases = parse_excel_to_testcases(str(source))
     count = orchestrator.set_testcases(testcases)
-    return {"ok": True, "testcase_count": count, "file": DEFAULT_EXCEL.name}
+    return {"ok": True, "testcase_count": count, "file": source.name}
 
 
 @app.post("/api/convert-default-excel")
 def convert_default_excel():
     global LAST_CONVERTED_EXCEL, LATEST_EXCEL_HEADERS, LATEST_EXCEL_ROWS
-    if not DEFAULT_EXCEL.exists():
-        raise HTTPException(status_code=404, detail=f"Default excel not found: {DEFAULT_EXCEL}")
+    source = _get_latest_full_tc_source_file(require_exists=True)
 
-    converted = UPLOAD_DIR / f"converted_{DEFAULT_EXCEL.stem}.xlsx"
+    converted = UPLOAD_DIR / f"converted_{source.stem}.xlsx"
     try:
         rows, unresolved, note_count, executable_count = convert_control_excel_to_structured(
-            source_excel=str(DEFAULT_EXCEL),
+            source_excel=str(source),
             output_excel=str(converted),
             rule_file=str(RULE_FILE),
         )
     except Exception:
         rows, unresolved, note_count = convert_matrix_excel_to_structured(
-            source_excel=str(DEFAULT_EXCEL),
+            source_excel=str(source),
             output_excel=str(converted),
             rule_file=str(RULE_FILE),
         )
@@ -10486,12 +11663,12 @@ def convert_default_excel():
     testcases = parse_excel_to_testcases(str(converted))
     count = orchestrator.set_testcases(testcases)
     LAST_CONVERTED_EXCEL = converted
-    headers, preview_rows = parse_control_sheet_full_rows(str(DEFAULT_EXCEL), limit=1200)
+    headers, preview_rows = parse_control_sheet_full_rows(str(source), limit=1200)
     LATEST_EXCEL_HEADERS = headers
     LATEST_EXCEL_ROWS = preview_rows
     return {
         "ok": True,
-        "source": DEFAULT_EXCEL.name,
+        "source": source.name,
         "converted": converted.name,
         "rows": rows,
         "unresolved": unresolved,
@@ -10504,19 +11681,18 @@ def convert_default_excel():
 @app.post("/api/convert-last-upload")
 def convert_last_upload():
     global LAST_CONVERTED_EXCEL, LATEST_EXCEL_HEADERS, LATEST_EXCEL_ROWS
-    if LAST_UPLOADED_EXCEL is None or not LAST_UPLOADED_EXCEL.exists():
-        raise HTTPException(status_code=400, detail="No uploaded excel found. Upload file first.")
+    source = _get_latest_full_tc_source_file(require_exists=True)
 
-    converted = UPLOAD_DIR / f"converted_{LAST_UPLOADED_EXCEL.stem}.xlsx"
+    converted = UPLOAD_DIR / f"converted_{source.stem}.xlsx"
     try:
         rows, unresolved, note_count, executable_count = convert_control_excel_to_structured(
-            source_excel=str(LAST_UPLOADED_EXCEL),
+            source_excel=str(source),
             output_excel=str(converted),
             rule_file=str(RULE_FILE),
         )
     except Exception:
         rows, unresolved, note_count = convert_matrix_excel_to_structured(
-            source_excel=str(LAST_UPLOADED_EXCEL),
+            source_excel=str(source),
             output_excel=str(converted),
             rule_file=str(RULE_FILE),
         )
@@ -10525,12 +11701,12 @@ def convert_last_upload():
     testcases = parse_excel_to_testcases(str(converted))
     count = orchestrator.set_testcases(testcases)
     LAST_CONVERTED_EXCEL = converted
-    headers, preview_rows = parse_control_sheet_full_rows(str(LAST_UPLOADED_EXCEL), limit=1200)
+    headers, preview_rows = parse_control_sheet_full_rows(str(source), limit=1200)
     LATEST_EXCEL_HEADERS = headers
     LATEST_EXCEL_ROWS = preview_rows
     return {
         "ok": True,
-        "source": LAST_UPLOADED_EXCEL.name,
+        "source": source.name,
         "converted": converted.name,
         "rows": rows,
         "unresolved": unresolved,
@@ -10582,14 +11758,12 @@ def _autofit_and_wrap_worksheet(ws, min_col: int, max_col: int, min_row: int, ma
 
 @app.post("/api/results/export-default")
 def export_default_results():
-    if not DEFAULT_EXCEL.exists():
-        raise HTTPException(status_code=404, detail=f"Default excel not found: {DEFAULT_EXCEL}")
+    source = _get_latest_full_tc_source_file(require_exists=True)
 
     run_map = orchestrator.latest_run_result_map()
     if not run_map:
         raise HTTPException(status_code=400, detail="No run result found. Execute tests first.")
 
-    source = LAST_UPLOADED_EXCEL if LAST_UPLOADED_EXCEL and LAST_UPLOADED_EXCEL.exists() else DEFAULT_EXCEL
     output = EXPORT_DIR / f"result_{source.stem}.xlsx"
     shutil.copyfile(source, output)
 

@@ -1,4 +1,4 @@
-/* upload_full_tc.js v20260403a */
+/* upload_full_tc.js v20260408b */
 (function () {
   /* ── DOM refs ── */
   const dropZone    = document.getElementById("ftDrop");
@@ -8,9 +8,9 @@
   const uploadBtn   = document.getElementById("fullTcUploadBtn");
   const statusEl    = document.getElementById("ftUploadStatus");
   const infoList    = document.getElementById("ftInfoList");
-  const sheetsBody  = document.getElementById("ftSheetsBody");
+  const historyBody = document.getElementById("ftHistoryBody");
   const refreshStatusBtn = document.getElementById("ftRefreshStatusBtn");
-  const refreshSheetsBtn = document.getElementById("ftRefreshSheetsBtn");
+  const refreshHistoryBtn = document.getElementById("ftRefreshHistoryBtn");
   const ftSrc    = document.getElementById("ftSrc");
   const ftTime   = document.getElementById("ftTime");
   const ftSheets = document.getElementById("ftSheets");
@@ -124,7 +124,7 @@
       const sheetCnt = Number(data.sheet_count || 0);
       setStatus("ok", `✅ 업로드 완료 | 시트 ${sheetCnt.toLocaleString()}개 인덱싱됨`);
       if (ftSheets) ftSheets.textContent = `${sheetCnt}개`;
-      renderSheets(data.sheets || []);
+        await loadHistory();
       await loadStatus();
     } catch (err) {
       setStatus("error", `업로드 실패: ${String(err?.message || err)}`);
@@ -154,6 +154,7 @@
       if (ftSrc)    ftSrc.innerHTML      = srcBadge;
       if (ftTime)   ftTime.textContent   = raw.exists ? fmt(raw.uploaded_at) : "-";
       if (ftExists) ftExists.textContent = raw.exists ? "✅ 있음" : "❌ 없음";
+      if (ftSheets) ftSheets.textContent = raw.exists ? `${Number(raw.sheet_count || 0)}개` : "0개";
 
       /* info list */
       infoList.innerHTML = [
@@ -167,31 +168,65 @@
     }
   }
 
-  /* ── 시트 목록 ── */
-  function renderSheets(sheets) {
-    if (!sheets || !sheets.length) {
-      sheetsBody.innerHTML = `<tr><td colspan="2" class="ft-empty">시트 정보가 없습니다</td></tr>`;
-      if (ftSheets) ftSheets.textContent = "0개";
+  /* ── 업로드 이력 ── */
+  function renderHistory(history) {
+    if (!history || !history.length) {
+      historyBody.innerHTML = `<tr><td colspan="6" class="ft-empty">업로드 이력이 없습니다</td></tr>`;
       return;
     }
-    sheetsBody.innerHTML = sheets.map((s, i) =>
-      `<tr><td class="h-no">${i + 1}</td><td>${esc(String(s))}</td></tr>`
+    historyBody.innerHTML = history.map((item, i) => {
+      const uploadedAt = fmt(item?.uploaded_at || "");
+      const originalName = esc(item?.original_filename || "-");
+      const uploaderName = esc(item?.uploader_name || "-");
+      const uploaderEmail = esc(item?.uploader_email || "");
+      const uploaderText = uploaderEmail ? `${uploaderName}<br><span style="color:#94a3b8;font-size:.75rem;">${uploaderEmail}</span>` : uploaderName;
+      const sheetCount = Number(item?.sheet_count || 0);
+      const fallbackDownload = item?.snapshot_file
+        ? `/uploads/full_tc_history/${encodeURIComponent(String(item.snapshot_file))}`
+        : "";
+      const downloadUrl = String(item?.download_url || fallbackDownload || "").trim();
+      const downloadBtn = downloadUrl
+        ? `<a class="ft-mini-btn" href="${esc(downloadUrl)}" style="text-decoration:none;">⬇️ 파일</a>`
+        : `<span style="color:#94a3b8;">-</span>`;
+      return `<tr>
+        <td class="h-no">${i + 1}</td>
+        <td>${esc(uploadedAt)}</td>
+        <td>${originalName}</td>
+        <td>${uploaderText}</td>
+        <td>${sheetCount.toLocaleString()}개</td>
+        <td>${downloadBtn}</td>
+      </tr>`;
+    }
     ).join("");
-    if (ftSheets) ftSheets.textContent = `${sheets.length}개`;
   }
 
-  async function loadSheets() {
+  async function loadHistoryFromStatic() {
+    const res = await fetch("/uploads/full_tc_upload_history.json", { cache: "no-store" });
+    if (!res.ok) throw new Error("업로드 이력 파일이 없습니다");
+    const data = await res.json();
+    if (!Array.isArray(data)) throw new Error("업로드 이력 형식이 올바르지 않습니다");
+    return data;
+  }
+
+  async function loadHistory() {
     try {
-      const res  = await fetch("/api/qa/full-tc/summary", { credentials: "same-origin" });
-        const data = await parseApiResponse(res, "시트 조회 실패");
-      /* summary의 components에서 sheet_name 추출 */
-      const components = Array.isArray(data?.components) ? data.components : [];
-      const sheets = components
-        .map((c) => String(c?.sheet_name || "").trim())
-        .filter(Boolean);
-      renderSheets(sheets);
-    } catch {
-      sheetsBody.innerHTML = `<tr><td colspan="2" class="ft-empty">시트 목록을 불러올 수 없습니다</td></tr>`;
+      const res  = await fetch("/api/upload/full-tc/history", { credentials: "same-origin" });
+      const data = await parseApiResponse(res, "업로드 이력 조회 실패");
+      const history = Array.isArray(data?.history) ? data.history : [];
+      renderHistory(history);
+      return;
+    } catch (err) {
+      const msg = String(err?.message || "").trim();
+      if (msg.toLowerCase() === "not found") {
+        try {
+          const legacyHistory = await loadHistoryFromStatic();
+          renderHistory(legacyHistory);
+          return;
+        } catch {
+          // keep original error below
+        }
+      }
+      historyBody.innerHTML = `<tr><td colspan="6" class="ft-empty">${esc(msg || "업로드 이력을 불러올 수 없습니다")}</td></tr>`;
     }
   }
 
@@ -202,12 +237,12 @@
     refreshStatusBtn.disabled = false;
   });
 
-  refreshSheetsBtn?.addEventListener("click", async () => {
-    refreshSheetsBtn.disabled = true;
-    await loadSheets();
-    refreshSheetsBtn.disabled = false;
+  refreshHistoryBtn?.addEventListener("click", async () => {
+    refreshHistoryBtn.disabled = true;
+    await loadHistory();
+    refreshHistoryBtn.disabled = false;
   });
 
   /* ── 초기 로드 ── */
-  Promise.all([loadStatus(), loadSheets()]);
+  Promise.all([loadStatus(), loadHistory()]);
 })();

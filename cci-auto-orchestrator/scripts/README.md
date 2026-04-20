@@ -5,12 +5,14 @@
 ### 🔌 tunnel/
 공개 터널 관리 스크립트
 
-- **start_public_tunnel.ps1**: 공개 터널 시작 (ngrok → serveo 자동 폴백)
+- **start_public_tunnel.ps1**: 공개 터널 1회 시작 (ngrok → localhost.run → cloudflared → localtunnel → serveo 폴백)
+- **start_tunnel_watchdog.ps1**: 공개 터널 상시 감시/자동복구 (권장)
 - **get_public_tunnel_url.ps1**: 현재 활성 공개 URL 조회
 
 **실행 예:**
 ```powershell
 .\scripts\tunnel\start_public_tunnel.ps1 -Provider ngrok
+.\scripts\tunnel\start_tunnel_watchdog.ps1 -Provider ngrok -NgrokDomain unshirred-examiningly-kyoko.ngrok-free.dev
 .\scripts\tunnel\get_public_tunnel_url.ps1
 ```
 

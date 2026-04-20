@@ -18,7 +18,8 @@ function chip(value) {
   const text = String(value || "").trim();
   if (!text) return '<span class="ftc-rc is-empty">-</span>';
   const upper = text.toUpperCase();
-  if (upper === "N" || upper === "FAIL") return '<span class="ftc-rc is-n">' + esc(text) + '</span>';
+  if (upper === "N") return '<span class="ftc-rc is-empty">-</span>';
+  if (upper === "FAIL" || upper === "F") return '<span class="ftc-rc is-n">' + esc(text) + '</span>';
   if (upper === "P" || upper === "PASS") return '<span class="ftc-rc is-p">' + esc(text) + '</span>';
   if (upper === "NT" || upper === "N/T") return '<span class="ftc-rc is-nt">' + esc(text) + '</span>';
   if (upper === "NA" || upper === "N/A") return '<span class="ftc-rc is-na">' + esc(text) + '</span>';
@@ -28,7 +29,11 @@ function chip(value) {
 function normalizeResultBucket(value) {
   const upper = String(value || "").trim().toUpperCase().replace(/\s+/g, "");
   if (!upper) return "empty";
-  if (upper === "N" || upper === "FAIL" || upper === "F") return "fail";
+  if (upper === "-" || upper === "--" || upper === "---") return "empty";
+  if (upper === "NAN" || upper === "NULL" || upper === "NONE") return "empty";
+  if (upper === "(BLANK)" || upper === "BLANK") return "empty";
+  if (upper === "N") return "empty";
+  if (upper === "FAIL" || upper === "F") return "fail";
   if (upper === "P" || upper === "PASS" || upper === "OK") return "pass";
   if (upper === "NT" || upper === "N/T" || upper === "NOTTESTED") return "nt";
   if (upper === "NA" || upper === "N/A" || upper === "NOTAPPLICABLE") return "na";
@@ -42,6 +47,56 @@ function countChip(value, tone) {
 function percentBar(value, total) {
   const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   return '<div class="ftc-bar"><div class="ftc-bar-fill" style="width:' + pct + '%"></div><span>' + pct + '%</span></div>';
+}
+
+/* ── 색상 단계 집계 헬퍼 ── */
+function buildColorStageMap() {
+  var rows = (S.data && Array.isArray(S.data.brand_component_color_rows))
+    ? S.data.brand_component_color_rows : [];
+  var compMap  = {};
+  var brandMap = {};
+  var COLOR_KEYS = ["red", "orange", "yellow", "green"];
+  rows.forEach(function (row) {
+    var comp  = String(row.component || "-").trim();
+    var slot  = String(row.slot  || "").trim().toUpperCase() || "N";
+    var color = String(row.color || "none").toLowerCase();
+    var count = Number(row.count || 0);
+    if (!compMap[comp])  compMap[comp]  = { red: 0, orange: 0, yellow: 0, green: 0, total: 0 };
+    if (!brandMap[slot]) brandMap[slot] = { red: 0, orange: 0, yellow: 0, green: 0, total: 0 };
+    compMap[comp].total  += count;
+    brandMap[slot].total += count;
+    if (COLOR_KEYS.indexOf(color) !== -1) {
+      compMap[comp][color]  += count;
+      brandMap[slot][color] += count;
+    }
+  });
+  return { compMap: compMap, brandMap: brandMap };
+}
+
+function colorStageBar(stage) {
+  var total = Number(stage.total || 0);
+  if (!total) return '<span class="hint" style="font-size:11px;">색상 데이터 없음</span>';
+  function seg(color, count) {
+    var pct = (count / total) * 100;
+    return pct > 0 ? '<span class="ftc-cseg ftc-cseg-' + color + '" style="width:' + pct.toFixed(1) + '%" title="' + color + ' ' + count + '(' + pct.toFixed(1) + '%)"></span>' : '';
+  }
+  var runCount = Math.max(0, total - Number(stage.red || 0));
+  var runPct   = total > 0 ? ((runCount / total) * 100).toFixed(1) : '0.0';
+  return '<div class="ftc-cstage-wrap">' +
+    '<div class="ftc-cstage-track">' +
+      seg('red',    stage.red    || 0) +
+      seg('orange', stage.orange || 0) +
+      seg('yellow', stage.yellow || 0) +
+      seg('green',  stage.green  || 0) +
+    '</div>' +
+    '<div class="ftc-cstage-meta">' +
+      '<span class="ftc-cseg-dot ftc-cseg-red"></span>' + formatNumber(stage.red || 0) + '&nbsp;' +
+      '<span class="ftc-cseg-dot ftc-cseg-orange"></span>' + formatNumber(stage.orange || 0) + '&nbsp;' +
+      '<span class="ftc-cseg-dot ftc-cseg-yellow"></span>' + formatNumber(stage.yellow || 0) + '&nbsp;' +
+      '<span class="ftc-cseg-dot ftc-cseg-green"></span>' + formatNumber(stage.green || 0) +
+      '&nbsp;· Run Rate <strong>' + runPct + '%</strong>' +
+    '</div>' +
+  '</div>';
 }
 
 function toast(message, tone) {
@@ -168,10 +223,21 @@ function hasSpaqaTcRef(row) {
   });
 }
 
+function resolveDefectPlacementFlags(row) {
+  const jiraRefs = Array.isArray(row && row.jira_refs) ? row.jira_refs : [];
+  const closedRefs = Array.isArray(row && row.closed_refs) ? row.closed_refs : [];
+  const tcRefs = Array.isArray(row && row.tc_refs) ? row.tc_refs : [];
+  const inY = Boolean(row && row.in_jira_no) || jiraRefs.length > 0;
+  const inX = Boolean(row && row.in_closed_jira_no) || closedRefs.length > 0;
+  const inFullTc = Boolean(row && row.in_full_tc) || inX || inY || tcRefs.length > 0;
+  return { inX: inX, inY: inY, inFullTc: inFullTc };
+}
+
 function defectTcCoverage(row) {
   const policy = String((row && row.policy_bucket) || "").toLowerCase();
-  const inX = Boolean(row && row.in_closed_jira_no);
-  const inY = Boolean(row && row.in_jira_no);
+  const flags = resolveDefectPlacementFlags(row);
+  const inX = flags.inX;
+  const inY = flags.inY;
 
   if (policy === "duplicate" || policy === "not_a_bug") {
     if (inX || inY) {
@@ -391,6 +457,35 @@ const FTC_SECTION_LABEL = {
   defect: "Defect 대조",
 };
 
+const FTC_SUMMARY_VIEW_LABEL = {
+  matrix: "Statistics",
+  brand: "Statistics",
+  category: "카테고리 분석",
+  priority: "Full_TC 우선순위",
+};
+
+function resolveSubmenuTitle() {
+  if (S.tab === "summary") {
+    return FTC_SUMMARY_VIEW_LABEL[String(S.summaryView || "brand")] || "Statistics";
+  }
+  if (S.tab === "defect") {
+    const ds = String(S.defectStatus || "all");
+    if (ds === "missing") return "Defect Key 누락 보기";
+    if (ds === "jeonsu_missing") return "전수평가TC 미반영 보기";
+    return "Defect 대조";
+  }
+  return FTC_SECTION_LABEL[S.tab] || "Statistics";
+}
+
+function updatePageMainTitle() {
+  const base = "Full_TC 관리";
+  const subTitle = resolveSubmenuTitle();
+  const text = subTitle ? (base + " | " + subTitle) : base;
+  const h1 = document.getElementById("qaFullTcPageTitle");
+  if (h1) h1.textContent = text;
+  document.title = text;
+}
+
 function loadInlineOverrides() {
   try {
     const raw = localStorage.getItem(FTC_INLINE_OVERRIDE_KEY);
@@ -435,6 +530,8 @@ const S = {
   lastBridgeAutoHealAt: 0,
   tab: "summary",
   summaryView: "brand",
+  priorityFilter: "all",
+  priorityComponentFilter: "all",
   component: "all",
   activeLabel: "",
   groupQuery: "",
@@ -449,6 +546,7 @@ const S = {
   inlineOverrides: loadInlineOverrides(),
   defectQuery: "",
   defectStatus: "all",
+  deploymentFilters: [],  // 배포 멀티 필터
   defectRangeMin: "SPAQA-12000",
   defectRangeMax: "",
   pageSize: FTC_DEFAULT_PAGE_SIZE,
@@ -460,10 +558,12 @@ const S = {
   pageDefectViolation: 1,
   pageBrandDrill: 1,
   pageCategoryDrill: 1,
+  pagePriorityDrill: 1,
   detailFocusKey: "",
   brandDrill: null,
   brandDrillViolationOnly: false,
   categoryDrill: null,
+  priorityDrill: null,
   labelBrandDrill: null,   // { label, brand }
   labelRowDrill: null,     // { label, brand, component }
   labelRowDrillPage: 1,
@@ -493,6 +593,15 @@ function scheduleDefectRender() {
     renderDefectKpi();
     renderDefectTable();
   }, FTC_FILTER_INPUT_DEBOUNCE_MS);
+}
+
+function renderDefectNow() {
+  if (defectFilterDebounceTimer) {
+    window.clearTimeout(defectFilterDebounceTimer);
+    defectFilterDebounceTimer = null;
+  }
+  renderDefectKpi();
+  renderDefectTable();
 }
 
 function invalidateDefectFilterCache() {
@@ -529,6 +638,7 @@ function pageStateKey(target) {
   if (target === "detail") return "pageDetail";
   if (target === "brand_drill") return "pageBrandDrill";
   if (target === "category_drill") return "pageCategoryDrill";
+  if (target === "priority_drill") return "pagePriorityDrill";
   if (target === "defect_missing") return "pageDefectMissing";
   if (target === "defect_missing_tc") return "pageDefectMissingTc";
   if (target === "defect_all_columns") return "pageDefectAllColumns";
@@ -551,6 +661,10 @@ function updatePage(target, nextPage) {
   }
   if (target === "category_drill") {
     renderCategoryDrillRows();
+    return;
+  }
+  if (target === "priority_drill") {
+    renderPriorityDrillRows();
     return;
   }
   if (target === "defect_missing") {
@@ -600,6 +714,7 @@ function resetMainPagination() {
   S.pageDetail = 1;
   S.pageBrandDrill = 1;
   S.pageCategoryDrill = 1;
+  S.pagePriorityDrill = 1;
 }
 
 function resetDefectPagination() {
@@ -617,6 +732,13 @@ function normalizeIssueThreshold(value) {
   if (!matched) return null;
   const num = Number(matched[1]);
   return Number.isFinite(num) ? Math.trunc(num) : null;
+}
+
+function passesMinTicketNo(keyNumber, minRange) {
+  if (minRange == null) return true;
+  if (!Number.isFinite(keyNumber)) return false;
+  // 입력한 티켓 번호 이상만 조회하고, 미만 티켓은 제외한다.
+  return Number(keyNumber) >= Number(minRange);
 }
 
 function toneRank(tone) {
@@ -796,6 +918,22 @@ function isAuthError(error) {
   return text.includes("인증") || text.includes("로그인") || text.includes("401") || text.includes("unauthorized");
 }
 
+function redirectToLoginIfAuthError(error) {
+  if (!isAuthError(error)) return false;
+  const hint = document.getElementById("qaFullTcHint");
+  const message = (error && error.message) || "인증 만료로 데이터 로드 실패";
+  setLoadAlert(message + " 잠시 후 로그인 페이지로 이동합니다.", "danger");
+  if (hint) hint.textContent = "인증 상태 확인 필요";
+  toast(message, "error");
+  const nextRaw = (window.location.pathname || "/qa/full-tc") + (window.location.search || "") + (window.location.hash || "");
+  const next = encodeURIComponent(nextRaw);
+  const msg = encodeURIComponent("세션이 만료되었습니다. 다시 로그인해 주세요.");
+  window.setTimeout(function () {
+    window.location.href = "/auth/login?next=" + next + "&message=" + msg;
+  }, 800);
+  return true;
+}
+
 async function fetchJsonWithRetry(url, options, retries, timeoutMs) {
   const maxRetries = Number.isFinite(retries) ? Math.max(0, retries) : 2;
   const waitMs = Number.isFinite(timeoutMs) ? Math.max(0, timeoutMs) : FTC_SUMMARY_TIMEOUT_MS;
@@ -892,12 +1030,170 @@ function applyViewPresetFromUrl() {
   if (view === "missing") {
     S.defectStatus = "missing";
   }
+  const summaryView = String(params.get("summary") || params.get("summary_view") || "").trim().toLowerCase();
+  if (summaryView === "matrix" || summaryView === "brand" || summaryView === "category" || summaryView === "priority") {
+    S.summaryView = summaryView;
+  }
 }
 
 function syncDefectStatusChips() {
   document.querySelectorAll(".ftc-status-chip").forEach(function (chipEl) {
     chipEl.classList.toggle("active", chipEl.dataset.status === S.defectStatus);
   });
+  updateDefectSearchUiState();
+}
+
+function syncDeploymentFilterChips() {
+  var selected = Array.isArray(S.deploymentFilters) ? S.deploymentFilters : [];
+  document.querySelectorAll(".ftc-deployment-chip").forEach(function (chipEl) {
+    var dep = String(chipEl.dataset.deployment || "");
+    var active = dep === "all" ? selected.length === 0 : selected.indexOf(dep) >= 0;
+    chipEl.classList.toggle("active", active);
+  });
+  updateDefectSearchUiState();
+}
+
+function countActiveDefectFilters() {
+  var count = 0;
+  var defaultMin = normalizeIssueThreshold("SPAQA-12000");
+  var currentMin = normalizeIssueThreshold(S.defectRangeMin);
+  if (String(S.defectQuery || "").trim()) count += 1;
+  if (currentMin != null && currentMin !== defaultMin) count += 1;
+  if (String(S.defectStatus || "all") !== "all") count += 1;
+  count += (Array.isArray(S.deploymentFilters) ? S.deploymentFilters.length : 0);
+  return count;
+}
+
+function updateDefectSearchUiState() {
+  const searchInput = document.getElementById("defectSearch");
+  const clearBtn = document.getElementById("defectSearchClearBtn");
+  const countPill = document.getElementById("defectActiveFilterCount");
+  const hasQuery = !!String((searchInput && searchInput.value) || S.defectQuery || "").trim();
+  if (clearBtn) {
+    clearBtn.hidden = !hasQuery;
+  }
+  if (countPill) {
+    countPill.textContent = "활성 필터 " + countActiveDefectFilters() + "개";
+  }
+}
+
+function applyDefectSearchNow() {
+  const searchInput = document.getElementById("defectSearch");
+  const minInput = document.getElementById("defectRangeMin");
+  S.defectQuery = String((searchInput && searchInput.value) || S.defectQuery || "").trim();
+  S.defectRangeMin = String((minInput && minInput.value) || S.defectRangeMin || "").trim();
+  S.defectRangeMax = "";
+  resetDefectPagination();
+  invalidateDefectFilterCache();
+  updateDefectSearchUiState();
+  renderDefectNow();
+}
+
+function splitDeploymentTokens(value) {
+  return String(value || "")
+    .split(/[\n,;/|]+/)
+    .map(function (item) { return item.trim(); })
+    .filter(Boolean);
+}
+
+function normalizeRegularDeploymentLabel(value) {
+  var token = String(value || "").replace(/\s+/g, "").trim();
+  return /^\d{4}정기배포$/.test(token) ? token : "";
+}
+
+function collectRegularDeploymentLabels(values) {
+  var set = new Set();
+  (values || []).forEach(function (value) {
+    splitDeploymentTokens(value).forEach(function (token) {
+      var normalized = normalizeRegularDeploymentLabel(token);
+      if (normalized) set.add(normalized);
+    });
+  });
+  return Array.from(set).sort();
+}
+
+function resolveDefectDeployment(row) {
+  var direct = String((row && row.deployment) || "").trim();
+  if (direct) return direct;
+
+  var headerValue = defectRawValue(row, ["deployment", "deploy", "배포", "정기배포", "release"]);
+  if (headerValue) return headerValue;
+
+  // DefectList_Raw가 B:R 범위일 때 H열은 raw_values의 6번 인덱스.
+  var values = Array.isArray(row && row.raw_values) ? row.raw_values : [];
+  return String(values[6] || "").trim();
+}
+
+function collectDeploymentFilterOptions(defectRows) {
+  var raw = [];
+  (defectRows || []).forEach(function (row) {
+    if (!hasJeonsuTicketLabel(row)) return;
+    raw.push(resolveDefectDeployment(row));
+  });
+  return collectRegularDeploymentLabels(raw);
+}
+
+function hasDeploymentToken(row, selectedDeployment) {
+  var normalizedSelected = normalizeRegularDeploymentLabel(selectedDeployment);
+  if (!normalizedSelected) return false;
+  var tokens = collectRegularDeploymentLabels([resolveDefectDeployment(row)]);
+  return tokens.indexOf(normalizedSelected) >= 0;
+}
+
+function hasAnyDeploymentToken(row, selectedDeployments) {
+  var selected = Array.isArray(selectedDeployments) ? selectedDeployments : [];
+  if (!selected.length) return true;
+  return selected.some(function (deployment) {
+    return hasDeploymentToken(row, deployment);
+  });
+}
+
+function renderDeploymentFilterButtons(deploymentLabels) {
+  const container = document.getElementById("deploymentFilterContainer");
+  if (!container) return;
+
+  var options = collectRegularDeploymentLabels(Array.isArray(deploymentLabels) ? deploymentLabels : []);
+  if (!options.length) {
+    options = collectDeploymentFilterOptions((S.defect && S.defect.rows) || []);
+  }
+  var selected = Array.isArray(S.deploymentFilters) ? S.deploymentFilters : [];
+  S.deploymentFilters = selected.filter(function (deployment) {
+    return options.indexOf(deployment) >= 0;
+  });
+
+  const chips = ["<span class='ftc-col-toggle-label'>배포 필터:</span>", "<button class='ftc-deployment-chip' data-deployment='all'>전체</button>"];
+  options.forEach(function (label) {
+    chips.push("<button class='ftc-deployment-chip' data-deployment='" + esc(label) + "'>" + esc(label) + "</button>");
+  });
+
+  container.innerHTML = chips.join("");
+
+  // 이벤트 핸들러 추가
+  container.querySelectorAll(".ftc-deployment-chip").forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      var dep = String(this.dataset.deployment || "");
+      var next = Array.isArray(S.deploymentFilters) ? S.deploymentFilters.slice() : [];
+      if (dep === "all") {
+        next = [];
+      } else {
+        var idx = next.indexOf(dep);
+        if (idx >= 0) {
+          next.splice(idx, 1);
+        } else {
+          next.push(dep);
+          next = next.filter(function (value, index, list) { return list.indexOf(value) === index; });
+        }
+      }
+      S.deploymentFilters = next;
+      S.pageDefectMatch = 1;
+      invalidateDefectFilterCache();
+      syncDeploymentFilterChips();
+      renderDefectKpi();
+      renderDefectTable();
+    });
+  });
+  
+  syncDeploymentFilterChips();
 }
 
 function updateSectionTitle(tab) {
@@ -918,6 +1214,7 @@ function switchTab(tab, syncUrl) {
     panel.classList.toggle("ftc-panel-hidden", panel.id !== "panel-" + normalized);
   });
   updateSectionTitle(normalized);
+  updatePageMainTitle();
   syncDefectStatusChips();
   if (shouldSyncUrl) {
     const params = new URLSearchParams(window.location.search || "");
@@ -1000,7 +1297,7 @@ function markQueryText(value, query) {
 function aggregateCategoryRows(rows) {
   const map = {};
   rows.forEach(function (row) {
-    const component = String(row.component || "-");
+    const component = displayComponentName(row.component || "-");
     const depth1 = String(row.depth1 || "(대분류 없음)");
     const depth2 = String(row.depth2 || "(중분류 없음)");
     const depth3 = String(row.depth3 || "(소분류 없음)");
@@ -1027,7 +1324,7 @@ function renderCategoryOutlineTable(aggregated, query) {
 
   const componentMap = new Map();
   list.forEach(function (item) {
-    const componentName = String(item.component || "-");
+    const componentName = displayComponentName(item.component || "-");
     const depth1Name = String(item.depth1 || "(대분류 없음)");
     const depth2Name = String(item.depth2 || "(중분류 없음)");
     const depth3Name = String(item.depth3 || "(소분류 없음)");
@@ -1154,7 +1451,7 @@ function buildCategoryDrillRows() {
   const selected = S.categoryDrill;
   const rows = filterDetail(S.data && S.data.detail_rows ? S.data.detail_rows : []);
   return rows.filter(function (row) {
-    const component = String(row.component || "-");
+    const component = displayComponentName(row.component || "-");
     const depth1 = String(row.depth1 || "(대분류 없음)");
     const depth2 = String(row.depth2 || "(중분류 없음)");
     const depth3 = String(row.depth3 || "(소분류 없음)");
@@ -1228,7 +1525,7 @@ function renderCategoryDrillRows() {
       '<td>' + chip(row.goa_result) + '</td>' +
       '<td>' + chip(row.goa_android) + '</td>' +
       '<td>' + chip(row.goa_ios) + '</td>' +
-      '<td>' + esc(row.closed_jira_no || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.closed_jira_no || "-") + '</td>' +
       '<td>' + esc(row.jira_no || "-") + '</td>' +
       '<td class="ftc-text-cell">' + esc(row.nt_na_reason || "-") + '</td>' +
       '<td>' + esc(row.nt_na_filter || "-") + '</td>' +
@@ -1240,14 +1537,32 @@ function renderCategoryDrillRows() {
 
 function buildLabelProgressMap(detailRows) {
   const map = {};
+
+  function labelBucketByBrand(row, brand) {
+    const key = String(brand || "").toUpperCase();
+    if (key === "KOA") {
+      if (isNotRunByColor(row && row.koa_color)) return "empty";
+      return normalizeResultBucket(row && row.koa_result);
+    }
+    if (key === "HOA") {
+      if (isNotRunByColor(row && row.hoa_color)) return "empty";
+      return normalizeResultBucket(row && row.hoa_result);
+    }
+    if (key === "GOA") {
+      if (isNotRunByColor(row && row.goa_color)) return "empty";
+      return normalizeResultBucket(row && row.goa_result);
+    }
+    return priorityAggregateBucket(row);
+  }
+
   (detailRows || []).forEach(function (row) {
     const labels = splitLabelTokens(row.label);
     if (!labels.length) return;
-    const baseBucket = normalizeResultBucket(row.base_result);
+    const baseBucket = labelBucketByBrand(row, "TOTAL");
     const baseDone = baseBucket !== "empty" ? 1 : 0;
-    const koaBucket = normalizeResultBucket(row.koa_result);
-    const hoaBucket = normalizeResultBucket(row.hoa_result);
-    const goaBucket = normalizeResultBucket(row.goa_result);
+    const koaBucket = labelBucketByBrand(row, "KOA");
+    const hoaBucket = labelBucketByBrand(row, "HOA");
+    const goaBucket = labelBucketByBrand(row, "GOA");
     const koaDone = koaBucket !== "empty" ? 1 : 0;
     const hoaDone = hoaBucket !== "empty" ? 1 : 0;
     const goaDone = goaBucket !== "empty" ? 1 : 0;
@@ -1263,10 +1578,11 @@ function buildLabelProgressMap(detailRows) {
           fail: 0,
           nt: 0,
           na: 0,
+          other: 0,
           empty: 0,
-          koa: { pass: 0, fail: 0, nt: 0, na: 0, empty: 0 },
-          hoa: { pass: 0, fail: 0, nt: 0, na: 0, empty: 0 },
-          goa: { pass: 0, fail: 0, nt: 0, na: 0, empty: 0 },
+          koa: { pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: 0 },
+          hoa: { pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: 0 },
+          goa: { pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: 0 },
         };
       }
       map[label].total += 1;
@@ -1278,25 +1594,29 @@ function buildLabelProgressMap(detailRows) {
       else if (baseBucket === "fail") map[label].fail += 1;
       else if (baseBucket === "nt") map[label].nt += 1;
       else if (baseBucket === "na") map[label].na += 1;
-      else map[label].empty += 1;
+      else if (baseBucket === "empty") map[label].empty += 1;
+      else map[label].other += 1;
 
       if (koaBucket === "pass") map[label].koa.pass += 1;
       else if (koaBucket === "fail") map[label].koa.fail += 1;
       else if (koaBucket === "nt") map[label].koa.nt += 1;
       else if (koaBucket === "na") map[label].koa.na += 1;
-      else map[label].koa.empty += 1;
+      else if (koaBucket === "empty") map[label].koa.empty += 1;
+      else map[label].koa.other += 1;
 
       if (hoaBucket === "pass") map[label].hoa.pass += 1;
       else if (hoaBucket === "fail") map[label].hoa.fail += 1;
       else if (hoaBucket === "nt") map[label].hoa.nt += 1;
       else if (hoaBucket === "na") map[label].hoa.na += 1;
-      else map[label].hoa.empty += 1;
+      else if (hoaBucket === "empty") map[label].hoa.empty += 1;
+      else map[label].hoa.other += 1;
 
       if (goaBucket === "pass") map[label].goa.pass += 1;
       else if (goaBucket === "fail") map[label].goa.fail += 1;
       else if (goaBucket === "nt") map[label].goa.nt += 1;
       else if (goaBucket === "na") map[label].goa.na += 1;
-      else map[label].goa.empty += 1;
+      else if (goaBucket === "empty") map[label].goa.empty += 1;
+      else map[label].goa.other += 1;
     });
   });
   return map;
@@ -1329,12 +1649,11 @@ function resultCountSetMarkup(resultMap) {
 
 function filterDetail(rows) {
   return (rows || []).filter(function (row) {
-    const effectiveRow = applyInlineOverride(row);
-    if (S.component !== "all" && effectiveRow.component !== S.component) return false;
-    if (!detailMatchesQuery(effectiveRow, S.query)) return false;
-    if (S.nOnly && !hasFailureLikeResult(effectiveRow)) return false;
-    if (S.ntOnly && !hasNTResult(effectiveRow)) return false;
-    if (S.naOnly && !hasNAResult(effectiveRow)) return false;
+    if (S.component !== "all" && row.component !== S.component) return false;
+    if (!detailMatchesQuery(row, S.query)) return false;
+    if (S.nOnly && !hasFailureLikeResult(row)) return false;
+    if (S.ntOnly && !hasNTResult(row)) return false;
+    if (S.naOnly && !hasNAResult(row)) return false;
     return true;
   });
 }
@@ -1393,10 +1712,12 @@ function renderCompChips() {
   if (!el) return;
   const components = (S.data && S.data.components ? S.data.components : []).filter(function (item) {
     return item.matched_sheet;
+  }).slice().sort(function (a, b) {
+    return compareComponentNames(a.component, b.component);
   });
   const html = ['<button class="ftc-comp-chip' + (S.component === "all" ? ' active' : '') + '" data-component="all">전체</button>'];
   components.forEach(function (item) {
-    const key = item.component || "";
+    const key = displayComponentName(item.component || "");
     html.push('<button class="ftc-comp-chip' + (S.component === key ? ' active' : '') + '" data-component="' + esc(key) + '">' + esc(key) + '</button>');
   });
   el.innerHTML = html.join("");
@@ -1405,14 +1726,18 @@ function renderCompChips() {
 function renderSummaryCards() {
   const el = document.getElementById("qaFullTcCompCards");
   if (!el) return;
-  const components = S.data && S.data.components ? S.data.components : [];
+  const components = (S.data && S.data.components ? S.data.components : []).slice().sort(function (a, b) {
+    return compareComponentNames(a.component, b.component);
+  });
   if (!components.length) {
     el.innerHTML = '<p class="hint" style="padding:20px">데이터가 없습니다.</p>';
     return;
   }
+  const csmap = buildColorStageMap();
   el.innerHTML = components.map(function (item) {
+    const componentName = displayComponentName(item.component);
     if (!item.matched_sheet) {
-      return '<div class="ftc-comp-card is-unmatched"><div class="ftc-cc-name">' + esc(item.component) + '</div><div class="hint">시트 매칭 실패</div></div>';
+      return '<div class="ftc-comp-card is-unmatched"><div class="ftc-cc-name">' + esc(componentName) + '</div><div class="hint">시트 매칭 실패</div></div>';
     }
     const counts = item.counts || {};
     const failCount = counts.result_fail_count || 0;
@@ -1424,10 +1749,12 @@ function renderSummaryCards() {
     const koaFail = Number(counts.koa_n || 0) + Number(counts.koa_android_n || 0) + Number(counts.koa_ios_n || 0);
     const hoaFail = Number(counts.hoa_n || 0) + Number(counts.hoa_android_n || 0) + Number(counts.hoa_ios_n || 0);
     const goaFail = Number(counts.goa_n || 0) + Number(counts.goa_android_n || 0) + Number(counts.goa_ios_n || 0);
-    return '<div class="ftc-comp-card' + (S.component === item.component ? ' active' : '') + '" data-component="' + esc(item.component) + '">' +
-      '<div class="ftc-cc-head"><span class="ftc-cc-name">' + esc(item.component) + '</span><span class="ftc-cc-badge">' + esc(item.sheet_name || "") + '</span></div>' +
+    const csStage = csmap.compMap[String(item.component || "-").trim()] || { red: 0, orange: 0, yellow: 0, green: 0, total: 0 };
+    return '<div class="ftc-comp-card' + (S.component === componentName ? ' active' : '') + '" data-component="' + esc(componentName) + '">' +
+      '<div class="ftc-cc-head"><span class="ftc-cc-name">' + esc(componentName) + '</span><span class="ftc-cc-badge">' + esc(item.sheet_name || "") + '</span></div>' +
       '<div class="ftc-cc-total"><strong>' + formatNumber(item.row_count || 0) + '</strong> <span>행</span></div>' +
       '<div class="ftc-cc-bar-wrap"><span class="ftc-cc-bar-label">Fail 비율</span>' + percentBar(failCount, cellCount) + '</div>' +
+      '<div class="ftc-cc-cstage">' + colorStageBar(csStage) + '</div>' +
       '<div class="ftc-cc-row4">' +
         '<div class="ftc-cc-stat is-fail"><span>FAIL</span><strong>' + formatNumber(failCount) + '</strong></div>' +
         '<div class="ftc-cc-stat is-pass"><span>PASS</span><strong>' + formatNumber(passCount) + '</strong></div>' +
@@ -1493,26 +1820,24 @@ function renderSummaryProgressDeck() {
   if (!deck) return;
 
   const detailRows = filterDetail(S.data && S.data.detail_rows ? S.data.detail_rows : []);
-  const brandRows = (S.data && S.data.brand_rows ? S.data.brand_rows : []).filter(function (row) {
-    if (S.component !== "all") {
-      const components = String(row.components || "").split(/\s*,\s*/).filter(Boolean);
-      if (!components.includes(S.component)) return false;
-    }
-    return true;
-  });
+  const brandSpecs = [
+    { name: "KOA", field: "koa_result" },
+    { name: "HOA", field: "hoa_result" },
+    { name: "GOA", field: "goa_result" },
+  ];
 
   const compMap = {};
   detailRows.forEach(function (row) {
-    const component = String(row.component || "-");
+    const component = displayComponentName(row.component || "-");
     if (!compMap[component]) {
       compMap[component] = { total: 0, done: 0, fail: 0, pass: 0 };
     }
     const target = compMap[component];
-    target.total += 9;
+    target.total += 3;
     [
-      row.koa_result, row.koa_android, row.koa_ios,
-      row.hoa_result, row.hoa_android, row.hoa_ios,
-      row.goa_result, row.goa_android, row.goa_ios,
+      row.koa_result,
+      row.hoa_result,
+      row.goa_result,
     ].forEach(function (value) {
       const bucket = normalizeResultBucket(value);
       if (bucket === "empty") return;
@@ -1535,20 +1860,26 @@ function renderSummaryProgressDeck() {
       pctText: ratio.text,
     };
   }).sort(function (a, b) {
-    if (b.pct !== a.pct) return b.pct - a.pct;
-    return String(a.name).localeCompare(String(b.name));
+    return compareComponentNames(a.name, b.name);
   });
 
-  const brandItems = brandRows.map(function (row) {
-    const total = Number(row.cell_count || 0);
-    const done = Number(row.fail_count || 0) + Number(row.pass_count || 0) + Number(row.nt_count || 0) + Number(row.na_count || 0) + Number(row.other_count || 0);
-    const ratio = ratioText(done, total);
+  const brandItems = brandSpecs.map(function (spec) {
+    const acc = { total: 0, done: 0, fail: 0, pass: 0 };
+    detailRows.forEach(function (row) {
+      const bucket = normalizeResultBucket(row && row[spec.field]);
+      acc.total += 1;
+      if (bucket === "empty") return;
+      acc.done += 1;
+      if (bucket === "fail") acc.fail += 1;
+      if (bucket === "pass") acc.pass += 1;
+    });
+    const ratio = ratioText(acc.done, acc.total);
     return {
-      name: String(row.brand || "-"),
-      total: total,
-      done: done,
-      fail: Number(row.fail_count || 0),
-      pass: Number(row.pass_count || 0),
+      name: spec.name,
+      total: acc.total,
+      done: acc.done,
+      fail: acc.fail,
+      pass: acc.pass,
       pct: ratio.pct,
       pctText: ratio.text,
     };
@@ -1566,19 +1897,27 @@ function renderSummaryProgressDeck() {
     return;
   }
 
+  const csmap = buildColorStageMap();
+
   const brandHtml = brandItems.slice(0, 8).map(function (item) {
+    const brandSlotKey = String(item.name || "").toUpperCase();
+    const csStage = csmap.brandMap[brandSlotKey] || { red: 0, orange: 0, yellow: 0, green: 0, total: 0 };
     return '<div class="ftc-progress-item">' +
       '<div class="ftc-progress-head"><strong>' + esc(item.name) + '</strong><span>' + esc(item.pctText) + '</span></div>' +
       '<div class="ftc-progress-track"><div class="ftc-progress-fill" style="width:' + Math.max(0, Math.min(100, item.pct)).toFixed(1) + '%"></div></div>' +
       '<div class="ftc-progress-meta">진행 ' + formatNumber(item.done) + ' / ' + formatNumber(item.total) + ' · PASS ' + formatNumber(item.pass) + ' · FAIL ' + formatNumber(item.fail) + '</div>' +
+      (csStage.total ? '<div class="ftc-cstage-sub">' + colorStageBar(csStage) + '</div>' : '') +
       '</div>';
   }).join("");
 
   const componentHtml = componentItems.slice(0, 10).map(function (item) {
+    const compKey = String(item.name || "").trim();
+    const csStage = csmap.compMap[compKey] || { red: 0, orange: 0, yellow: 0, green: 0, total: 0 };
     return '<div class="ftc-progress-item">' +
       '<div class="ftc-progress-head"><strong>' + esc(item.name) + '</strong><span>' + esc(item.pctText) + '</span></div>' +
       '<div class="ftc-progress-track"><div class="ftc-progress-fill is-component" style="width:' + Math.max(0, Math.min(100, item.pct)).toFixed(1) + '%"></div></div>' +
       '<div class="ftc-progress-meta">진행 ' + formatNumber(item.done) + ' / ' + formatNumber(item.total) + ' · PASS ' + formatNumber(item.pass) + ' · FAIL ' + formatNumber(item.fail) + '</div>' +
+      (csStage.total ? '<div class="ftc-cstage-sub">' + colorStageBar(csStage) + '</div>' : '') +
       '</div>';
   }).join("");
 
@@ -1587,20 +1926,24 @@ function renderSummaryProgressDeck() {
 }
 
 const ALL_RESULT_FIELDS = [
-  "koa_result", "koa_android", "koa_ios",
-  "hoa_result", "hoa_android", "hoa_ios",
-  "goa_result", "goa_android", "goa_ios",
+  "koa_result",
+  "hoa_result",
+  "goa_result",
 ];
 
 const BRAND_FIELD_SPECS = [
-  { key: "all", label: "통합", fields: ALL_RESULT_FIELDS },
-  { key: "koa", label: "KOA", fields: ["koa_result", "koa_android", "koa_ios"] },
-  { key: "hoa", label: "HOA", fields: ["hoa_result", "hoa_android", "hoa_ios"] },
-  { key: "goa", label: "GOA", fields: ["goa_result", "goa_android", "goa_ios"] },
+  { key: "all", label: "통합", fields: ["base_result"] },
+  { key: "koa", label: "KOA", fields: ["koa_result"] },
+  { key: "hoa", label: "HOA", fields: ["hoa_result"] },
+  { key: "goa", label: "GOA", fields: ["goa_result"] },
 ];
 
 function newBrandCounter() {
-  return { pass: 0, fail: 0, nt: 0, na: 0, empty: 0, total: 0 };
+  return { pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: 0, total: 0, run_total: 0, notrun: 0 };
+}
+
+function isNotRunByColor(colorValue) {
+  return String(colorValue || "").trim().toLowerCase() === "red";
 }
 
 function addBrandBucket(counter, value) {
@@ -1610,7 +1953,8 @@ function addBrandBucket(counter, value) {
   else if (bucket === "fail") counter.fail += 1;
   else if (bucket === "nt") counter.nt += 1;
   else if (bucket === "na") counter.na += 1;
-  else counter.empty += 1;
+  else if (bucket === "empty") counter.empty += 1;
+  else counter.other += 1;
 }
 
 function rowBucketByFields(row, fields) {
@@ -1621,7 +1965,39 @@ function rowBucketByFields(row, fields) {
   if (buckets.includes("pass")) return "pass";
   if (buckets.includes("nt")) return "nt";
   if (buckets.includes("na")) return "na";
+  if (buckets.includes("other")) return "other";
   return "empty";
+}
+
+function aggregateAllSlots(rows) {
+  return (rows || []).reduce(function (acc, row) {
+    [row && row.koa_result, row && row.hoa_result, row && row.goa_result].forEach(function (value) {
+      const bucket = normalizeResultBucket(value);
+      acc.total += 1;
+      if (bucket === "pass") acc.pass += 1;
+      else if (bucket === "fail") acc.fail += 1;
+      else if (bucket === "nt") acc.nt += 1;
+      else if (bucket === "na") acc.na += 1;
+      else if (bucket === "empty") acc.empty += 1;
+      else acc.other += 1;
+    });
+    return acc;
+  }, { total: 0, pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: 0 });
+}
+
+function aggregateAllSlotsFromTotals() {
+  const totals = (S.data && S.data.totals) ? S.data.totals : {};
+  const pass = Number(totals.result_pass_count || 0);
+  const fail = Number(totals.result_fail_count || 0);
+  const nt = Number(totals.result_nt_count || 0);
+  const na = Number(totals.result_na_count || 0);
+  const other = Number(totals.result_other_count || 0);
+  const empty = Number(totals.result_empty_count || 0);
+  let total = pass + fail + nt + na + other + empty;
+  if (!total) {
+    total = Number(totals.row_count || 0) * 3;
+  }
+  return { total: total, pass: pass, fail: fail, nt: nt, na: na, other: other, empty: empty };
 }
 
 function calcRateText(numerator, denominator) {
@@ -1629,6 +2005,18 @@ function calcRateText(numerator, denominator) {
   const num = Number(numerator || 0);
   const pct = den > 0 ? (num / den) * 100 : 0;
   return pct.toFixed(1) + "%";
+}
+
+// Excel 기준식: (총합 - 공란) / 총합
+function calcRunRateByTotalAndEmpty(total, empty) {
+  const sumTotal = Number(total || 0);
+  const blank = Number(empty || 0);
+  if (!(sumTotal > 0)) {
+    return { executed: 0, pct: 0, text: "0.0%" };
+  }
+  const executed = Math.max(0, sumTotal - blank);
+  const pct = (executed / sumTotal) * 100;
+  return { executed: executed, pct: pct, text: pct.toFixed(1) + "%" };
 }
 
 function rateToneByPercent(pct) {
@@ -1678,15 +2066,27 @@ function buildBrandStatusSummaryRows() {
   });
 
   rows.forEach(function (row) {
-    const component = String(row.component || "-");
+    const component = displayComponentName(row.component || "-");
     BRAND_FIELD_SPECS.forEach(function (spec) {
       const brandObj = byBrand[spec.key];
       if (!brandObj.components[component]) {
         brandObj.components[component] = newBrandCounter();
       }
+      const runColorFields = spec.key === "all"
+        ? ["koa_color", "hoa_color", "goa_color"]
+        : (spec.key === "koa" ? ["koa_color"] : (spec.key === "hoa" ? ["hoa_color"] : ["goa_color"]));
+      const runTotalAdd = runColorFields.length;
+      const notRunAdd = runColorFields.reduce(function (acc, field) {
+        return acc + (isNotRunByColor(row && row[field]) ? 1 : 0);
+      }, 0);
+
       const bucket = rowBucketByFields(row, spec.fields);
       brandObj.total.total += 1;
       brandObj.components[component].total += 1;
+      brandObj.total.run_total += runTotalAdd;
+      brandObj.components[component].run_total += runTotalAdd;
+      brandObj.total.notrun += notRunAdd;
+      brandObj.components[component].notrun += notRunAdd;
       if (bucket === "pass") {
         brandObj.total.pass += 1;
         brandObj.components[component].pass += 1;
@@ -1699,9 +2099,12 @@ function buildBrandStatusSummaryRows() {
       } else if (bucket === "na") {
         brandObj.total.na += 1;
         brandObj.components[component].na += 1;
-      } else {
+      } else if (bucket === "empty") {
         brandObj.total.empty += 1;
         brandObj.components[component].empty += 1;
+      } else {
+        brandObj.total.other += 1;
+        brandObj.components[component].other += 1;
       }
     });
   });
@@ -1713,21 +2116,23 @@ function buildBrandStatusSummaryRows() {
       return {
         brand: spec.label,
         rowType: "component",
-        name: name,
+        name: displayComponentName(name),
         total: c.total,
         pass: c.pass,
         fail: c.fail,
         na: c.na,
         nt: c.nt,
+        other: c.other,
         empty: c.empty,
+        run_total: c.run_total,
+        notrun: c.notrun,
       };
     }).filter(function (item) {
       if (!item.total) return false;
       if (S.nOnly && item.fail <= 0) return false;
       return true;
     }).sort(function (a, b) {
-      if (b.fail !== a.fail) return b.fail - a.fail;
-      return String(a.name).localeCompare(String(b.name));
+      return compareComponentNames(a.name, b.name);
     });
 
     const visibleTotal = componentRows.reduce(function (acc, item) {
@@ -1736,9 +2141,12 @@ function buildBrandStatusSummaryRows() {
       acc.fail += item.fail;
       acc.na += item.na;
       acc.nt += item.nt;
+      acc.other += item.other;
       acc.empty += item.empty;
+      acc.run_total += item.run_total;
+      acc.notrun += item.notrun;
       return acc;
-    }, { total: 0, pass: 0, fail: 0, na: 0, nt: 0, empty: 0 });
+    }, { total: 0, pass: 0, fail: 0, na: 0, nt: 0, other: 0, empty: 0, run_total: 0, notrun: 0 });
 
     const totalRow = {
       brand: spec.label,
@@ -1749,7 +2157,10 @@ function buildBrandStatusSummaryRows() {
       fail: visibleTotal.fail,
       na: visibleTotal.na,
       nt: visibleTotal.nt,
+      other: visibleTotal.other,
       empty: visibleTotal.empty,
+      run_total: visibleTotal.run_total,
+      notrun: visibleTotal.notrun,
     };
 
     return {
@@ -1786,7 +2197,7 @@ function buildBrandDrillRows() {
   const spec = resolveBrandSpec(selection.brandKey);
   const source = filterDetail(S.data && S.data.detail_rows ? S.data.detail_rows : []);
   return source.filter(function (row) {
-    if (selection.rowName !== "__TOTAL__" && String(row.component || "") !== selection.rowName) {
+    if (selection.rowName !== "__TOTAL__" && displayComponentName(row.component || "") !== selection.rowName) {
       return false;
     }
     return rowBucketByFields(row, spec.fields) === selection.bucket;
@@ -1895,7 +2306,7 @@ function renderBrandDrillRows() {
       '<td>' + chip(row.goa_result) + '</td>' +
       '<td>' + chip(row.goa_android) + '</td>' +
       '<td>' + chip(row.goa_ios) + '</td>' +
-      '<td>' + esc(row.closed_jira_no || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.closed_jira_no || "-") + '</td>' +
       '<td>' + esc(row.jira_no || "-") + '</td>' +
       '<td class="ftc-text-cell">' + esc(row.nt_na_reason || "-") + '</td>' +
       '<td>' + esc(row.nt_na_filter || "-") + '</td>' +
@@ -1906,7 +2317,7 @@ function renderBrandDrillRows() {
 }
 
 function switchSummaryView(view) {
-  const allowed = { matrix: true, brand: true, category: true };
+  const allowed = { matrix: true, brand: true, category: true, priority: true };
   const next = allowed[view] ? view : "matrix";
   S.summaryView = next;
 
@@ -1916,11 +2327,26 @@ function switchSummaryView(view) {
     button.setAttribute("aria-selected", active ? "true" : "false");
   });
 
-  ["matrix", "brand", "category"].forEach(function (name) {
+  ["matrix", "brand", "category", "priority"].forEach(function (name) {
     const block = document.getElementById("summary-block-" + name);
     if (!block) return;
     block.classList.toggle("ftc-panel-hidden", name !== next);
   });
+
+  updatePageMainTitle();
+
+  if (next === "priority") {
+    const hasRows = !!(S.data && Array.isArray(S.data.detail_rows) && S.data.detail_rows.length);
+    if (!hasRows) {
+      loadSummary(true)
+        .then(function () {
+          renderPriorityTable();
+        })
+        .catch(function () {
+          // 우선순위 탭 진입 시 재시도 실패는 기존 상태를 유지한다.
+        });
+    }
+  }
 }
 
 function renderComponentResultTable() {
@@ -1930,7 +2356,7 @@ function renderComponentResultTable() {
   const rows = filterDetail(S.data && S.data.detail_rows ? S.data.detail_rows : []);
   const byComponent = {};
   rows.forEach(function (row) {
-    const component = String(row.component || "-");
+    const component = displayComponentName(row.component || "-");
     if (!byComponent[component]) {
       byComponent[component] = {
         component: component,
@@ -1961,7 +2387,7 @@ function renderComponentResultTable() {
     const failA = a.koa_result.fail + a.koa_android.fail + a.koa_ios.fail + a.hoa_result.fail + a.hoa_android.fail + a.hoa_ios.fail + a.goa_result.fail + a.goa_android.fail + a.goa_ios.fail;
     const failB = b.koa_result.fail + b.koa_android.fail + b.koa_ios.fail + b.hoa_result.fail + b.hoa_android.fail + b.hoa_ios.fail + b.goa_result.fail + b.goa_android.fail + b.goa_ios.fail;
     if (failA !== failB) return failB - failA;
-    return String(a.component).localeCompare(String(b.component));
+    return compareComponentNames(a.component, b.component);
   });
   if (hint) hint.textContent = items.length + "개 컴포넌트";
   if (!items.length) {
@@ -1988,18 +2414,118 @@ function renderComponentToc() {
   const hint = document.getElementById("qaFullTcComponentTocHint");
   const el = document.getElementById("qaFullTcComponentToc");
   if (!el) return;
-  const components = (S.data && S.data.components ? S.data.components : []).filter(function (item) {
-    return item && item.matched_sheet;
+
+  if (S.summaryView === "priority") {
+    const sourceRows = priorityDrillSourceRows();
+    const selectedPriority = String(S.priorityFilter || "all");
+    const normalizedSelected = selectedPriority === "all" ? "all" : normalizePriorityLabel(selectedPriority);
+    const brandSpecs = BRAND_FIELD_SPECS.filter(function (spec) { return spec.key !== "all"; });
+    const brandMap = { KOA: {}, HOA: {}, GOA: {} };
+
+    sourceRows.forEach(function (row) {
+      const rowPriority = normalizePriorityLabel(row.priority);
+      if (normalizedSelected !== "all" && rowPriority !== normalizedSelected) return;
+      const component = displayComponentName(row.component || "-");
+      brandSpecs.forEach(function (spec) {
+        const brandKey = String(spec.label || "").toUpperCase();
+        const bucket = priorityBucketBySpec(row, spec);
+        if (!brandMap[brandKey][component]) {
+          brandMap[brandKey][component] = { total: 0, executed: 0 };
+        }
+        brandMap[brandKey][component].total += 1;
+        if (bucket !== "empty") brandMap[brandKey][component].executed += 1;
+      });
+    });
+
+    const brands = ["KOA", "HOA", "GOA"];
+    if (hint) {
+      hint.textContent = "브랜드별 컴포넌트 목차" + (normalizedSelected === "all" ? " (전체 우선순위)" : " (" + normalizedSelected + ")");
+    }
+
+    const anyData = brands.some(function (brand) { return Object.keys(brandMap[brand] || {}).length > 0; });
+    if (!anyData) {
+      el.innerHTML = '<p class="hint" style="padding:12px 4px;">목차 데이터가 없습니다.</p>';
+      return;
+    }
+
+    el.innerHTML = '<div class="ftc-priority-toc-grid">' + brands.map(function (brand) {
+      const items = Object.keys(brandMap[brand] || {}).map(function (component) {
+        const c = brandMap[brand][component];
+        const runPct = c.total > 0 ? (c.executed / c.total) * 100 : 0;
+        return { component: component, total: c.total, runPct: runPct };
+      }).sort(function (a, b) {
+        return compareComponentNames(a.component, b.component);
+      });
+
+      return '<section class="ftc-priority-toc-col">' +
+        '<h3>' + brand + '</h3>' +
+        '<div class="ftc-priority-toc-items">' + items.map(function (item) {
+          const active = S.priorityComponentFilter === item.component;
+          const tone = rateToneByPercent(item.runPct);
+          return '<button type="button" class="ftc-priority-toc-item' + (active ? ' active' : '') + '" data-priority-component="' + esc(item.component) + '">' +
+            '<span class="ftc-priority-toc-name">' + esc(item.component) + '</span>' +
+            '<span class="ftc-priority-toc-meta">' + formatNumber(item.total) + ' TC · ' + item.runPct.toFixed(1) + '%</span>' +
+            '<span class="ftc-priority-toc-bar"><i class="is-rate-' + esc(tone) + '" style="width:' + Math.max(0, Math.min(100, item.runPct)).toFixed(1) + '%"></i></span>' +
+          '</button>';
+        }).join("") + '</div>' +
+      '</section>';
+    }).join("") + '</div>';
+    return;
+  }
+
+  const detailRows = filterDetail(S.data && S.data.detail_rows ? S.data.detail_rows : []);
+  const componentStats = {};
+  detailRows.forEach(function (row) {
+    const componentName = displayComponentName(row.component || "-");
+    if (!componentStats[componentName]) {
+      componentStats[componentName] = {
+        row_count: 0,
+        pass: 0,
+        fail: 0,
+        nt: 0,
+        na: 0,
+        other: 0,
+        empty: 0,
+      };
+    }
+    const target = componentStats[componentName];
+    target.row_count += 1;
+    [row.koa_result, row.hoa_result, row.goa_result].forEach(function (value) {
+      const bucket = normalizeResultBucket(value);
+      if (bucket === "pass") target.pass += 1;
+      else if (bucket === "fail") target.fail += 1;
+      else if (bucket === "nt") target.nt += 1;
+      else if (bucket === "na") target.na += 1;
+      else if (bucket === "empty") target.empty += 1;
+      else target.other += 1;
+    });
   });
+
+  const components = Object.keys(componentStats).map(function (name) {
+    return {
+      component: name,
+      row_count: Number(componentStats[name].row_count || 0),
+      pass: Number(componentStats[name].pass || 0),
+      fail: Number(componentStats[name].fail || 0),
+      nt: Number(componentStats[name].nt || 0),
+      na: Number(componentStats[name].na || 0),
+      other: Number(componentStats[name].other || 0),
+      empty: Number(componentStats[name].empty || 0),
+    };
+  }).sort(function (a, b) {
+    return compareComponentNames(a.component, b.component);
+  });
+
   if (hint) hint.textContent = "전체 + " + components.length + "개 컴포넌트";
   function buildTocCard(componentKey, title, metaText, sheetName, counts, isAll) {
-    const fail = Number((counts && counts.result_fail_count) || 0);
-    const pass = Number((counts && counts.result_pass_count) || 0);
-    const nt = Number((counts && counts.result_nt_count) || 0);
-    const na = Number((counts && counts.result_na_count) || 0);
-    const other = Number((counts && counts.result_other_count) || 0);
-    const total = fail + pass + nt + na + other;
-    const executed = fail + pass + nt + na;
+    const fail = Number((counts && counts.fail) || 0);
+    const pass = Number((counts && counts.pass) || 0);
+    const nt = Number((counts && counts.nt) || 0);
+    const na = Number((counts && counts.na) || 0);
+    const other = Number((counts && counts.other) || 0);
+    const empty = Number((counts && counts.empty) || 0);
+    const total = fail + pass + nt + na + other + empty;
+    const executed = total - empty;
     const runPct = total > 0 ? ((executed / total) * 100) : 0;
     const tone = rateToneByPercent(runPct);
     return '<button class="ftc-toc-item is-rate-' + esc(tone) + (S.component === componentKey ? ' active' : '') + (isAll ? ' is-all' : '') + '" data-component="' + esc(componentKey) + '">' +
@@ -2024,20 +2550,21 @@ function renderComponentToc() {
   }
 
   const totalCounts = components.reduce(function (acc, item) {
-    const counts = item.counts || {};
-    acc.result_fail_count += Number(counts.result_fail_count || 0);
-    acc.result_pass_count += Number(counts.result_pass_count || 0);
-    acc.result_nt_count += Number(counts.result_nt_count || 0);
-    acc.result_na_count += Number(counts.result_na_count || 0);
-    acc.result_other_count += Number(counts.result_other_count || 0);
+    acc.fail += Number(item.fail || 0);
+    acc.pass += Number(item.pass || 0);
+    acc.nt += Number(item.nt || 0);
+    acc.na += Number(item.na || 0);
+    acc.other += Number(item.other || 0);
+    acc.empty += Number(item.empty || 0);
     acc.row_count += Number(item.row_count || 0);
     return acc;
   }, {
-    result_fail_count: 0,
-    result_pass_count: 0,
-    result_nt_count: 0,
-    result_na_count: 0,
-    result_other_count: 0,
+    fail: 0,
+    pass: 0,
+    nt: 0,
+    na: 0,
+    other: 0,
+    empty: 0,
     row_count: 0,
   });
 
@@ -2051,15 +2578,15 @@ function renderComponentToc() {
   );
 
   el.innerHTML = allButton + components.map(function (item) {
-    const counts = item.counts || {};
     const rowCount = Number(item.row_count || 0);
-    const failCount = Number(counts.result_fail_count || 0);
+    const failCount = Number(item.fail || 0);
+    const componentName = displayComponentName(item.component || "-");
     return buildTocCard(
-      String(item.component || ""),
-      String(item.component || "-"),
+      componentName,
+      componentName,
       formatNumber(rowCount) + "행 · FAIL " + formatNumber(failCount),
-      String(item.sheet_name || "-"),
-      counts,
+      "-",
+      item,
       false
     );
   }).join("");
@@ -2071,6 +2598,28 @@ function renderBrandTable() {
   const overview = document.getElementById("qaFullTcBrandOverview");
   if (!body) return;
   const groups = buildBrandStatusSummaryRows();
+  const query = String(S.query || "").trim().toLowerCase();
+  const scopedRows = filterDetail(S.data && S.data.detail_rows ? S.data.detail_rows : []).filter(function (row) {
+    if (!query) return true;
+    const text = [row.component, row.category, row.depth1, row.depth2, row.depth3]
+      .map(function (value) { return String(value || "").toLowerCase(); })
+      .join(" ");
+    return text.includes(query);
+  });
+  const integratedGroup = groups.find(function (group) { return group.key === "all"; });
+  const integratedAggregate = integratedGroup
+    ? (integratedGroup.totalRow || { total: 0, pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: 0 })
+    : { total: 0, pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: 0 };
+  const formulaStats = (S.data && S.data.statistics_formula) ? S.data.statistics_formula : null;
+  const useFormulaStats = !!(
+    formulaStats &&
+    formulaStats.available &&
+    S.component === "all" &&
+    !String(S.query || "").trim() &&
+    !S.nOnly &&
+    !S.ntOnly &&
+    !S.naOnly
+  );
   if (hint) {
     const compCount = groups.reduce(function (acc, group) { return acc + group.componentRows.length; }, 0);
     hint.textContent = "브랜드 " + groups.length + "개 · 컴포넌트 " + compCount + "개";
@@ -2078,26 +2627,59 @@ function renderBrandTable() {
 
   if (overview) {
     overview.innerHTML = groups.map(function (group) {
-      const t = group.totalRow;
-      const executed = t.pass + t.fail + t.nt + t.na;
-      const runRate = calcRateText(executed, t.total);
-      const passRate = calcRateText(t.pass, t.pass + t.fail);
-      const runPct = t.total > 0 ? Math.max(0, Math.min(100, (executed / t.total) * 100)) : 0;
-      const passPct = (t.pass + t.fail) > 0 ? Math.max(0, Math.min(100, (t.pass / (t.pass + t.fail)) * 100)) : 0;
+      const isIntegrated = group.key === "all";
+      const t = (isIntegrated && useFormulaStats)
+        ? {
+            total: Number(formulaStats.total || 0),
+            pass: Number(formulaStats.pass || 0),
+            fail: Number(formulaStats.fail || 0),
+            na: Number(formulaStats.na || 0),
+            nt: Number(formulaStats.nt || 0),
+            other: Number(formulaStats.other || 0),
+            empty: Number(formulaStats.empty || 0),
+            run_total: Number(formulaStats.run_denominator || 0),
+            notrun: Number(formulaStats.empty || 0),
+          }
+        : (isIntegrated ? integratedAggregate : group.totalRow);
+      const run = (isIntegrated && useFormulaStats)
+        ? {
+            executed: Number(formulaStats.run_numerator || 0),
+            pct: Number(formulaStats.run_rate || 0),
+            text: Number(formulaStats.run_rate || 0).toFixed(1) + "%",
+          }
+        : calcRunRateByTotalAndEmpty(
+            Number(t.run_total || t.total || 0),
+            Number(t.notrun || 0)
+          );
+      const executed = run.executed;
+      const runRate = run.text;
+      const passRate = (isIntegrated && useFormulaStats)
+        ? Number(formulaStats.pass_rate || 0).toFixed(1) + "%"
+        : calcRateText(t.pass, t.pass + t.fail);
+      const runPct = Math.max(0, Math.min(100, run.pct));
+      const passPct = (isIntegrated && useFormulaStats)
+        ? Math.max(0, Math.min(100, Number(formulaStats.pass_rate || 0)))
+        : (t.pass + t.fail) > 0
+        ? Math.max(0, Math.min(100, (t.pass / (t.pass + t.fail)) * 100))
+        : 0;
       const tone = rateToneByPercent(runPct);
       const passTone = rateToneByPercent(passPct);
+      const totalLabel = isIntegrated ? "Total Slot" : "Total";
+      const basisLabel = isIntegrated ? "슬롯 기준" : "브랜드 기준";
+      const runDen = Number(t.run_total || t.total || 0);
       return '<article class="ftc-brand-overview-card is-' + esc(group.key) + ' is-rate-' + esc(tone) + '">' +
         '<div class="ftc-brand-overview-top"><h3>' + esc(group.label) + '</h3><span class="ftc-brand-overview-badge">' + esc(group.label) + '</span></div>' +
-        '<div class="ftc-brand-overview-meta">브랜드 전체 · Run ' + esc(runRate) + '</div>' +
+        '<div class="ftc-brand-overview-meta">브랜드 전체 · Run ' + esc(runRate) + ' (' + formatNumber(executed) + ' / ' + formatNumber(runDen) + ') · ' + basisLabel + '</div>' +
         '<div class="ftc-brand-overview-metrics">' +
           '<span class="is-pass">PASS ' + formatNumber(t.pass) + '</span>' +
           '<span class="is-fail">FAIL ' + formatNumber(t.fail) + '</span>' +
           '<span class="is-nt">N/T ' + formatNumber(t.nt) + '</span>' +
           '<span class="is-na">N/A ' + formatNumber(t.na) + '</span>' +
+          '<span class="is-empty">기타 ' + formatNumber(t.other) + '</span>' +
           '<span class="is-empty">공란 ' + formatNumber(t.empty) + '</span>' +
         '</div>' +
         '<div class="ftc-brand-overview-progress">' + rateGaugeMarkup(runPct, tone, "Run") + '</div>' +
-        '<footer><span>Total ' + formatNumber(t.total) + '</span>' + rateGaugeMarkup(passPct, passTone, "Pass") + '</footer>' +
+        '<footer><span>' + totalLabel + ' ' + formatNumber(t.total) + '</span>' + rateGaugeMarkup(passPct, passTone, "Pass") + '</footer>' +
       '</article>';
     }).join("");
   }
@@ -2111,11 +2693,38 @@ function renderBrandTable() {
     }
     const rowspan = allRows.length;
     allRows.forEach(function (row, idx) {
-      const executed = row.pass + row.fail + row.nt + row.na;
-      const runRate = calcRateText(executed, row.total);
-      const passRate = calcRateText(row.pass, row.pass + row.fail);
-      const runPct = row.total > 0 ? (executed / row.total) * 100 : 0;
-      const passPct = (row.pass + row.fail) > 0 ? (row.pass / (row.pass + row.fail)) * 100 : 0;
+      const isIntegratedTotalRow = group.key === "all" && row.rowType === "total";
+      const effectiveRow = (isIntegratedTotalRow && useFormulaStats)
+        ? {
+            total: Number(formulaStats.total || 0),
+            pass: Number(formulaStats.pass || 0),
+            fail: Number(formulaStats.fail || 0),
+            na: Number(formulaStats.na || 0),
+            nt: Number(formulaStats.nt || 0),
+            other: Number(formulaStats.other || 0),
+            empty: Number(formulaStats.empty || 0),
+            run_total: Number(formulaStats.run_denominator || 0),
+            notrun: Number(formulaStats.empty || 0),
+          }
+        : (isIntegratedTotalRow ? integratedAggregate : row);
+      const run = (isIntegratedTotalRow && useFormulaStats)
+        ? {
+            executed: Number(formulaStats.run_numerator || 0),
+            pct: Number(formulaStats.run_rate || 0),
+            text: Number(formulaStats.run_rate || 0).toFixed(1) + "%",
+          }
+        : calcRunRateByTotalAndEmpty(
+            Number(effectiveRow.run_total || effectiveRow.total || 0),
+            Number(effectiveRow.notrun || 0)
+          );
+      const runRate = run.text;
+      const passRate = (isIntegratedTotalRow && useFormulaStats)
+        ? Number(formulaStats.pass_rate || 0).toFixed(1) + "%"
+        : calcRateText(effectiveRow.pass, effectiveRow.pass + effectiveRow.fail);
+      const runPct = run.pct;
+      const passPct = (isIntegratedTotalRow && useFormulaStats)
+        ? Number(formulaStats.pass_rate || 0)
+        : (effectiveRow.pass + effectiveRow.fail) > 0 ? (effectiveRow.pass / (effectiveRow.pass + effectiveRow.fail)) * 100 : 0;
       const runTone = rateToneByPercent(runPct);
       const passTone = rateToneByPercent(passPct);
       const trClass = row.rowType === "total" ? "ftc-brand-total-row" : "";
@@ -2127,15 +2736,20 @@ function renderBrandTable() {
       const brandCell = idx === 0
         ? '<td rowspan="' + rowspan + '" class="ftc-brand-sticky"><strong>' + esc(group.label) + '</strong></td>'
         : "";
+      const passCell = countButton(effectiveRow.pass, "pass", ctx);
+      const failCell = countButton(effectiveRow.fail, "fail", ctx);
+      const naCell = countButton(effectiveRow.na, "na", ctx);
+      const ntCell = countButton(effectiveRow.nt, "nt", ctx);
+      const emptyCell = countButton(effectiveRow.empty, "empty", ctx);
       tableRows.push('<tr class="' + trClass + '">' +
         brandCell +
-        '<td><strong>' + esc(row.name) + '</strong></td>' +
-        '<td>' + countChip(row.total) + '</td>' +
-        '<td>' + countButton(row.pass, "pass", ctx) + '</td>' +
-        '<td>' + countButton(row.fail, "fail", ctx) + '</td>' +
-        '<td>' + countButton(row.na, "na", ctx) + '</td>' +
-        '<td>' + countButton(row.nt, "nt", ctx) + '</td>' +
-        '<td>' + countButton(row.empty, "empty", ctx) + '</td>' +
+        '<td><strong>' + esc(isIntegratedTotalRow ? (row.name + ' (슬롯)') : row.name) + '</strong></td>' +
+        '<td>' + countChip(effectiveRow.total) + '</td>' +
+        '<td>' + passCell + '</td>' +
+        '<td>' + failCell + '</td>' +
+        '<td>' + naCell + '</td>' +
+        '<td>' + ntCell + '</td>' +
+        '<td>' + emptyCell + '</td>' +
         '<td>' + rateCellMarkup(runPct, runTone) + '</td>' +
         '<td>' + rateCellMarkup(passPct, passTone) + '</td>' +
       '</tr>');
@@ -2190,6 +2804,443 @@ function renderBrandCategoryTable() {
       '<td><span class="ftc-rate-pill">' + esc(String(row.pass_rate || 0)) + '%</span></td>' +
       '</tr>';
   }).join('');
+}
+
+function normalizePriorityLabel(value) {
+  const text = String(value || "").trim();
+  if (!text) return "(미지정)";
+  if (/^\d+(\.0+)?$/.test(text)) {
+    const n = parseInt(text, 10);
+    if (Number.isFinite(n) && n > 0) {
+      return "P" + n;
+    }
+  }
+  const upper = text.toUpperCase();
+  if (upper === "HIGH" || upper === "H") return "High";
+  if (upper === "MEDIUM" || upper === "M") return "Medium";
+  if (upper === "LOW" || upper === "L") return "Low";
+  return text;
+}
+
+function prioritySortRank(value) {
+  const label = String(value || "").toLowerCase();
+  const matched = label.match(/^p(\d+)$/);
+  if (matched) {
+    return parseInt(matched[1], 10);
+  }
+  if (label === "high") return 0;
+  if (label === "medium") return 1;
+  if (label === "low") return 2;
+  if (label === "(미지정)") return 9;
+  return 5;
+}
+
+const PRIORITY_COMPONENT_ORDER = [
+  "Control",
+  "Map",
+  "MyCar",
+  "HandleLayer/Home",
+  "Widget",
+  "Watch",
+  "Common UI",
+];
+
+function normalizePriorityComponentName(value) {
+  const text = String(value || "").trim();
+  if (!text) return "-";
+  const compact = text.toLowerCase().replace(/\s+/g, "").replace(/[\\/_-]/g, "");
+  if (compact === "control") return "Control";
+  if (compact === "map") return "Map";
+  if (compact === "mycar") return "MyCar";
+  if (compact === "homehl" || compact === "handlelayerhome" || compact === "handlelayerhl" || compact === "home") return "HandleLayer/Home";
+  if (compact === "widget") return "Widget";
+  if (compact === "watch") return "Watch";
+  if (compact === "commonui" || compact === "common") return "Common UI";
+  return text;
+}
+
+function componentSortRank(value) {
+  const normalized = normalizePriorityComponentName(value);
+  const idx = PRIORITY_COMPONENT_ORDER.indexOf(normalized);
+  return idx >= 0 ? idx : 999;
+}
+
+function displayComponentName(value) {
+  return normalizePriorityComponentName(value);
+}
+
+function compareComponentNames(a, b) {
+  const rankA = componentSortRank(a);
+  const rankB = componentSortRank(b);
+  if (rankA !== rankB) return rankA - rankB;
+  return String(displayComponentName(a)).localeCompare(String(displayComponentName(b)));
+}
+
+function brandSortRank(value) {
+  const key = String(value || "").toUpperCase();
+  if (key === "KOA") return 0;
+  if (key === "HOA") return 1;
+  if (key === "GOA") return 2;
+  return 9;
+}
+
+function priorityTone(value) {
+  const key = String(value || "").toLowerCase();
+  if (key === "high") return "high";
+  if (key === "medium") return "medium";
+  if (key === "low") return "low";
+  return "none";
+}
+
+function priorityBadgeMarkup(value) {
+  const tone = priorityTone(value);
+  return '<span class="ftc-priority-badge is-' + esc(tone) + '">' + esc(value || "(미지정)") + '</span>';
+}
+
+function brandPillMarkup(value) {
+  const brand = String(value || "-").toUpperCase();
+  const tone = brand === "KOA" ? "koa" : (brand === "HOA" ? "hoa" : (brand === "GOA" ? "goa" : "etc"));
+  return '<span class="ftc-brand-pill is-' + esc(tone) + '">' + esc(brand) + '</span>';
+}
+
+function priorityBrandColorFields(brand) {
+  const key = String(brand || "ALL").toUpperCase();
+  if (key === "KOA") return ["koa_color"];
+  if (key === "HOA") return ["hoa_color"];
+  if (key === "GOA") return ["goa_color"];
+  return ["koa_color", "hoa_color", "goa_color"];
+}
+
+function priorityNotRunCount(row, brand) {
+  return priorityBrandColorFields(brand).reduce(function (acc, field) {
+    return acc + (isNotRunByColor(row && row[field]) ? 1 : 0);
+  }, 0);
+}
+
+function priorityBucketBySpec(row, spec) {
+  if (!spec) return rowBucketByFields(row, ALL_RESULT_FIELDS);
+  if (priorityNotRunCount(row, spec.label || spec.key || "ALL") > 0) {
+    return "empty";
+  }
+  return rowBucketByFields(row, spec.fields);
+}
+
+function priorityAggregateBucket(row) {
+  const buckets = BRAND_FIELD_SPECS.filter(function (spec) {
+    return spec.key !== "all";
+  }).map(function (spec) {
+    return priorityBucketBySpec(row, spec);
+  });
+  if (buckets.includes("fail")) return "fail";
+  if (buckets.includes("pass")) return "pass";
+  if (buckets.includes("nt")) return "nt";
+  if (buckets.includes("na")) return "na";
+  if (buckets.includes("other")) return "other";
+  return "empty";
+}
+
+function priorityCountButton(value, payload, tone) {
+  const clsTone = tone ? " is-" + tone : "";
+  return '<button type="button" class="ftc-priority-count-btn' + clsTone + '"' +
+    ' data-priority="' + esc(payload.priority || "") + '"' +
+    ' data-component="' + esc(payload.component || "") + '"' +
+    ' data-brand="' + esc(payload.brand || "ALL") + '"' +
+    ' data-bucket="' + esc(payload.bucket || "all") + '">' + formatNumber(value) + '</button>';
+}
+
+function summarizeBrandCell(stat, payload) {
+  const safe = stat || { total: 0, pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: 0, run_total: 0, notrun: 0 };
+  const runBase = Math.max(0, Number(safe.run_total || safe.total || 0));
+  const notRun = Math.max(0, Number(safe.notrun || safe.empty || 0));
+  const executed = Math.max(0, runBase - notRun);
+  const runPct = runBase > 0 ? (executed / runBase) * 100 : 0;
+  const tone = rateToneByPercent(runPct);
+  return '<div class="ftc-priority-brand-cell">' +
+    '<div class="ftc-priority-brand-top">' + priorityCountButton(safe.total, payload, "neutral") + '</div>' +
+    '<div class="ftc-priority-brand-run">' + rateCellMarkup(runPct, tone) + '</div>' +
+  '</div>';
+}
+
+function buildPrioritySummaryRows() {
+  const rows = priorityDrillSourceRows();
+  const byKey = {};
+  const brandSpecs = BRAND_FIELD_SPECS.filter(function (spec) { return spec.key !== "all"; });
+  const selectedPriority = String(S.priorityFilter || "all");
+  const normalizedSelectedPriority = selectedPriority === "all" ? "all" : normalizePriorityLabel(selectedPriority);
+  const selectedComponent = String(S.priorityComponentFilter || "all");
+
+  rows.forEach(function (row) {
+    const component = displayComponentName(row.component || "-");
+    const priority = normalizePriorityLabel(row.priority);
+    if (normalizedSelectedPriority !== "all" && priority !== normalizedSelectedPriority) return;
+    if (selectedComponent !== "all" && component !== selectedComponent) return;
+    const key = [priority, component].join("||");
+    if (!byKey[key]) {
+      byKey[key] = {
+        priority: priority,
+        component: component,
+        total: 0,
+        pass: 0,
+        fail: 0,
+        nt: 0,
+        na: 0,
+        other: 0,
+        empty: 0,
+        run_total: 0,
+        notrun: 0,
+        base_pass: 0,
+        base_fail: 0,
+        brands: {
+          KOA: { total: 0, pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: 0, run_total: 0, notrun: 0 },
+          HOA: { total: 0, pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: 0, run_total: 0, notrun: 0 },
+          GOA: { total: 0, pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: 0, run_total: 0, notrun: 0 },
+        },
+      };
+    }
+    const target = byKey[key];
+    const allBucket = priorityAggregateBucket(row);
+    const baseBucket = normalizeResultBucket(row.base_result);
+    const allNotRun = priorityNotRunCount(row, "ALL");
+    target.total += 1;
+    target.run_total += 3;
+    target.notrun += allNotRun;
+    if (allBucket === "pass") target.pass += 1;
+    else if (allBucket === "fail") target.fail += 1;
+    else if (allBucket === "nt") target.nt += 1;
+    else if (allBucket === "na") target.na += 1;
+    else if (allBucket === "empty") target.empty += 1;
+    else target.other += 1;
+
+    if (baseBucket === "pass") target.base_pass += 1;
+    else if (baseBucket === "fail") target.base_fail += 1;
+
+    brandSpecs.forEach(function (spec) {
+      const bucket = priorityBucketBySpec(row, spec);
+      const brandKey = String(spec.label || "").toUpperCase();
+      const brandTarget = target.brands[brandKey] || target.brands.KOA;
+      const brandNotRun = priorityNotRunCount(row, brandKey);
+      brandTarget.total += 1;
+      brandTarget.run_total += 1;
+      brandTarget.notrun += brandNotRun;
+      if (bucket === "pass") brandTarget.pass += 1;
+      else if (bucket === "fail") brandTarget.fail += 1;
+      else if (bucket === "nt") brandTarget.nt += 1;
+      else if (bucket === "na") brandTarget.na += 1;
+      else if (bucket === "empty") brandTarget.empty += 1;
+      else brandTarget.other += 1;
+    });
+  });
+
+  return Object.keys(byKey).map(function (key) {
+    return byKey[key];
+  }).sort(function (a, b) {
+    const pa = prioritySortRank(a.priority);
+    const pb = prioritySortRank(b.priority);
+    if (pa !== pb) return pa - pb;
+    if (String(a.component) !== String(b.component)) return compareComponentNames(a.component, b.component);
+    return 0;
+  });
+}
+
+function priorityLabelText(value) {
+  const text = String(value || "");
+  const matched = text.match(/^P(\d+)$/i);
+  if (matched) return matched[1];
+  return text;
+}
+
+function renderPriorityFilterBar(sourceRows) {
+  const chips = document.getElementById("qaFullTcPriorityFilters");
+  if (!chips) return;
+  const values = Array.from(new Set((sourceRows || []).map(function (row) {
+    return normalizePriorityLabel(row.priority);
+  }).filter(Boolean))).sort(function (a, b) {
+    const ra = prioritySortRank(a);
+    const rb = prioritySortRank(b);
+    if (ra !== rb) return ra - rb;
+    return String(a).localeCompare(String(b));
+  });
+  const current = String(S.priorityFilter || "all");
+  chips.innerHTML = ['<button type="button" class="ftc-priority-filter-chip' + (current === "all" ? ' active' : '') + '" data-priority-filter="all">전체</button>']
+    .concat(values.map(function (value) {
+      const active = current !== "all" && normalizePriorityLabel(current) === value;
+      return '<button type="button" class="ftc-priority-filter-chip' + (active ? ' active' : '') + '" data-priority-filter="' + esc(value) + '">' + esc(priorityLabelText(value)) + '</button>';
+    })).join("");
+}
+
+function priorityDrillSourceRows() {
+  return (S.data && Array.isArray(S.data.detail_rows))
+    ? S.data.detail_rows
+    : ((S.bridge && S.bridge.summary && Array.isArray(S.bridge.summary.detail_rows)) ? S.bridge.summary.detail_rows : []);
+}
+
+function renderPriorityDrillRows() {
+  const wrap = document.getElementById("qaFullTcPriorityDrillWrap");
+  const hint = document.getElementById("qaFullTcPriorityDrillHint");
+  const body = document.getElementById("qaFullTcPriorityDrillBody");
+  if (!wrap || !body) return;
+  if (!S.priorityDrill) {
+    wrap.hidden = true;
+    body.innerHTML = "";
+    renderPagination("qaFullTcPriorityDrillPagination", "priority_drill", { total: 0 });
+    return;
+  }
+
+  const selection = S.priorityDrill;
+  const source = priorityDrillSourceRows();
+  const brandSpec = BRAND_FIELD_SPECS.find(function (spec) {
+    return String(spec.label || "").toUpperCase() === String(selection.brand || "ALL").toUpperCase();
+  });
+  const rows = source.filter(function (row) {
+    if (normalizePriorityLabel(row.priority) !== selection.priority) return false;
+    if (displayComponentName(row.component || "-") !== String(selection.component || "-")) return false;
+    const bucket = brandSpec ? priorityBucketBySpec(row, brandSpec) : priorityAggregateBucket(row);
+    if (selection.bucket && selection.bucket !== "all" && bucket !== selection.bucket) return false;
+    return true;
+  });
+
+  const pageInfo = paginateRows(rows, S.pagePriorityDrill);
+  S.pagePriorityDrill = pageInfo.page;
+  wrap.hidden = false;
+  if (hint) {
+    const bucketLabel = selection.bucket === "all" ? "TC" : String(selection.bucket || "").toUpperCase();
+    hint.textContent = selection.priority + " · " + selection.component + " · " + selection.brand + " · " + bucketLabel + " | " + rows.length + "건" + (rows.length ? " | " + pageInfo.start + "~" + pageInfo.end + " 표시" : "");
+  }
+  if (!pageInfo.rows.length) {
+    body.innerHTML = '<tr><td colspan="28" class="hint">조회 결과 없음</td></tr>';
+    renderPagination("qaFullTcPriorityDrillPagination", "priority_drill", pageInfo);
+    return;
+  }
+
+  body.innerHTML = pageInfo.rows.map(function (row) {
+    return '<tr>' +
+      '<td>' + esc(row.component || "-") + '</td>' +
+      '<td>' + esc(row.tc_id || "-") + '</td>' +
+      '<td>' + esc(row.sheet_row || "-") + '</td>' +
+      '<td>' + esc(row.category || "-") + '</td>' +
+      '<td>' + esc(row.depth1 || "-") + '</td>' +
+      '<td>' + esc(row.depth2 || "-") + '</td>' +
+      '<td>' + esc(row.depth3 || "-") + '</td>' +
+      '<td>' + esc(row.direction || "-") + '</td>' +
+      '<td>' + esc(row.brand || "-") + '</td>' +
+      '<td>' + esc(normalizePriorityLabel(row.priority)) + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.pre_condition || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.tc_procedure || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.expected_result || "-") + '</td>' +
+      '<td>' + chip(row.base_result) + '</td>' +
+      '<td>' + chip(row.koa_result) + '</td>' +
+      '<td>' + chip(row.koa_android) + '</td>' +
+      '<td>' + chip(row.koa_ios) + '</td>' +
+      '<td>' + chip(row.hoa_result) + '</td>' +
+      '<td>' + chip(row.hoa_android) + '</td>' +
+      '<td>' + chip(row.hoa_ios) + '</td>' +
+      '<td>' + chip(row.goa_result) + '</td>' +
+      '<td>' + chip(row.goa_android) + '</td>' +
+      '<td>' + chip(row.goa_ios) + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.closed_jira_no || "-") + '</td>' +
+      '<td>' + esc(row.jira_no || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.nt_na_reason || "-") + '</td>' +
+      '<td>' + esc(row.nt_na_filter || "-") + '</td>' +
+      '<td class="ftc-label-cell">' + esc(row.label || "-") + '</td>' +
+    '</tr>';
+  }).join("");
+  renderPagination("qaFullTcPriorityDrillPagination", "priority_drill", pageInfo);
+}
+
+function renderPriorityTable() {
+  const hint = document.getElementById("qaFullTcPriorityHint");
+  const body = document.getElementById("qaFullTcPriorityBody");
+  if (!body) return;
+
+  const sourceRows = priorityDrillSourceRows();
+  renderPriorityFilterBar(sourceRows);
+
+  const rows = buildPrioritySummaryRows();
+  if (!rows.length) {
+    if (hint) hint.textContent = "조회 결과 없음";
+    body.innerHTML = '<tr><td colspan="13" class="hint">조회 결과 없음</td></tr>';
+    renderPriorityDrillRows();
+    return;
+  }
+
+  const priorityTotals = {};
+  rows.forEach(function (row) {
+    if (!priorityTotals[row.priority]) {
+      priorityTotals[row.priority] = {
+        priority: row.priority,
+        total: 0,
+        pass: 0,
+        fail: 0,
+        nt: 0,
+        na: 0,
+        other: 0,
+        base_pass: 0,
+        base_fail: 0,
+      };
+    }
+    const target = priorityTotals[row.priority];
+    target.total += row.total;
+    target.pass += row.pass;
+    target.fail += row.fail;
+    target.nt += row.nt;
+    target.na += row.na;
+    target.other += Number(row.other || 0);
+    target.base_pass += row.base_pass;
+    target.base_fail += row.base_fail;
+  });
+
+  const priorityItems = Object.keys(priorityTotals).map(function (key) {
+    return priorityTotals[key];
+  }).sort(function (a, b) {
+    const ra = prioritySortRank(a.priority);
+    const rb = prioritySortRank(b.priority);
+    if (ra !== rb) return ra - rb;
+    return String(a.priority).localeCompare(String(b.priority));
+  });
+
+  if (hint) {
+    const componentCount = Array.from(new Set(rows.map(function (row) { return row.component; }))).length;
+    hint.textContent = "우선순위 " + priorityItems.length + "개 · 컴포넌트 " + componentCount + "개";
+  }
+
+  const priorityRowspan = {};
+  rows.forEach(function (row) {
+    priorityRowspan[row.priority] = (priorityRowspan[row.priority] || 0) + 1;
+  });
+  const printedPriority = {};
+
+  body.innerHTML = rows.map(function (row) {
+    const runBase = Math.max(0, Number(row.run_total || (Number(row.total || 0) * 3) || 0));
+    const notRun = Math.max(0, Number(row.notrun || row.empty || 0));
+    const executed = Math.max(0, runBase - notRun);
+    const runPct = runBase > 0 ? (executed / runBase) * 100 : 0;
+    const passPct = (row.base_pass + row.base_fail) > 0 ? (row.base_pass / (row.base_pass + row.base_fail)) * 100 : 0;
+    const runTone = rateToneByPercent(runPct);
+    const passTone = rateToneByPercent(passPct);
+    const rowPriorityTone = priorityTone(row.priority);
+    let priorityCell = "";
+    if (!printedPriority[row.priority]) {
+      printedPriority[row.priority] = true;
+      priorityCell = '<td rowspan="' + priorityRowspan[row.priority] + '" class="ftc-priority-sticky is-component-start">' + priorityBadgeMarkup(row.priority) + '</td>';
+    }
+    return '<tr class="is-priority-' + esc(rowPriorityTone) + '">' +
+      priorityCell +
+      '<td class="ftc-priority-component-cell"><span class="ftc-component-pill">' + esc(row.component) + '</span></td>' +
+      '<td class="ftc-priority-tc-cell">' + priorityCountButton(row.total, { priority: row.priority, component: row.component, brand: "ALL", bucket: "all" }, "neutral") + '</td>' +
+      '<td>' + summarizeBrandCell(row.brands.KOA, { priority: row.priority, component: row.component, brand: "KOA", bucket: "all" }) + '</td>' +
+      '<td>' + summarizeBrandCell(row.brands.HOA, { priority: row.priority, component: row.component, brand: "HOA", bucket: "all" }) + '</td>' +
+      '<td>' + summarizeBrandCell(row.brands.GOA, { priority: row.priority, component: row.component, brand: "GOA", bucket: "all" }) + '</td>' +
+      '<td>' + priorityCountButton(row.pass, { priority: row.priority, component: row.component, brand: "ALL", bucket: "pass" }, "ok") + '</td>' +
+      '<td>' + priorityCountButton(row.fail, { priority: row.priority, component: row.component, brand: "ALL", bucket: "fail" }, "danger") + '</td>' +
+      '<td>' + priorityCountButton(row.nt, { priority: row.priority, component: row.component, brand: "ALL", bucket: "nt" }, "warn") + '</td>' +
+      '<td>' + priorityCountButton(row.na, { priority: row.priority, component: row.component, brand: "ALL", bucket: "na" }, "warn") + '</td>' +
+      '<td>' + countChip(row.empty) + '</td>' +
+      '<td>' + rateCellMarkup(runPct, runTone) + '</td>' +
+      '<td>' + rateCellMarkup(passPct, passTone) + '</td>' +
+    '</tr>';
+  }).join("");
+
+  renderPriorityDrillRows();
 }
 
 function renderGroupTable() {
@@ -2277,10 +3328,9 @@ function renderCategoryTree() {
   });
 
   const componentRows = Object.keys(componentTotalMap).map(function (component) {
-    return { component: component, count: componentTotalMap[component] };
+    return { component: displayComponentName(component), count: componentTotalMap[component] };
   }).sort(function (a, b) {
-    if (b.count !== a.count) return b.count - a.count;
-    return String(a.component).localeCompare(String(b.component));
+    return compareComponentNames(a.component, b.component);
   });
 
   const totalRows = aggregated.reduce(function (sum, row) { return sum + Number(row.count || 0); }, 0);
@@ -2468,9 +3518,10 @@ function renderLabelTable() {
     const active = S.activeLabel && S.activeLabel.toLowerCase() === label.toLowerCase();
     const count = Number(row.count || 0);
     const progress = labelProgressMap[label] || {
-      total: count, koa: { pass: 0, fail: 0, nt: 0, na: 0, empty: count },
-      hoa: { pass: 0, fail: 0, nt: 0, na: 0, empty: count },
-      goa: { pass: 0, fail: 0, nt: 0, na: 0, empty: count },
+      total: count,
+      koa: { pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: count },
+      hoa: { pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: count },
+      goa: { pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: count },
     };
     return '<tr class="' + (active ? 'ftc-label-row-active' : '') + '">' +
       '<td><span class="ftc-cat-rank">' + (index + 1) + '</span></td>' +
@@ -2499,7 +3550,9 @@ function renderLabelBrandDrill() {
     return;
   }
   card.hidden = false;
-  if (card.scrollIntoView) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (!S.labelRowDrill && card.scrollIntoView) {
+    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
 
   const label = drill.label;
   const activeBrand = String(drill.brand || "TOTAL").toUpperCase();
@@ -2520,10 +3573,25 @@ function renderLabelBrandDrill() {
   }
 
   // Filter rows for this label × brand
-  const brandKey = activeBrand === 'TOTAL' ? 'base_result' : activeBrand.toLowerCase() + '_result';
+  function rowBucketForActiveBrand(row) {
+    if (activeBrand === 'KOA') {
+      if (isNotRunByColor(row && row.koa_color)) return 'empty';
+      return normalizeResultBucket(row && row.koa_result);
+    }
+    if (activeBrand === 'HOA') {
+      if (isNotRunByColor(row && row.hoa_color)) return 'empty';
+      return normalizeResultBucket(row && row.hoa_result);
+    }
+    if (activeBrand === 'GOA') {
+      if (isNotRunByColor(row && row.goa_color)) return 'empty';
+      return normalizeResultBucket(row && row.goa_result);
+    }
+    return priorityAggregateBucket(row);
+  }
+
   const allRows = (S.data && S.data.detail_rows ? S.data.detail_rows : []).filter(function (row) {
     if (!rowHasLabel(row, label)) return false;
-    if (S.component !== "all" && String(row.component || "") !== S.component) return false;
+    if (S.component !== "all" && displayComponentName(row.component || "") !== S.component) return false;
     return true;
   });
 
@@ -2536,18 +3604,19 @@ function renderLabelBrandDrill() {
   // Aggregate by component
   const compMap = {};
   allRows.forEach(function (row) {
-    const comp = String(row.component || "기타");
-    if (!compMap[comp]) compMap[comp] = { component: comp, total: 0, pass: 0, fail: 0, nt: 0, na: 0, empty: 0 };
-    const bucket = normalizeResultBucket(row[brandKey] || "");
+    const comp = displayComponentName(row.component || "기타");
+    if (!compMap[comp]) compMap[comp] = { component: comp, total: 0, pass: 0, fail: 0, nt: 0, na: 0, other: 0, empty: 0 };
+    const bucket = rowBucketForActiveBrand(row);
     compMap[comp].total += 1;
     if (bucket === "pass") compMap[comp].pass += 1;
     else if (bucket === "fail") compMap[comp].fail += 1;
     else if (bucket === "nt") compMap[comp].nt += 1;
     else if (bucket === "na") compMap[comp].na += 1;
-    else compMap[comp].empty += 1;
+    else if (bucket === "empty") compMap[comp].empty += 1;
+    else compMap[comp].other += 1;
   });
 
-  const compRows = Object.values(compMap).sort(function (a, b) { return b.total - a.total; });
+  const compRows = Object.values(compMap).sort(function (a, b) { return compareComponentNames(a.component, b.component); });
   const totalRows = allRows.length;
   if (hintEl) hintEl.textContent = label + ' · ' + activeBrandLabel + ' · ' + formatNumber(compRows.length) + '개 컴포넌트 · TC ' + formatNumber(totalRows) + '건';
 
@@ -2570,17 +3639,32 @@ function renderLabelBrandDrill() {
     '</div>';
   }
 
+  function labelCompCountButton(value, bucket, toneClass, rowComponent) {
+    const active = !!(
+      S.labelRowDrill &&
+      S.labelRowDrill.label === label &&
+      S.labelRowDrill.brand === activeBrand &&
+      S.labelRowDrill.component === rowComponent &&
+      S.labelRowDrill.bucket === bucket
+    );
+    return '<button type="button" class="ftc-brand-count-btn is-' + toneClass + (active ? ' active' : '') + ' ftc-label-comp-count-btn"' +
+      ' data-label="' + esc(label) + '"' +
+      ' data-brand="' + esc(activeBrand) + '"' +
+      ' data-component="' + esc(rowComponent) + '"' +
+      ' data-bucket="' + esc(bucket) + '">' + formatNumber(value) + '</button>';
+  }
+
   body.innerHTML = compRows.map(function (row) {
     const t = row.total;
     const activeComp = S.labelRowDrill && S.labelRowDrill.label === label && S.labelRowDrill.brand === activeBrand && S.labelRowDrill.component === row.component;
     return '<tr class="' + (activeComp ? 'ftc-label-row-active' : '') + '">' +
       '<td><strong>' + esc(row.component) + '</strong></td>' +
       '<td>' + formatNumber(t) + '</td>' +
-      '<td class="ftc-res-col pass"><span class="ftc-mini-count-chip is-pass">' + formatNumber(row.pass) + '</span></td>' +
-      '<td class="ftc-res-col fail"><span class="ftc-mini-count-chip is-fail">' + formatNumber(row.fail) + '</span></td>' +
-      '<td class="ftc-res-col nt"><span class="ftc-mini-count-chip is-nt">' + formatNumber(row.nt) + '</span></td>' +
-      '<td class="ftc-res-col na"><span class="ftc-mini-count-chip is-na">' + formatNumber(row.na) + '</span></td>' +
-      '<td class="ftc-res-col empty"><span class="ftc-mini-count-chip is-empty">' + formatNumber(row.empty) + '</span></td>' +
+      '<td class="ftc-res-col pass">' + labelCompCountButton(row.pass, 'pass', 'ok', row.component) + '</td>' +
+      '<td class="ftc-res-col fail">' + labelCompCountButton(row.fail, 'fail', 'danger', row.component) + '</td>' +
+      '<td class="ftc-res-col nt">' + labelCompCountButton(row.nt, 'nt', 'warn', row.component) + '</td>' +
+      '<td class="ftc-res-col na">' + labelCompCountButton(row.na, 'na', 'warn', row.component) + '</td>' +
+      '<td class="ftc-res-col empty">' + labelCompCountButton(row.empty, 'empty', 'empty', row.component) + '</td>' +
       '<td>' + miniGaugeBar(row) + '</td>' +
       '<td><button type="button" class="btn-secondary btn-sm ftc-label-row-drill-btn" data-label="' + esc(label) + '" data-brand="' + esc(activeBrand) + '" data-component="' + esc(row.component) + '"><i class="fa fa-list"></i> 행 보기</button></td>' +
     '</tr>';
@@ -2606,15 +3690,35 @@ function renderLabelRowDrill() {
   const brand = String(drill.brand || "TOTAL").toUpperCase();
   const brandLabel = brand === 'TOTAL' ? '전체' : brand;
   const component = drill.component || "";
+  const bucket = String(drill.bucket || "").toLowerCase();
   const brandKey = brand === 'TOTAL' ? 'base_result' : brand.toLowerCase() + '_result';
+
+  function rowBucketForBrand(row) {
+    if (brand === 'KOA') {
+      if (isNotRunByColor(row && row.koa_color)) return 'empty';
+      return normalizeResultBucket(row && row.koa_result);
+    }
+    if (brand === 'HOA') {
+      if (isNotRunByColor(row && row.hoa_color)) return 'empty';
+      return normalizeResultBucket(row && row.hoa_result);
+    }
+    if (brand === 'GOA') {
+      if (isNotRunByColor(row && row.goa_color)) return 'empty';
+      return normalizeResultBucket(row && row.goa_result);
+    }
+    return priorityAggregateBucket(row);
+  }
   const androidKey = brand === 'TOTAL' ? '' : brand.toLowerCase() + '_android';
   const iosKey = brand === 'TOTAL' ? '' : brand.toLowerCase() + '_ios';
+  const bucketLabelMap = { pass: 'PASS', fail: 'FAIL', nt: 'N/T', na: 'N/A', empty: '공란' };
+  const bucketLabel = bucketLabelMap[bucket] || '';
 
-  if (titleEl) titleEl.innerHTML = '<i class="fa fa-table-list"></i> Full_TC 행 조회 — <strong>' + esc(label) + '</strong> · <span class="ftc-brand-badge ' + brand.toLowerCase() + '">' + brandLabel + '</span>' + (component ? ' · ' + esc(component) : '');
+  if (titleEl) titleEl.innerHTML = '<i class="fa fa-table-list"></i> Full_TC 행 조회 — <strong>' + esc(label) + '</strong> · <span class="ftc-brand-badge ' + brand.toLowerCase() + '">' + brandLabel + '</span>' + (component ? ' · ' + esc(component) : '') + (bucketLabel ? ' · <strong>' + esc(bucketLabel) + '</strong>' : '');
 
   const allRows = (S.data && S.data.detail_rows ? S.data.detail_rows : []).filter(function (row) {
     if (!rowHasLabel(row, label)) return false;
-    if (component && String(row.component || "") !== component) return false;
+    if (component && displayComponentName(row.component || "") !== component) return false;
+    if (bucket && rowBucketForBrand(row) !== bucket) return false;
     return true;
   });
 
@@ -2626,28 +3730,46 @@ function renderLabelRowDrill() {
   const start = (safePage - 1) * pageSize;
   const pageRows = allRows.slice(start, start + pageSize);
 
-  if (hintEl) hintEl.textContent = label + ' · ' + brandLabel + (component ? ' · ' + component : '') + ' | ' + formatNumber(totalRows) + '건 · ' + safePage + '/' + totalPages + '페이지';
+  if (hintEl) hintEl.textContent = label + ' · ' + brandLabel + (component ? ' · ' + component : '') + (bucketLabel ? ' · ' + bucketLabel : '') + ' | ' + formatNumber(totalRows) + '건 · ' + safePage + '/' + totalPages + '페이지';
 
   if (!pageRows.length) {
-    body.innerHTML = '<tr><td colspan="11" class="hint">해당 조건의 Full_TC 행이 없습니다.</td></tr>';
+    const filterParts = [label && ('LABEL: ' + label), component && ('컴포넌트: ' + component), bucketLabel && ('결과: ' + bucketLabel)].filter(Boolean);
+    const filterInfo = filterParts.length ? ' [' + filterParts.join(', ') + ']' : '';
+    body.innerHTML = '<tr><td colspan="28" class="hint">해당 조건의 Full_TC 행이 없습니다.' + esc(filterInfo) + '</td></tr>';
     if (pager) pager.innerHTML = "";
+    if (card.scrollIntoView) window.requestAnimationFrame(function () { card.scrollIntoView({ behavior: "smooth", block: "start" }); });
     return;
   }
 
   body.innerHTML = pageRows.map(function (row) {
-    const baseBucket = normalizeResultBucket(row.base_result);
-    const brandBucket = normalizeResultBucket(row[brandKey] || "");
     return '<tr>' +
       '<td>' + esc(row.component || "-") + '</td>' +
       '<td>' + esc(row.tc_id || "-") + '</td>' +
+      '<td>' + esc(row.sheet_row || "-") + '</td>' +
+      '<td>' + esc(row.category || "-") + '</td>' +
       '<td>' + esc(row.depth1 || "-") + '</td>' +
       '<td>' + esc(row.depth2 || "-") + '</td>' +
       '<td>' + esc(row.depth3 || "-") + '</td>' +
       '<td>' + esc(row.direction || "-") + '</td>' +
+      '<td>' + esc(row.brand || "-") + '</td>' +
+      '<td>' + esc(normalizePriorityLabel(row.priority) || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.pre_condition || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.tc_procedure || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.expected_result || "-") + '</td>' +
       '<td>' + chip(row.base_result) + '</td>' +
       '<td>' + chip(row[brandKey] || "") + '</td>' +
-      '<td>' + chip(androidKey ? (row[androidKey] || "") : "") + '</td>' +
-      '<td>' + chip(iosKey ? (row[iosKey] || "") : "") + '</td>' +
+      '<td>' + chip(row.koa_android || "") + '</td>' +
+      '<td>' + chip(row.koa_ios || "") + '</td>' +
+      '<td>' + chip(row.hoa_result || "") + '</td>' +
+      '<td>' + chip(row.hoa_android || "") + '</td>' +
+      '<td>' + chip(row.hoa_ios || "") + '</td>' +
+      '<td>' + chip(row.goa_result || "") + '</td>' +
+      '<td>' + chip(row.goa_android || "") + '</td>' +
+      '<td>' + chip(row.goa_ios || "") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.closed_jira_no || "-") + '</td>' +
+      '<td>' + esc(row.jira_no || "-") + '</td>' +
+      '<td class="ftc-text-cell">' + esc(row.nt_na_reason || "-") + '</td>' +
+      '<td>' + esc(row.nt_na_filter || "-") + '</td>' +
       '<td class="ftc-label-cell">' + esc(row.label || "-") + '</td>' +
     '</tr>';
   }).join("");
@@ -2669,7 +3791,7 @@ function renderLabelRowDrill() {
     }
   }
 
-  if (card.scrollIntoView) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (card.scrollIntoView) window.requestAnimationFrame(function () { card.scrollIntoView({ behavior: "smooth", block: "start" }); });
 }
 
 // renderLabelRowsTable → 더 이상 사용하지 않음(renderLabelBrandDrill + renderLabelRowDrill로 대체)
@@ -2733,7 +3855,7 @@ function renderDetailTable() {
       '<td data-colgroup="result">' + chip(row.goa_result) + '</td>' +
       '<td data-colgroup="result">' + chip(row.goa_android) + '</td>' +
       '<td data-colgroup="result">' + chip(row.goa_ios) + '</td>' +
-      '<td data-colgroup="issue">' + esc(row.closed_jira_no || "-") + '</td>' +
+      '<td data-colgroup="issue" class="ftc-text-cell">' + esc(row.closed_jira_no || "-") + '</td>' +
       '<td data-colgroup="issue">' + esc(row.jira_no || "-") + '</td>' +
       '<td data-colgroup="issue" class="ftc-text-cell">' + esc(row.nt_na_reason || "-") + '</td>' +
       '<td data-colgroup="issue">' + esc(row.nt_na_filter || "-") + '</td>' +
@@ -2772,8 +3894,7 @@ function renderDefectKpi() {
   const minRange = normalizeIssueThreshold(S.defectRangeMin);
   const rangedRows = allRows.filter(function (row) {
     const keyNumber = row && Number.isFinite(row.key_number) ? Number(row.key_number) : null;
-    if (minRange != null && (keyNumber == null || keyNumber < minRange)) return false;
-    return true;
+    return passesMinTicketNo(keyNumber, minRange);
   });
   const rangedMatched = rangedRows.filter(function (row) { return !!row.in_full_tc; }).length;
   const rangedUnmatched = rangedRows.length - rangedMatched;
@@ -2795,13 +3916,14 @@ function renderDefectKpi() {
   if (rangeSummary) {
     const keyRange = data.key_range || {};
     const sourceRangeText = keyRange.min != null && keyRange.max != null
-      ? ('전체 Key 범위: ' + keyRange.min + ' ~ ' + keyRange.max)
-      : '전체 Key 범위를 계산할 수 없습니다';
+      ? ('전체 티켓 번호 범위: ' + keyRange.min + ' ~ ' + keyRange.max)
+      : '전체 티켓 번호 범위를 계산할 수 없습니다';
     const selectedRangeText = (minRange != null)
-      ? ('최소 Key 기준: ' + minRange + ' 이상 | 미반영 ' + formatNumber(rangedUnmatched) + '건')
-      : '최소 Key를 입력하면 해당 번호 이상 구간의 Full_TC 반영 현황을 바로 확인할 수 있습니다.';
+      ? ('최소 티켓 번호 기준: ' + minRange + ' 이상 조회 (미만 제외) | 미반영 ' + formatNumber(rangedUnmatched) + '건')
+      : '최소 티켓 번호를 입력하면 해당 번호 이상 구간의 Full_TC 반영 현황을 바로 확인할 수 있습니다.';
     rangeSummary.textContent = sourceRangeText + ' | ' + selectedRangeText;
   }
+  updateDefectSearchUiState();
 }
 
 function renderDefectAuditKpi() {
@@ -2835,9 +3957,29 @@ function filterDefectRows(rows) {
   const minRange = normalizeIssueThreshold(S.defectRangeMin);
   return (rows || []).filter(function (row) {
     const coverage = defectTcCoverage(row);
+    const hasJeonsuLabel = hasJeonsuTicketLabel(row);
+    const flags = resolveDefectPlacementFlags(row);
+    const inFullTc = flags.inFullTc;
+    const inX = flags.inX;
+    const inY = flags.inY;
+    const hasBothSlots = Boolean(row && row.in_jira_no) && Boolean(row && row.in_closed_jira_no);
+    const jeonsuMissing = hasJeonsuLabel && !hasBothSlots;
+    const jeonsuUnreflected = hasJeonsuLabel && !inX && !inY && !inFullTc;
+    const hasDeploymentFilter = Array.isArray(S.deploymentFilters) && S.deploymentFilters.length > 0;
     if (S.defectStatus === "found" && coverage.missing) return false;
     if (S.defectStatus === "missing" && !coverage.missing) return false;
-    if (minRange != null && (!Number.isFinite(row.key_number) || Number(row.key_number) < minRange)) return false;
+    if (S.defectStatus === "jeonsu_missing") {
+      // 전수평가TC 미반영: 전수평가TC 라벨이 있으면서 Full_TC에 전혀 반영되지 않은 건만 표시
+      if (!jeonsuUnreflected) return false;
+    }
+    // 배포/조건 필터를 선택해 조회할 때는 반영 완료 건을 제외하고 미반영(누락) 건만 본다.
+    if (hasDeploymentFilter && !coverage.missing && !jeonsuMissing) return false;
+    // 배포 필터: 선택 시 H열 배포값 + P열 전수평가TC 라벨을 동시에 만족해야 한다.
+    if (Array.isArray(S.deploymentFilters) && S.deploymentFilters.length) {
+      if (!hasAnyDeploymentToken(row, S.deploymentFilters)) return false;
+      if (!hasJeonsuLabel) return false;
+    }
+    if (!passesMinTicketNo(row && row.key_number, minRange)) return false;
     if (query) {
       const text = [
         row.key,
@@ -2863,7 +4005,8 @@ function filterDefectRows(rows) {
 function getDefectFilteredRows(rows, scope) {
   const bucket = scope === "violation" ? S.defectFilterCache.violation : S.defectFilterCache.main;
   const query = S.defectQuery.trim().toLowerCase();
-  const signature = [scope, S.defectStatus, query, S.defectRangeMin].join("|");
+  const deploymentSignature = (Array.isArray(S.deploymentFilters) ? S.deploymentFilters.slice() : []).sort().join(",");
+  const signature = [scope, S.defectStatus, query, S.defectRangeMin, deploymentSignature].join("|");
   if (bucket.source === rows && bucket.key === signature) {
     return bucket.rows;
   }
@@ -2874,12 +4017,34 @@ function getDefectFilteredRows(rows, scope) {
   return filtered;
 }
 
+function resolveDefectLabelText(row) {
+  var direct = String((row && row.labels) || "").trim();
+  if (direct) return direct;
+
+  var headerValue = defectRawValue(row, ["labels", "label", "라벨"]);
+  if (headerValue) return headerValue;
+
+  // DefectList_Raw가 B:R 범위일 때 P열은 raw_values의 14번 인덱스.
+  var values = Array.isArray(row && row.raw_values) ? row.raw_values : [];
+  return String(values[14] || "").trim();
+}
+
+function hasJeonsuTicketLabel(row) {
+  var parts = resolveDefectLabelText(row).split(/[,/|;\n]+/);
+  return parts.some(function (part) {
+    var key = part.trim().toLowerCase().replace(/\s+/g, "");
+    key = key.replace(/[^a-z0-9가-힣]+/g, "");
+    if (!key) return false;
+    return key === "전수평가tc";
+  });
+}
+
 function filterMissingKeyRows(rows) {
   const query = S.defectQuery.trim().toLowerCase();
   const minRange = normalizeIssueThreshold(S.defectRangeMin);
   return (rows || []).filter(function (row) {
     if (row.in_full_tc) return false;
-    if (minRange != null && (!Number.isFinite(row.key_number) || Number(row.key_number) < minRange)) return false;
+    if (!passesMinTicketNo(row && row.key_number, minRange)) return false;
     if (!query) return true;
     const text = [row.key, row.key_number, row.raw_sheet_row, row.status, row.resolution, row.reporter, row.summary]
       .map(function (value) { return String(value || "").toLowerCase(); })
@@ -2892,7 +4057,7 @@ function applyMissingTcFilters(rows) {
   const query = S.defectQuery.trim().toLowerCase();
   const minRange = normalizeIssueThreshold(S.defectRangeMin);
   return (rows || []).filter(function (row) {
-    if (minRange != null && (!Number.isFinite(row.key_number) || Number(row.key_number) < minRange)) return false;
+    if (!passesMinTicketNo(row && row.key_number, minRange)) return false;
     if (!query) return true;
     const text = [
       row.key,
@@ -2918,7 +4083,7 @@ function openDetailByMissingTc(row) {
   const targetSheetRow = Number(row.sheet_row || 0);
   const filtered = filterDetail(S.data.detail_rows || []);
   const targetIndex = filtered.findIndex(function (item) {
-    return String(item.component || "") === String(row.component || "") &&
+    return displayComponentName(item.component || "") === displayComponentName(row.component || "") &&
       String(item.tc_id || "") === String(row.tc_id || "") &&
       Number(item.sheet_row || 0) === targetSheetRow;
   });
@@ -3153,6 +4318,7 @@ function renderAll() {
     renderComponentResultTable();
     renderBrandTable();
     renderBrandCategoryTable();
+    renderPriorityTable();
     return;
   }
   if (S.tab === "group") {
@@ -3162,6 +4328,8 @@ function renderAll() {
   if (S.tab === "label") {
     renderLabelTable();
     renderLabelRowsTable();
+    renderLabelBrandDrill();
+    renderLabelRowDrill();
     return;
   }
   if (S.tab === "detail") {
@@ -3237,8 +4405,15 @@ async function loadDefectMatch(force) {
   }
   if (!S.defect || !S.defect.ok) {
     setLoadAlert("Defect 대조 데이터를 불러오지 못했습니다. 소스 파일 또는 권한 상태를 확인해 주세요.", "warn");
-  } else if (S.tab !== "defect") {
-    setLoadAlert("", null);
+  } else {
+    // 배포 필터 버튼 렌더링 (항상)
+    const options = (Array.isArray(S.defect.deployment_labels) && S.defect.deployment_labels.length)
+      ? S.defect.deployment_labels
+      : collectDeploymentFilterOptions(S.defect.rows || []);
+    renderDeploymentFilterButtons(options);
+    if (S.tab !== "defect") {
+      setLoadAlert("", null);
+    }
   }
   renderAll();
   renderIntegrityAlert();
@@ -3251,10 +4426,7 @@ async function bootLoad() {
       // Summary는 표시하고 defect는 백그라운드 재시도 가능 상태로 둔다.
     });
   } catch (error) {
-    if (isAuthError(error)) {
-      setLoadAlert(error.message || "인증 만료로 데이터 로드 실패", "danger");
-      const hint = document.getElementById("qaFullTcHint");
-      if (hint) hint.textContent = "인증 상태 확인 필요";
+    if (redirectToLoginIfAuthError(error)) {
       return;
     }
     setLoadAlert("초기 로드에 실패했습니다. 자동 재시도를 실행합니다.", "warn");
@@ -3328,9 +4500,8 @@ document.getElementById("qaFullTcBrandViolationBtn")?.addEventListener("click", 
 
 // ── LABEL 이벤트 핸들러 ──────────────────────────────────────
 
-// 메인 LABEL 테이블 클릭: 라벨 버튼 → 브랜드 드릴, 게이지 버튼 → 해당 브랜드 드릴
+// 메인 LABEL 테이블 클릭: 라벨/게이지 선택 시 먼저 해당 LABEL 통계(브랜드×컴포넌트)를 보여준다.
 document.getElementById("qaFullTcLabelBody")?.addEventListener("click", function (event) {
-  // 라벨 이름 버튼 클릭
   const labelBtn = event.target.closest(".ftc-label-row-btn");
   if (labelBtn) {
     const label = labelBtn.dataset.label || "";
@@ -3342,11 +4513,12 @@ document.getElementById("qaFullTcLabelBody")?.addEventListener("click", function
     renderLabelRowDrill();
     return;
   }
-  // 특정 브랜드 게이지 버튼 클릭
+
+  // 특정 브랜드 게이지 버튼 클릭 → 해당 브랜드 통계로 진입
   const gaugeBtn = event.target.closest(".ftc-lbg-wrap");
   if (gaugeBtn) {
     const label = gaugeBtn.dataset.label || "";
-    const brand = gaugeBtn.dataset.brand || "KOA";
+    const brand = gaugeBtn.dataset.brand || "TOTAL";
     setActiveLabel(label);
     S.labelBrandDrill = { label: label, brand: brand };
     S.labelRowDrill = null;
@@ -3375,6 +4547,19 @@ document.getElementById("qaLabelBrandTabs")?.addEventListener("click", function 
 
 // 컴포넌트 행 보기 버튼
 document.getElementById("qaLabelCompBody")?.addEventListener("click", function (event) {
+  const countBtn = event.target.closest(".ftc-label-comp-count-btn");
+  if (countBtn) {
+    const label = countBtn.dataset.label || "";
+    const brand = countBtn.dataset.brand || "KOA";
+    const component = countBtn.dataset.component || "";
+    const bucket = countBtn.dataset.bucket || "";
+    S.labelRowDrill = { label: label, brand: brand, component: component, bucket: bucket };
+    S.labelRowDrillPage = 1;
+    renderLabelBrandDrill();
+    renderLabelRowDrill();
+    return;
+  }
+
   const btn = event.target.closest(".ftc-label-row-drill-btn");
   if (!btn) return;
   const label = btn.dataset.label || "";
@@ -3504,11 +4689,46 @@ document.getElementById("qaFullTcLabelTopCards")?.addEventListener("click", func
 });
 
 document.getElementById("qaFullTcComponentToc")?.addEventListener("click", function (event) {
+  if (S.summaryView === "priority") {
+    const pButton = event.target.closest("[data-priority-component]");
+    if (!pButton) return;
+    const next = String(pButton.dataset.priorityComponent || "all");
+    S.priorityComponentFilter = (S.priorityComponentFilter === next) ? "all" : next;
+    S.pagePriorityDrill = 1;
+    renderComponentToc();
+    renderPriorityTable();
+    return;
+  }
+
   const button = event.target.closest("[data-component]");
   if (!button) return;
   S.component = button.dataset.component || "all";
   resetMainPagination();
   renderAll();
+});
+
+document.getElementById("qaFullTcPriorityFilters")?.addEventListener("click", function (event) {
+  const button = event.target.closest("[data-priority-filter]");
+  if (!button) return;
+  S.priorityFilter = String(button.dataset.priorityFilter || "all");
+  S.priorityComponentFilter = "all";
+  S.pagePriorityDrill = 1;
+  S.priorityDrill = null;
+  renderComponentToc();
+  renderPriorityTable();
+});
+
+document.getElementById("qaFullTcPriorityBody")?.addEventListener("click", function (event) {
+  const button = event.target.closest(".ftc-priority-count-btn");
+  if (!button) return;
+  S.priorityDrill = {
+    priority: String(button.dataset.priority || ""),
+    component: String(button.dataset.component || ""),
+    brand: String(button.dataset.brand || "ALL"),
+    bucket: String(button.dataset.bucket || "all"),
+  };
+  S.pagePriorityDrill = 1;
+  renderPriorityDrillRows();
 });
 
 document.getElementById("qaFullTcSearch")?.addEventListener("input", function (event) {
@@ -3580,7 +4800,11 @@ document.getElementById("qaFullTcRefreshBtn")?.addEventListener("click", functio
       });
       toast("요약 데이터 갱신 완료 (Defect는 이어서 갱신)", "ok");
     })
-    .catch(function (error) { toast(error.message || "새로고침 실패", "error"); });
+    .catch(function (error) {
+      if (!redirectToLoginIfAuthError(error)) {
+        toast(error.message || "새로고침 실패", "error");
+      }
+    });
 });
 
 document.getElementById("qaDetailColToggles")?.addEventListener("change", function (event) {
@@ -3596,7 +4820,45 @@ document.getElementById("defectSearch")?.addEventListener("input", function (eve
   S.defectQuery = String(event.target.value || "").trim();
   resetDefectPagination();
   invalidateDefectFilterCache();
+  updateDefectSearchUiState();
   scheduleDefectRender();
+});
+
+document.getElementById("defectSearch")?.addEventListener("keydown", function (event) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    applyDefectSearchNow();
+    return;
+  }
+  if (event.key === "Escape") {
+    if (!String(event.target.value || "").trim()) return;
+    event.preventDefault();
+    event.target.value = "";
+    S.defectQuery = "";
+    resetDefectPagination();
+    invalidateDefectFilterCache();
+    updateDefectSearchUiState();
+    renderDefectNow();
+  }
+});
+
+document.getElementById("defectSearchClearBtn")?.addEventListener("click", function () {
+  const input = document.getElementById("defectSearch");
+  if (input) input.value = "";
+  S.defectQuery = "";
+  resetDefectPagination();
+  invalidateDefectFilterCache();
+  updateDefectSearchUiState();
+  renderDefectNow();
+  if (input) input.focus();
+});
+
+document.getElementById("defectApplySearchBtn")?.addEventListener("click", function () {
+  applyDefectSearchNow();
+});
+
+document.getElementById("defectApplyRangeBtn")?.addEventListener("click", function () {
+  applyDefectSearchNow();
 });
 
 ["defectRangeMin"].forEach(function (id) {
@@ -3605,7 +4867,14 @@ document.getElementById("defectSearch")?.addEventListener("input", function (eve
     S.defectRangeMax = "";
     resetDefectPagination();
     invalidateDefectFilterCache();
+    updateDefectSearchUiState();
     scheduleDefectRender();
+  });
+
+  document.getElementById(id)?.addEventListener("keydown", function (event) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    applyDefectSearchNow();
   });
 });
 
@@ -3613,6 +4882,7 @@ const defectRangeMinInput = document.getElementById("defectRangeMin");
 if (defectRangeMinInput && !String(defectRangeMinInput.value || "").trim()) {
   defectRangeMinInput.value = S.defectRangeMin;
 }
+updateDefectSearchUiState();
 
 document.getElementById("defectStatusFilter")?.addEventListener("click", function (event) {
   const button = event.target.closest("[data-status]");
@@ -3628,6 +4898,7 @@ document.getElementById("defectStatusFilter")?.addEventListener("click", functio
 document.getElementById("defectResetBtn")?.addEventListener("click", function () {
   S.defectQuery = "";
   S.defectStatus = "all";
+  S.deploymentFilters = [];  // 배포 필터 초기화
   S.defectRangeMin = "SPAQA-12000";
   S.defectRangeMax = "";
   const searchInput = document.getElementById("defectSearch");
@@ -3637,8 +4908,9 @@ document.getElementById("defectResetBtn")?.addEventListener("click", function ()
   resetDefectPagination();
   invalidateDefectFilterCache();
   syncDefectStatusChips();
-  renderDefectKpi();
-  renderDefectTable();
+  syncDeploymentFilterChips();  // 배포 필터 동기화
+  updateDefectSearchUiState();
+  renderDefectNow();
   toast("Defect 조회 필터를 초기화했습니다.", "ok");
 });
 
@@ -3653,7 +4925,11 @@ document.addEventListener("click", function (event) {
 document.getElementById("defectRefreshBtn")?.addEventListener("click", function () {
   loadDefectMatch(true)
     .then(function () { toast("Defect 조회를 새로고침했습니다.", "ok"); })
-    .catch(function (error) { toast(error.message || "새로고침 실패", "error"); });
+    .catch(function (error) {
+      if (!redirectToLoginIfAuthError(error)) {
+        toast(error.message || "새로고침 실패", "error");
+      }
+    });
 });
 
 document.getElementById("defectExportXlsxBtn")?.addEventListener("click", function () {
@@ -3676,12 +4952,14 @@ window.addEventListener("online", function () {
     .then(function () {
       setLoadAlert("네트워크가 복구되어 데이터를 다시 불러왔습니다.", "warn");
     })
-    .catch(function (_e) {
+    .catch(function (error) {
+      if (redirectToLoginIfAuthError(error)) return;
       // online 이벤트 후 실패 시에는 기존 상태를 유지한다.
     });
 });
 
 applyViewPresetFromUrl();
 switchTab(readTabFromUrl(), false);
+updatePageMainTitle();
 startBridgePerfPolling();
 bootLoad();

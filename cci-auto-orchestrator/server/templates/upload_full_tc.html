@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
   <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260324n" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260413o" />
   <script src="/static/auto_logout.js" defer></script>
   <style>
     /* ── 페이지 전용 스타일 ── */
@@ -179,7 +179,7 @@
       <div class="ft-hero-icon">📑</div>
       <div>
         <h1>Full_TC 업로드</h1>
-        <p>엑셀(.xlsx) 또는 CSV 파일을 업로드하세요. 업로드 즉시 Full_TC API에서 우선 사용됩니다.<br>이전 파일은 새 파일로 자동 교체되며 시트 목록은 즉시 갱신됩니다.</p>
+        <p>엑셀(.xlsx) 또는 CSV 파일을 업로드하세요. 업로드 즉시 Full_TC API에서 우선 사용됩니다.<br>업로드 이력은 날짜별로 저장되며, 각 시점의 Full_TC 파일을 다시 다운로드할 수 있습니다.</p>
       </div>
     </div>
 
@@ -248,12 +248,12 @@
       </article>
     </div>
 
-    <!-- 시트 목록 -->
+    <!-- 업로드 이력 -->
     <article class="card ft-card">
       <div class="ft-sec">
-        <span>📋</span> 시트 목록
+        <span>🗓️</span> 업데이트 이력
         <span class="ft-sec-act">
-          <button class="ft-mini-btn" id="ftRefreshSheetsBtn">🔄 새로고침</button>
+          <button class="ft-mini-btn" id="ftRefreshHistoryBtn">🔄 새로고침</button>
         </span>
       </div>
       <div class="table-wrap">
@@ -261,11 +261,15 @@
           <thead>
             <tr>
               <th style="width:42px;">#</th>
-              <th>시트 이름</th>
+              <th>업데이트 일시</th>
+              <th>업로드 파일</th>
+              <th>업로더</th>
+              <th>시트 수</th>
+              <th>다운로드</th>
             </tr>
           </thead>
-          <tbody id="ftSheetsBody">
-            <tr><td colspan="2" class="ft-empty">불러오는 중...</td></tr>
+          <tbody id="ftHistoryBody">
+            <tr><td colspan="6" class="ft-empty">불러오는 중...</td></tr>
           </tbody>
         </table>
       </div>
@@ -274,6 +278,6 @@
   </main>
 
   <script src="/static/side_nav.js?v=20260319c"></script>
-  <script src="/static/upload_full_tc.js?v=20260403b"></script>
+  <script src="/static/upload_full_tc.js?v=20260408b"></script>
 </body>
 </html>

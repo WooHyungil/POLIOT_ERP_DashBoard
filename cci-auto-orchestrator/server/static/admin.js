@@ -52,6 +52,7 @@ function esc(value) {
 	const adminIssueRefreshBtn = document.getElementById("adminIssueRefreshBtn");
 	const adminIssueResetBtn = document.getElementById("adminIssueResetBtn");
 	const adminIssueExportBtn = document.getElementById("adminIssueExportBtn");
+	const adminIssueApplyBtn = document.getElementById("adminIssueApplyBtn");
 	const adminIssueRangeButtons = Array.from(document.querySelectorAll(".admin-issue-range-btn"));
 	const adminIssueResultCount = document.getElementById("adminIssueResultCount");
 	const adminIssuePeriodHint = document.getElementById("adminIssuePeriodHint");
@@ -74,6 +75,13 @@ function esc(value) {
 	const adminIssueRows = document.getElementById("adminIssueRows");
 	const adminIssueDetailCard = document.getElementById("adminIssueDetailCard");
 	const adminIssueDetailCount = document.getElementById("adminIssueDetailCount");
+	const adminIssueReporterInsights = document.getElementById("adminIssueReporterInsights");
+	const adminIssueSelectedReporter = document.getElementById("adminIssueSelectedReporter");
+	const adminIssueFullTcCount = document.getElementById("adminIssueFullTcCount");
+	const adminIssueResolutionDonut = document.getElementById("adminIssueResolutionDonut");
+	const adminIssueResolutionTotal = document.getElementById("adminIssueResolutionTotal");
+	const adminIssueResolutionFilters = document.getElementById("adminIssueResolutionFilters");
+	const adminIssueResolutionHint = document.getElementById("adminIssueResolutionHint");
 	const adminIssueDetailToggleBtn = document.getElementById("adminIssueDetailToggleBtn");
 	const adminIssueLoadMoreBtn = document.getElementById("adminIssueLoadMoreBtn");
 	const adminIssueStatTotal = document.getElementById("adminIssueStatTotal");
@@ -118,6 +126,15 @@ function esc(value) {
 	let adminIssueDetailAbortController = null;
 	let adminIssueRequestToken = 0;
 	let adminIssueRowRenderToken = 0;
+	let adminIssueDetailActivated = false;
+	let adminIssueResolutionFilter = "all";
+	let adminIssueCurrentDetailItems = [];
+	let adminIssueCurrentMemberRow = null;
+	let memberEditSelection = {
+		email: "",
+		userId: "",
+		expectedCreatedAt: "",
+	};
 	const ADMIN_ISSUE_RESPONSE_CACHE_TTL_MS = 15000;
 	const ADMIN_ISSUE_DETAIL_STEP = 120;
 	const ADMIN_ISSUE_ROW_CHUNK_SIZE = 40;
@@ -298,13 +315,15 @@ function esc(value) {
 		}
 		adminPendingMemberQueue.innerHTML = pending.map((x) => {
 			const email = String(x.email || "").trim().toLowerCase();
+			const userId = String(x.user_id || "").trim();
+			const expectedCreatedAt = String(x.created_at || "").trim();
 			return `
 				<div class="admin-pending-member-item">
 					<div>
 						<strong>${esc(x.name || "-")}</strong>
 						<p class="hint">${esc(email || "-")} · ${esc(x.title || "직책 미입력")}</p>
 					</div>
-					<button type="button" class="btn-approve" data-approve-member="${esc(email)}">승인</button>
+					<button type="button" class="btn-approve" data-approve-member="${esc(email)}" data-user-id="${esc(userId)}" data-expected-created-at="${esc(expectedCreatedAt)}">승인</button>
 				</div>
 			`;
 		}).join("");
@@ -320,14 +339,56 @@ function esc(value) {
 		renderPendingMemberQueue(items);
 	}
 
+	function extractEmailFromMemberRow(buttonEl) {
+		if (!(buttonEl instanceof Element)) return "";
+		const row = buttonEl.closest("tr");
+		if (!row) return "";
+		const firstCell = row.querySelector("td");
+		const text = String(firstCell?.textContent || "").trim().toLowerCase();
+		if (!text || text === "-") return "";
+		return text;
+	}
+
 	function findMemberByEmail(email) {
 		const target = normalizeMemberText(email);
 		return rawMemberItems.find((x) => normalizeMemberText(x.email) === target) || null;
 	}
 
-	function openMemberEditModal(member) {
+	function findMemberByIdentity(email, userId, expectedCreatedAt) {
+		const targetEmail = normalizeMemberText(email);
+		const targetUserId = String(userId || "").trim();
+		const targetCreatedAt = String(expectedCreatedAt || "").trim();
+		const byEmail = (rawMemberItems || []).filter((x) => normalizeMemberText(x.email) === targetEmail);
+		if (!byEmail.length) return null;
+		if (targetUserId) {
+			const exactUserId = byEmail.find((x) => String(x.user_id || "").trim() === targetUserId);
+			if (exactUserId) return exactUserId;
+		}
+		if (targetCreatedAt) {
+			const exactCreated = byEmail.find((x) => String(x.created_at || "").trim() === targetCreatedAt);
+			if (exactCreated) return exactCreated;
+		}
+		return byEmail[0] || null;
+	}
+
+	function pinMemberEditSelection({ email = "", userId = "", expectedCreatedAt = "" } = {}) {
+		memberEditSelection = {
+			email: String(email || "").trim().toLowerCase(),
+			userId: String(userId || "").trim(),
+			expectedCreatedAt: String(expectedCreatedAt || "").trim(),
+		};
+		document.getElementById("memberEditEmail").value = memberEditSelection.email;
+		document.getElementById("memberEditUserId").value = memberEditSelection.userId;
+		document.getElementById("memberEditExpectedCreatedAt").value = memberEditSelection.expectedCreatedAt;
+	}
+
+	function openMemberEditModal(member, selected = {}) {
 		if (!memberEditModal || !member) return;
-		document.getElementById("memberEditEmail").value = String(member.email || "").trim().toLowerCase();
+		pinMemberEditSelection({
+			email: selected.email || member.email || "",
+			userId: selected.userId || member.user_id || "",
+			expectedCreatedAt: selected.expectedCreatedAt || member.created_at || "",
+		});
 		document.getElementById("memberEditName").value = String(member.name || "");
 		document.getElementById("memberEditRole").value = String(member.role || "user").toLowerCase() === "admin" ? "admin" : "user";
 		document.getElementById("memberEditTitle").value = String(member.title || "");
@@ -348,6 +409,7 @@ function esc(value) {
 	function closeMemberEditModal() {
 		if (!memberEditModal) return;
 		memberEditModal.hidden = true;
+		memberEditSelection = { email: "", userId: "", expectedCreatedAt: "" };
 		document.body.classList.remove("modal-open");
 	}
 
@@ -404,6 +466,13 @@ function esc(value) {
 		return num.toFixed(1);
 	}
 
+	function formatTcReflectionText(item) {
+		const rate = formatOneDecimal(item?.tc_reflection_rate ?? 0);
+		const linked = Number(item?.tc_reflection_linked ?? 0);
+		const total = Number(item?.tc_reflection_total ?? 0);
+		return `${rate}% (${linked}/${total})`;
+	}
+
 	function renderAdminIssueAuthorOptions(items) {
 		if (!adminIssueAuthorFilter) return;
 		const currentValue = String(adminIssueAuthorFilter.value || "").trim();
@@ -449,8 +518,9 @@ function esc(value) {
 		adminIssuePodium.innerHTML = rows.map((item, index) => {
 			const rank = Number(item?.rank || index + 1);
 			const reporter = String(item?.reporter || '-').trim();
+			const reporterFilterValue = String(item?.reporter_key || reporter || "").trim();
 			return `
-				<button type="button" class="admin-issue-podium-card rank-${rank}" data-reporter="${esc(reporter)}">
+				<button type="button" class="admin-issue-podium-card rank-${rank}" data-reporter="${esc(reporterFilterValue)}">
 					<span class="admin-issue-podium-rank">#${rank}</span>
 					<strong>${esc(reporter)}</strong>
 					<span>총 ${esc(item?.total_issue ?? 0)}건</span>
@@ -492,14 +562,145 @@ function esc(value) {
 		return `<span class="admin-issue-status-badge withdrawn">${esc(status || "Open")}</span>`;
 	}
 
-	function applyAdminIssueReporterFilter(reporter) {
+	function applyAdminIssueReporterFilter(reporter, options = {}) {
 		const normalized = String(reporter || "").trim();
+		const activateDetail = Boolean(options.activateDetail);
+		const resetResolution = options.resetResolution !== false;
 		if (adminIssueAuthorFilter) {
 			adminIssueAuthorFilter.value = normalized;
 		}
+		adminIssueDetailActivated = activateDetail;
+		if (resetResolution) {
+			adminIssueResolutionFilter = "all";
+		}
 		adminIssueDetailLimit = 120;
 		adminIssueDetailOffset = 0;
+		adminIssueCurrentDetailItems = [];
+		adminIssueCurrentMemberRow = null;
 		refreshAdminIssueManagement();
+	}
+
+	function normalizeResolutionKey(value) {
+		const text = String(value || "").trim();
+		if (!text) return "unresolved";
+		return text.toLowerCase();
+	}
+
+	function resolutionLabelFromKey(key) {
+		const normalized = String(key || "").trim().toLowerCase();
+		if (!normalized || normalized === "unresolved") return "미분류";
+		return normalized;
+	}
+
+	function buildResolutionBuckets(items) {
+		const rows = Array.isArray(items) ? items : [];
+		const bucketMap = new Map();
+		for (const item of rows) {
+			const resolutionRaw = String(item?.resolution || "").trim();
+			const key = normalizeResolutionKey(resolutionRaw);
+			if (!bucketMap.has(key)) {
+				bucketMap.set(key, {
+					key,
+					label: resolutionRaw || "미분류",
+					count: 0,
+				});
+			}
+			bucketMap.get(key).count += 1;
+		}
+		return Array.from(bucketMap.values()).sort((a, b) => b.count - a.count || String(a.label).localeCompare(String(b.label)));
+	}
+
+	function renderResolutionDonut(buckets, totalCount) {
+		if (!adminIssueResolutionDonut) return;
+		if (!totalCount) {
+			adminIssueResolutionDonut.style.background = "conic-gradient(#d8e0ea 0 360deg)";
+			if (adminIssueResolutionTotal) adminIssueResolutionTotal.textContent = "0";
+			return;
+		}
+		const palette = ["#0f766e", "#1d4ed8", "#f59e0b", "#7c3aed", "#dc2626", "#0ea5e9", "#64748b", "#059669"];
+		let acc = 0;
+		const segments = buckets.map((bucket, idx) => {
+			const start = acc;
+			const ratio = Number(bucket.count || 0) / totalCount;
+			acc += ratio * 360;
+			const end = Math.min(360, acc);
+			return `${palette[idx % palette.length]} ${start}deg ${end}deg`;
+		});
+		adminIssueResolutionDonut.style.background = `conic-gradient(${segments.join(",")})`;
+		if (adminIssueResolutionTotal) adminIssueResolutionTotal.textContent = String(totalCount);
+	}
+
+	function renderResolutionFilterButtons(buckets, totalCount) {
+		if (!adminIssueResolutionFilters) return;
+		const allActive = adminIssueResolutionFilter === "all";
+		const allBtn = `
+			<button type="button" class="btn-ghost admin-issue-resolution-filter-btn ${allActive ? "active" : ""}" data-resolution="all">
+				전체 (${totalCount})
+			</button>
+		`;
+		const buttons = buckets.map((bucket) => {
+			const key = String(bucket.key || "");
+			const active = adminIssueResolutionFilter === key;
+			return `
+				<button type="button" class="btn-ghost admin-issue-resolution-filter-btn ${active ? "active" : ""}" data-resolution="${esc(key)}">
+					${esc(bucket.label || resolutionLabelFromKey(key))} (${Number(bucket.count || 0)})
+				</button>
+			`;
+		}).join("");
+		adminIssueResolutionFilters.innerHTML = allBtn + buttons;
+	}
+
+	function applyResolutionFilterItems(items) {
+		const rows = Array.isArray(items) ? items : [];
+		if (!adminIssueResolutionFilter || adminIssueResolutionFilter === "all") return rows;
+		return rows.filter((item) => normalizeResolutionKey(item?.resolution) === adminIssueResolutionFilter);
+	}
+
+	function renderReporterInsights(summaryData, detailItems) {
+		if (!adminIssueReporterInsights) return;
+		const rows = Array.isArray(detailItems) ? detailItems : [];
+		const reporterKey = String(adminIssueAuthorFilter?.value || "").trim();
+		const memberItems = Array.isArray(summaryData?.member_items) ? summaryData.member_items : [];
+		adminIssueCurrentMemberRow = memberItems.find((item) => String(item?.reporter_key || item?.reporter || "").trim() === reporterKey) || null;
+		if (!adminIssueDetailActivated || !reporterKey) {
+			adminIssueReporterInsights.hidden = true;
+			return;
+		}
+		adminIssueReporterInsights.hidden = false;
+		const reporterName = String(adminIssueCurrentMemberRow?.reporter || reporterKey || "-").trim() || "-";
+		if (adminIssueSelectedReporter) {
+			adminIssueSelectedReporter.textContent = `${reporterName} Resolution 현황`;
+		}
+		const linked = Number(adminIssueCurrentMemberRow?.tc_reflection_linked || 0);
+		const total = Number(adminIssueCurrentMemberRow?.tc_reflection_total || rows.length || 0);
+		if (adminIssueFullTcCount) {
+			adminIssueFullTcCount.textContent = `Full_TC 반영 ${linked}건 / 전체 ${total}건`;
+		}
+		const buckets = buildResolutionBuckets(rows);
+		renderResolutionDonut(buckets, rows.length);
+		renderResolutionFilterButtons(buckets, rows.length);
+		const visibleCount = applyResolutionFilterItems(rows).length;
+		if (adminIssueResolutionHint) {
+			const activeText = adminIssueResolutionFilter === "all"
+				? "전체"
+				: (buckets.find((x) => x.key === adminIssueResolutionFilter)?.label || resolutionLabelFromKey(adminIssueResolutionFilter));
+			adminIssueResolutionHint.textContent = `Resolution 필터: ${activeText} · ${visibleCount}건 표시 중`;
+		}
+	}
+
+	function setAdminIssueDetailIdle(message) {
+		if (adminIssueRows) {
+			adminIssueRows.innerHTML = `<tr><td colspan="13">${esc(message || "상세를 보려면 보기 버튼을 눌러주세요.")}</td></tr>`;
+		}
+		if (adminIssueDetailCount) {
+			adminIssueDetailCount.textContent = "상세 0건 표시 중";
+		}
+		if (adminIssueLoadMoreBtn) {
+			adminIssueLoadMoreBtn.hidden = true;
+		}
+		if (adminIssueReporterInsights) {
+			adminIssueReporterInsights.hidden = true;
+		}
 	}
 
 	function toLocalDateInputValue(date) {
@@ -581,52 +782,7 @@ function esc(value) {
 	}
 
 	function renderAdminIssueSummaryVisual(items, stats) {
-		if (!adminIssueSummaryVisual) return;
-		const rows = Array.isArray(items) ? items : [];
-		if (!rows.length) {
-			adminIssueSummaryVisual.innerHTML = '<p class="hint">표시할 인원별 요약 데이터가 없습니다.</p>';
-			return;
-		}
-
-		const totalCard = `
-			<div class="admin-issue-summary-card total">
-				<div class="admin-issue-summary-donut" style="background:${issueDonutGradient(stats?.total_issue ?? 0, stats?.definite_problem ?? 0, stats?.duplicate ?? 0, stats?.not_a_bug ?? 0)}">
-					<div class="admin-issue-summary-donut-center">
-						<strong>${esc(stats?.total_issue ?? 0)}</strong>
-						<span>총 티켓</span>
-					</div>
-				</div>
-				<div class="admin-issue-summary-meta">
-					<h4>전체 요약</h4>
-					<p>중요도 건수 ${esc(stats?.definite_problem ?? 0)}건</p>
-					<p>Duplicate ${esc(stats?.duplicate ?? 0)}건 · Not a Bug ${esc(stats?.not_a_bug ?? 0)}건</p>
-				</div>
-			</div>
-		`;
-
-		const memberCards = rows.slice(0, 12).map((item) => {
-			const reporter = String(item?.reporter || "").trim();
-			const rank = Number(item?.rank ?? 0);
-			return `
-				<div class="admin-issue-summary-card" data-reporter="${esc(reporter)}">
-					<div class="admin-issue-summary-rank">#${rank > 0 ? rank : "-"}</div>
-					<div class="admin-issue-summary-donut" style="background:${issueDonutGradient(item?.total_issue ?? 0, item?.definite_problem ?? 0, item?.duplicate ?? 0, item?.not_a_bug ?? 0)}">
-						<div class="admin-issue-summary-donut-center">
-							<strong>${esc(item?.total_issue ?? 0)}</strong>
-							<span>총 갯수</span>
-						</div>
-					</div>
-					<div class="admin-issue-summary-meta">
-						<h4>${esc(reporter || "-")}</h4>
-						<p>중요도 갯수 ${esc(item?.definite_problem ?? 0)}건</p>
-						<p>점수 ${formatOneDecimal(item?.score ?? 0)}</p>
-						<button type="button" class="btn-secondary admin-issue-member-filter-btn" data-reporter="${esc(reporter)}">티켓 보기</button>
-					</div>
-				</div>
-			`;
-		}).join("");
-
-		adminIssueSummaryVisual.innerHTML = totalCard + memberCards;
+		return;
 	}
 
 	function renderAdminIssueMemberSummary(items, stats) {
@@ -634,11 +790,9 @@ function esc(value) {
 		const rows = Array.isArray(items) ? items : [];
 		const totals = stats || {};
 		if (!rows.length) {
-			renderAdminIssueSummaryVisual([], totals);
-			adminIssueMemberRows.innerHTML = '<tr><td colspan="15">조회된 인원별 이슈 데이터가 없습니다.</td></tr>';
+			adminIssueMemberRows.innerHTML = '<tr><td colspan="16">조회된 인원별 이슈 데이터가 없습니다.</td></tr>';
 			return;
 		}
-		renderAdminIssueSummaryVisual(rows, totals);
 		const totalRow = `
 			<tr class="admin-issue-total-row">
 				<td class="mi-th-rank"><span class="mi-rank-badge">합계</span></td>
@@ -656,20 +810,22 @@ function esc(value) {
 				<td class="mi-score-cell">${formatOneDecimal(totals?.score ?? 0)}</td>
 				<td>-</td>
 				<td>-</td>
+				<td>-</td>
 			</tr>
 		`;
 
 		adminIssueMemberRows.innerHTML = totalRow + rows.map((item) => {
 			const reporter = String(item?.reporter || "").trim();
+			const reporterFilterValue = String(item?.reporter_key || reporter || "").trim();
 			const rank = Number(item?.rank ?? 0);
 			const rankBadge = rank === 1 ? '<span class="mi-rank-badge mi-rank-gold">🥇 1위</span>'
 				: rank === 2 ? '<span class="mi-rank-badge mi-rank-silver">🥈 2위</span>'
 				: rank === 3 ? '<span class="mi-rank-badge mi-rank-bronze">🥉 3위</span>'
 				: rank > 0 ? `<span class="mi-rank-badge">${rank}위</span>` : '<span class="mi-rank-badge mi-rank-none">-</span>';
 			return `
-				<tr class="admin-issue-summary-row" data-reporter="${esc(reporter)}">
+				<tr class="admin-issue-summary-row" data-reporter="${esc(reporterFilterValue)}">
 					<td class="mi-th-rank">${rankBadge}</td>
-					<td><button type="button" class="btn-ghost admin-issue-author-link mi-reporter-btn" data-reporter="${esc(reporter)}">${esc(reporter || "-")}</button></td>
+					<td><button type="button" class="btn-ghost admin-issue-author-link mi-reporter-btn" data-reporter="${esc(reporterFilterValue)}">${esc(reporter || "-")}</button></td>
 					<td>${esc(item?.total_issue ?? 0)}</td>
 					<td>${esc(item?.duplicate ?? 0)}</td>
 					<td>${esc(item?.not_a_bug ?? 0)}</td>
@@ -681,8 +837,9 @@ function esc(value) {
 					<td>${formatOneDecimal(item?.low ?? 0)}</td>
 					<td>${formatOneDecimal(item?.lowest ?? 0)}</td>
 					<td class="mi-score-cell">${formatOneDecimal(item?.score ?? 0)}</td>
+					<td>${esc(formatTcReflectionText(item))}</td>
 					<td>${esc(formatDisplayDate(item?.latest_created_at || ""))}</td>
-					<td><button type="button" class="btn-secondary admin-issue-member-filter-btn" data-reporter="${esc(reporter)}">보기</button></td>
+					<td><button type="button" class="btn-secondary admin-issue-member-filter-btn" data-reporter="${esc(reporterFilterValue)}">보기</button></td>
 				</tr>
 			`;
 		}).join("");
@@ -976,11 +1133,15 @@ function esc(value) {
 			const end = String(data?.period?.end || data?.date_range?.end || "").trim();
 			adminIssuePeriodHint.textContent = `기간: ${start || "-"} ~ ${end || "-"}`;
 		}
-		if (adminIssueRows) {
-			adminIssueRows.innerHTML = '<tr><td colspan="13">상세 목록을 불러오는 중...</td></tr>';
-		}
-		if (adminIssueDetailCount) {
-			adminIssueDetailCount.textContent = `상세 0건 표시 중 / 전체 ${Number(data?.detail_total_count ?? 0)}건`;
+		if (adminIssueDetailActivated && String(adminIssueAuthorFilter?.value || "").trim()) {
+			if (adminIssueRows) {
+				adminIssueRows.innerHTML = '<tr><td colspan="13">상세 목록을 불러오는 중...</td></tr>';
+			}
+			if (adminIssueDetailCount) {
+				adminIssueDetailCount.textContent = `상세 0건 표시 중 / 전체 ${Number(data?.detail_total_count ?? 0)}건`;
+			}
+		} else {
+			setAdminIssueDetailIdle("인원별 순위의 보기 버튼을 누르면 해당 인원의 Resolution 통계와 티켓 상세가 표시됩니다.");
 		}
 	}
 
@@ -1011,19 +1172,20 @@ function esc(value) {
 		updateAdminIssueDetailMeta(detailData);
 		updateAdminIssueRangeButtons();
 		adminIssueDetailOffset = Number(detailData?.detail_shown_count ?? issueItems.length);
+		if (Number(detailData?.detail_offset ?? 0) > 0) {
+			adminIssueCurrentDetailItems = [...adminIssueCurrentDetailItems, ...issueItems];
+		} else {
+			adminIssueCurrentDetailItems = [...issueItems];
+		}
 		if (adminIssueResultCount) {
 			const total = Number(detailData?.detail_total_count ?? issueItems.length);
 			const members = memberItems.length;
 			adminIssueResultCount.textContent = `조회 결과 ${total}건 · ${members}명`;
 		}
-		if (Number(detailData?.detail_offset ?? 0) > 0) {
-			window.requestAnimationFrame(() => {
-				appendAdminIssueRows(issueItems);
-			});
-			return;
-		}
+		const filteredRows = applyResolutionFilterItems(adminIssueCurrentDetailItems);
+		renderReporterInsights(summaryData, adminIssueCurrentDetailItems);
 		window.requestAnimationFrame(() => {
-			renderAdminIssueRows(issueItems);
+			renderAdminIssueRows(filteredRows);
 		});
 	}
 
@@ -1039,7 +1201,7 @@ function esc(value) {
 			adminIssueSummaryAbortController.abort();
 		}
 		adminIssueSummaryAbortController = new AbortController();
-		adminIssueMemberRows.innerHTML = '<tr><td colspan="15">요약을 불러오는 중...</td></tr>';
+		adminIssueMemberRows.innerHTML = '<tr><td colspan="16">요약을 불러오는 중...</td></tr>';
 		const summaryUrl = query ? `/api/admin/board/member-issues/summary?${query}` : "/api/admin/board/member-issues/summary";
 		const summaryData = await requestJson(summaryUrl, {
 			method: "GET",
@@ -1092,10 +1254,17 @@ function esc(value) {
 		const requestToken = ++adminIssueRequestToken;
 		try {
 			adminIssueDetailOffset = 0;
+			adminIssueCurrentDetailItems = [];
 			const summaryQuery = buildAdminIssueQueryString(false);
 			const detailQuery = buildAdminIssueQueryString(true, true);
 			const summaryData = await fetchAdminIssueSummary(summaryQuery, forceRefresh, requestToken);
 			if (!summaryData) {
+				return;
+			}
+			const activeReporter = String(adminIssueAuthorFilter?.value || "").trim();
+			if (!adminIssueDetailActivated || !activeReporter) {
+				setAdminIssueDetailIdle("인원별 순위의 보기 버튼을 누르면 해당 인원의 Resolution 통계와 티켓 상세가 표시됩니다.");
+				refreshAdminIssuePerfSummary();
 				return;
 			}
 			await new Promise((resolve) => window.requestAnimationFrame(resolve));
@@ -1131,7 +1300,7 @@ function esc(value) {
 				return;
 			}
 			renderAdminIssueStats({ total_tickets: 0, definite_problem: 0, mistake_rate: 0, score: 0 });
-			adminIssueMemberRows.innerHTML = `<tr><td colspan="15">${esc(error?.message || "인원별 이슈 요약을 불러오지 못했습니다.")}</td></tr>`;
+			adminIssueMemberRows.innerHTML = `<tr><td colspan="16">${esc(error?.message || "인원별 이슈 요약을 불러오지 못했습니다.")}</td></tr>`;
 			adminIssueRows.innerHTML = `<tr><td colspan="13">${esc(error?.message || "인원별 이슈 목록을 불러오지 못했습니다.")}</td></tr>`;
 			if (adminIssuePeriodHint) {
 				adminIssuePeriodHint.textContent = "기간: -";
@@ -1171,9 +1340,20 @@ function esc(value) {
 		window.clearTimeout(adminIssueSearchTimer);
 		adminIssueDetailLimit = 120;
 		adminIssueDetailOffset = 0;
+		adminIssueResolutionFilter = "all";
 		adminIssueSearchTimer = window.setTimeout(() => {
 			refreshAdminIssueManagement();
 		}, 420);
+	}
+
+	function applyAdminIssueSearchNow(force = false) {
+		window.clearTimeout(adminIssueSearchTimer);
+		adminIssueDetailActivated = false;
+		adminIssueResolutionFilter = "all";
+		adminIssueCurrentDetailItems = [];
+		adminIssueDetailLimit = 120;
+		adminIssueDetailOffset = 0;
+		refreshAdminIssueManagement(force === true);
 	}
 
 	function openDetailModal(title, lines) {
@@ -1247,6 +1427,8 @@ function esc(value) {
 		memberBody.innerHTML = items
 			.map((x) => {
 				const email = String(x.email || "").toLowerCase();
+				const userId = String(x.user_id || "").trim();
+				const createdAtRaw = String(x.created_at || "").trim();
 				const isCoreAdmin = CORE_ADMINS.has(email);
 				const approved = Boolean(x.approved);
 				const canLogin = Boolean(x.can_login);
@@ -1266,12 +1448,12 @@ function esc(value) {
 						<td>${esc(createdAt)}</td>
 						<td>
 							<div class="admin-action-buttons">
-								<button type="button" class="btn-edit" data-open-member-edit="${esc(email)}">상세수정</button>
-								<button type="button" class="btn-approve" data-approve-member="${esc(email)}" ${approved ? "disabled" : ""}>승인</button>
-								<button type="button" class="btn-edit" data-toggle-role-member="${esc(email)}" data-next-role="${x.role === "admin" ? "user" : "admin"}" ${isCoreAdmin ? "disabled" : ""}>${x.role === "admin" ? "관리자해제" : "관리자부여"}</button>
-								<button type="button" class="btn-edit" data-toggle-login-member="${esc(email)}" data-next-login="${canLogin ? 0 : 1}" ${isCoreAdmin ? "disabled" : ""}>${canLogin ? "차단" : "허용"}</button>
-								${canSeeGameControl ? `<button type="button" class="btn-game-access" data-toggle-game-member="${esc(email)}" data-next-game="${gameAccess ? 0 : 1}" ${isCoreAdmin ? "disabled" : ""}>${gameAccess ? "차단" : "허용"}</button>` : ""}
-								<button type="button" class="btn-delete" data-del-member="${esc(email)}" ${isCoreAdmin ? "disabled" : ""}>삭제</button>
+								<button type="button" class="btn-edit" data-open-member-edit="${esc(email)}" data-user-id="${esc(userId)}" data-expected-created-at="${esc(createdAtRaw)}">상세수정</button>
+								<button type="button" class="btn-approve" data-approve-member="${esc(email)}" data-user-id="${esc(userId)}" data-expected-created-at="${esc(createdAtRaw)}" ${approved ? "disabled" : ""}>승인</button>
+								<button type="button" class="btn-edit" data-toggle-role-member="${esc(email)}" data-next-role="${x.role === "admin" ? "user" : "admin"}" data-user-id="${esc(userId)}" data-expected-created-at="${esc(createdAtRaw)}" ${isCoreAdmin ? "disabled" : ""}>${x.role === "admin" ? "관리자해제" : "관리자부여"}</button>
+								<button type="button" class="btn-edit" data-toggle-login-member="${esc(email)}" data-next-login="${canLogin ? 0 : 1}" data-user-id="${esc(userId)}" data-expected-created-at="${esc(createdAtRaw)}" ${isCoreAdmin ? "disabled" : ""}>${canLogin ? "차단" : "허용"}</button>
+								${canSeeGameControl ? `<button type="button" class="btn-game-access" data-toggle-game-member="${esc(email)}" data-next-game="${gameAccess ? 0 : 1}" data-user-id="${esc(userId)}" data-expected-created-at="${esc(createdAtRaw)}" ${isCoreAdmin ? "disabled" : ""}>${gameAccess ? "차단" : "허용"}</button>` : ""}
+								<button type="button" class="btn-delete" data-del-member="${esc(email)}" data-user-id="${esc(userId)}" data-expected-created-at="${esc(createdAtRaw)}" ${isCoreAdmin ? "disabled" : ""}>삭제</button>
 							</div>
 						</td>
 					</tr>
@@ -1661,6 +1843,7 @@ function esc(value) {
 				}
 			}
 			adminMainGrid?.classList.remove("admin-single-mode");
+			ensureAdminIssueLoaded();
 			return;
 		}
 		const activeId = ADMIN_SECTION_IDS.includes(requestedId) ? requestedId : "adminPeopleTab";
@@ -1742,73 +1925,93 @@ function esc(value) {
 		const target = source.closest("button");
 		if (!(target instanceof HTMLElement)) return;
 
-		const approveEmail = target.getAttribute("data-approve-member");
-		const editEmail = target.getAttribute("data-open-member-edit");
-		const toggleRoleEmail = target.getAttribute("data-toggle-role-member");
+		const approveEmailAttr = target.getAttribute("data-approve-member");
+		const editEmailAttr = target.getAttribute("data-open-member-edit");
+		const toggleRoleEmailAttr = target.getAttribute("data-toggle-role-member");
 		const nextRole = String(target.getAttribute("data-next-role") || "").trim().toLowerCase();
-		const toggleEmail = target.getAttribute("data-toggle-login-member");
+		const toggleEmailAttr = target.getAttribute("data-toggle-login-member");
 		const nextLogin = target.getAttribute("data-next-login");
-		const toggleGameEmail = target.getAttribute("data-toggle-game-member");
+		const toggleGameEmailAttr = target.getAttribute("data-toggle-game-member");
 		const nextGame = target.getAttribute("data-next-game");
-		const deleteEmail = target.getAttribute("data-del-member");
+		const deleteEmailAttr = target.getAttribute("data-del-member");
+		const targetUserId = String(target.getAttribute("data-user-id") || "").trim();
+		const expectedCreatedAt = String(target.getAttribute("data-expected-created-at") || "").trim();
 
-		if (!approveEmail && !editEmail && !toggleRoleEmail && !toggleEmail && !toggleGameEmail && !deleteEmail) {
+		const rowEmail = extractEmailFromMemberRow(target);
+		const isEditAction = editEmailAttr !== null;
+		const isApproveAction = approveEmailAttr !== null;
+		const isToggleRoleAction = toggleRoleEmailAttr !== null;
+		const isToggleLoginAction = toggleEmailAttr !== null;
+		const isToggleGameAction = toggleGameEmailAttr !== null;
+		const isDeleteAction = deleteEmailAttr !== null;
+
+		if (!isEditAction && !isApproveAction && !isToggleRoleAction && !isToggleLoginAction && !isToggleGameAction && !isDeleteAction) {
 			return;
 		}
 
+		const editEmail = isEditAction ? (String(editEmailAttr || "").trim().toLowerCase() || rowEmail) : "";
+		const approveEmail = isApproveAction ? (String(approveEmailAttr || "").trim().toLowerCase() || rowEmail) : "";
+		const toggleRoleEmail = isToggleRoleAction ? (String(toggleRoleEmailAttr || "").trim().toLowerCase() || rowEmail) : "";
+		const toggleEmail = isToggleLoginAction ? (String(toggleEmailAttr || "").trim().toLowerCase() || rowEmail) : "";
+		const toggleGameEmail = isToggleGameAction ? (String(toggleGameEmailAttr || "").trim().toLowerCase() || rowEmail) : "";
+		const deleteEmail = isDeleteAction ? (String(deleteEmailAttr || "").trim().toLowerCase() || rowEmail) : "";
+
 		try {
-			if (editEmail) {
-				const member = findMemberByEmail(editEmail);
+			if (isEditAction && editEmail) {
+				const member = findMemberByIdentity(editEmail, targetUserId, expectedCreatedAt) || findMemberByEmail(editEmail);
 				if (!member) throw new Error("수정할 회원 정보를 찾지 못했습니다.");
-				openMemberEditModal(member);
+				openMemberEditModal(member, {
+					email: editEmail,
+					userId: targetUserId || String(member.user_id || "").trim(),
+					expectedCreatedAt: expectedCreatedAt || String(member.created_at || "").trim(),
+				});
 				return;
 			}
 
-			if (approveEmail) {
+			if (isApproveAction && approveEmail) {
 				await requestJson(`/api/admin/users/${encodeURIComponent(approveEmail)}`, {
 					method: "PUT",
-					body: JSON.stringify({ approved: true, can_login: true }),
+					body: JSON.stringify({ approved: true, can_login: true, target_email: approveEmail, target_user_id: targetUserId, expected_created_at: expectedCreatedAt }),
 				});
 				await refreshMembers();
 				return;
 			}
 
-			if (toggleEmail) {
+			if (isToggleLoginAction && toggleEmail) {
 				await requestJson(`/api/admin/users/${encodeURIComponent(toggleEmail)}`, {
 					method: "PUT",
-					body: JSON.stringify({ can_login: String(nextLogin) === "1" }),
+					body: JSON.stringify({ can_login: String(nextLogin) === "1", target_email: toggleEmail, target_user_id: targetUserId, expected_created_at: expectedCreatedAt }),
 				});
 				await refreshMembers();
 				return;
 			}
 
-			if (toggleRoleEmail) {
+			if (isToggleRoleAction && toggleRoleEmail) {
 				if (nextRole !== "admin" && nextRole !== "user") {
 					throw new Error("변경할 권한 정보가 올바르지 않습니다.");
 				}
 				await requestJson(`/api/admin/users/${encodeURIComponent(toggleRoleEmail)}`, {
 					method: "PUT",
-					body: JSON.stringify({ role: nextRole }),
+					body: JSON.stringify({ role: nextRole, target_email: toggleRoleEmail, target_user_id: targetUserId, expected_created_at: expectedCreatedAt }),
 				});
 				await refreshMembers();
 				return;
 			}
 
-			if (toggleGameEmail) {
+			if (isToggleGameAction && toggleGameEmail) {
 				await requestJson(`/api/admin/users/${encodeURIComponent(toggleGameEmail)}`, {
 					method: "PUT",
-					body: JSON.stringify({ game_access: String(nextGame) === "1" }),
+					body: JSON.stringify({ game_access: String(nextGame) === "1", target_email: toggleGameEmail, target_user_id: targetUserId, expected_created_at: expectedCreatedAt }),
 				});
 				await refreshMembers();
 				window.dispatchEvent(new Event("cci:auth-updated"));
 				return;
 			}
 
-			if (deleteEmail) {
-				const ok = window.confirm(`${deleteEmail} 계정을 삭제하시겠습니까?`);
-				if (!ok) return;
+			if (isDeleteAction && deleteEmail) {
 				await requestJson(`/api/admin/users/${encodeURIComponent(deleteEmail)}`, {
 					method: "DELETE",
+					body: JSON.stringify({ target_email: deleteEmail, target_user_id: targetUserId, expected_created_at: expectedCreatedAt }),
 				});
 				await refreshMembers();
 			}
@@ -1827,7 +2030,9 @@ function esc(value) {
 
 	memberEditForm?.addEventListener("submit", async (event) => {
 		event.preventDefault();
-		const email = String(document.getElementById("memberEditEmail")?.value || "").trim().toLowerCase();
+		const email = String(document.getElementById("memberEditEmail")?.value || "").trim().toLowerCase() || memberEditSelection.email;
+		const pinnedUserId = String(document.getElementById("memberEditUserId")?.value || "").trim() || memberEditSelection.userId;
+		const pinnedCreatedAt = String(document.getElementById("memberEditExpectedCreatedAt")?.value || "").trim() || memberEditSelection.expectedCreatedAt;
 		if (!email) {
 			window.alert("수정할 계정을 찾지 못했습니다.");
 			return;
@@ -1858,9 +2063,12 @@ function esc(value) {
 			return;
 		}
 		try {
+			const member = findMemberByIdentity(email, pinnedUserId, pinnedCreatedAt) || findMemberByEmail(email);
+			const expectedCreatedAt = pinnedCreatedAt || String(member?.created_at || "").trim();
+			const targetUserId = pinnedUserId || String(member?.user_id || "").trim();
 			await requestJson(`/api/admin/users/${encodeURIComponent(email)}`, {
 				method: "PUT",
-				body: JSON.stringify(payload),
+				body: JSON.stringify({ ...payload, target_email: email, target_user_id: targetUserId, expected_created_at: expectedCreatedAt }),
 			});
 			window.alert("회원 정보가 저장되었습니다.");
 			closeMemberEditModal();
@@ -1873,7 +2081,9 @@ function esc(value) {
 
 	memberPasswordForm?.addEventListener("submit", async (event) => {
 		event.preventDefault();
-		const email = String(document.getElementById("memberEditEmail")?.value || "").trim().toLowerCase();
+		const email = String(document.getElementById("memberEditEmail")?.value || "").trim().toLowerCase() || memberEditSelection.email;
+		const pinnedUserId = String(document.getElementById("memberEditUserId")?.value || "").trim() || memberEditSelection.userId;
+		const pinnedCreatedAt = String(document.getElementById("memberEditExpectedCreatedAt")?.value || "").trim() || memberEditSelection.expectedCreatedAt;
 		const password = String(document.getElementById("memberPasswordInput")?.value || "").trim();
 		if (!email) {
 			window.alert("수정할 계정을 찾지 못했습니다.");
@@ -1884,9 +2094,12 @@ function esc(value) {
 			return;
 		}
 		try {
+			const member = findMemberByIdentity(email, pinnedUserId, pinnedCreatedAt) || findMemberByEmail(email);
+			const expectedCreatedAt = pinnedCreatedAt || String(member?.created_at || "").trim();
+			const targetUserId = pinnedUserId || String(member?.user_id || "").trim();
 			await requestJson(`/api/admin/users/${encodeURIComponent(email)}`, {
 				method: "PUT",
-				body: JSON.stringify({ password }),
+				body: JSON.stringify({ password, target_email: email, target_user_id: targetUserId, expected_created_at: expectedCreatedAt }),
 			});
 			await refreshMembers();
 			window.alert("비밀번호가 변경되었습니다.");
@@ -1983,6 +2196,32 @@ function esc(value) {
 	adminMemberStatusFilter?.addEventListener("change", () => applyMemberView(rawMemberItems));
 	adminMemberRefreshBtn?.addEventListener("click", refreshMembers);
 
+	adminPendingMemberQueue?.addEventListener("click", async (event) => {
+		const source = event.target;
+		if (!(source instanceof Element)) return;
+		const target = source.closest("button[data-approve-member]");
+		if (!(target instanceof HTMLElement)) return;
+		const approveEmail = String(target.getAttribute("data-approve-member") || "").trim().toLowerCase();
+		const targetUserId = String(target.getAttribute("data-user-id") || "").trim();
+		const expectedCreatedAt = String(target.getAttribute("data-expected-created-at") || "").trim() || String(findMemberByEmail(approveEmail)?.created_at || "").trim();
+		if (!approveEmail) {
+			window.alert("유효한 이메일이 없어 승인할 수 없습니다.");
+			return;
+		}
+		try {
+			target.disabled = true;
+			await requestJson(`/api/admin/users/${encodeURIComponent(approveEmail)}`, {
+				method: "PUT",
+				body: JSON.stringify({ approved: true, can_login: true, target_email: approveEmail, target_user_id: targetUserId, expected_created_at: expectedCreatedAt }),
+			});
+			await refreshMembers();
+		} catch (error) {
+			window.alert(error?.message || "승인 처리 중 오류가 발생했습니다.");
+		} finally {
+			target.disabled = false;
+		}
+	});
+
 	adminApproveAllPendingBtn?.addEventListener("click", async () => {
 		const pending = rawMemberItems.filter((x) => !Boolean(x.approved));
 		if (!pending.length) {
@@ -1994,10 +2233,11 @@ function esc(value) {
 		try {
 			for (const item of pending) {
 				const email = String(item.email || "").trim().toLowerCase();
+				const expectedCreatedAt = String(item.created_at || "").trim();
 				if (!email) continue;
 				await requestJson(`/api/admin/users/${encodeURIComponent(email)}`, {
 					method: "PUT",
-					body: JSON.stringify({ approved: true, can_login: true }),
+					body: JSON.stringify({ approved: true, can_login: true, target_email: email, target_user_id: String(item.user_id || "").trim(), expected_created_at: expectedCreatedAt }),
 				});
 			}
 			await refreshMembers();
@@ -2479,6 +2719,15 @@ function esc(value) {
 	});
 	document.getElementById('adminBoardRefreshBtn')?.addEventListener('click', refreshAdminBoardPosts);
 	adminIssueSearchInput?.addEventListener("input", scheduleAdminIssueRefresh);
+	adminIssueSearchInput?.addEventListener("keydown", (event) => {
+		if (event.key === "Enter") {
+			event.preventDefault();
+			applyAdminIssueSearchNow(true);
+		}
+	});
+	adminIssueApplyBtn?.addEventListener("click", () => {
+		applyAdminIssueSearchNow(true);
+	});
 	adminIssueQuickMembers?.addEventListener("click", (event) => {
 		const button = event.target.closest(".admin-issue-chip");
 		if (!button) return;
@@ -2493,46 +2742,64 @@ function esc(value) {
 		const actionButton = event.target.closest(".admin-issue-member-filter-btn");
 		if (actionButton) {
 			event.stopPropagation();
-			applyAdminIssueReporterFilter(actionButton.getAttribute("data-reporter"));
+			applyAdminIssueReporterFilter(actionButton.getAttribute("data-reporter"), { activateDetail: true, resetResolution: true });
 			return;
 		}
-		const card = event.target.closest(".admin-issue-summary-card[data-reporter]");
-		if (!card) return;
-		applyAdminIssueReporterFilter(card.getAttribute("data-reporter"));
 	});
 	adminIssueMemberRows?.addEventListener("click", (event) => {
 		const actionButton = event.target.closest(".admin-issue-author-link, .admin-issue-member-filter-btn");
 		if (actionButton) {
 			event.stopPropagation();
-			applyAdminIssueReporterFilter(actionButton.getAttribute("data-reporter"));
+			applyAdminIssueReporterFilter(actionButton.getAttribute("data-reporter"), { activateDetail: true, resetResolution: true });
 			return;
 		}
 		const row = event.target.closest(".admin-issue-summary-row[data-reporter]");
 		if (!row) return;
-		applyAdminIssueReporterFilter(row.getAttribute("data-reporter"));
+		applyAdminIssueReporterFilter(row.getAttribute("data-reporter"), { activateDetail: true, resetResolution: true });
+	});
+	adminIssueResolutionFilters?.addEventListener("click", (event) => {
+		const button = event.target.closest(".admin-issue-resolution-filter-btn");
+		if (!button) return;
+		adminIssueResolutionFilter = String(button.getAttribute("data-resolution") || "all").trim().toLowerCase() || "all";
+		renderResolutionFilterButtons(buildResolutionBuckets(adminIssueCurrentDetailItems), adminIssueCurrentDetailItems.length);
+		if (adminIssueResolutionHint) {
+			const activeLabel = adminIssueResolutionFilter === "all"
+				? "전체"
+				: (buildResolutionBuckets(adminIssueCurrentDetailItems).find((x) => x.key === adminIssueResolutionFilter)?.label || resolutionLabelFromKey(adminIssueResolutionFilter));
+			const visibleCount = applyResolutionFilterItems(adminIssueCurrentDetailItems).length;
+			adminIssueResolutionHint.textContent = `Resolution 필터: ${activeLabel} · ${visibleCount}건 표시 중`;
+		}
+		renderAdminIssueRows(applyResolutionFilterItems(adminIssueCurrentDetailItems));
 	});
 	adminIssueAuthorFilter?.addEventListener("change", () => {
+		adminIssueDetailActivated = false;
+		adminIssueResolutionFilter = "all";
+		adminIssueCurrentDetailItems = [];
 		adminIssueDetailLimit = 120;
 		adminIssueDetailOffset = 0;
 		refreshAdminIssueManagement();
 	});
 	adminIssueStatusFilter?.addEventListener("change", () => {
+		adminIssueResolutionFilter = "all";
 		adminIssueDetailLimit = 120;
 		adminIssueDetailOffset = 0;
 		refreshAdminIssueManagement();
 	});
 	adminIssueSortFilter?.addEventListener("change", () => {
+		adminIssueResolutionFilter = "all";
 		adminIssueDetailLimit = 120;
 		adminIssueDetailOffset = 0;
 		refreshAdminIssueManagement();
 	});
 	adminIssueStartDate?.addEventListener("change", () => {
+		adminIssueResolutionFilter = "all";
 		adminIssueDetailLimit = 120;
 		adminIssueDetailOffset = 0;
 		updateAdminIssueRangeButtons();
 		refreshAdminIssueManagement();
 	});
 	adminIssueEndDate?.addEventListener("change", () => {
+		adminIssueResolutionFilter = "all";
 		adminIssueDetailLimit = 120;
 		adminIssueDetailOffset = 0;
 		updateAdminIssueRangeButtons();
@@ -2570,6 +2837,9 @@ function esc(value) {
 		if (adminIssueSortFilter) adminIssueSortFilter.value = "score_desc";
 		if (adminIssueStartDate) adminIssueStartDate.value = "";
 		if (adminIssueEndDate) adminIssueEndDate.value = "";
+		adminIssueDetailActivated = false;
+		adminIssueResolutionFilter = "all";
+		adminIssueCurrentDetailItems = [];
 		adminIssueDetailLimit = 120;
 		adminIssueDetailOffset = 0;
 		adminIssuePerfWindowSec = 60;
@@ -2593,6 +2863,7 @@ function esc(value) {
 	refreshAdminBoardPosts();
 	refreshAdminCompanyMembers();
 	setAdminIssueDetailCollapsed(false);
+	setAdminIssueDetailIdle("인원별 순위의 보기 버튼을 누르면 해당 인원의 Resolution 통계와 티켓 상세가 표시됩니다.");
 	setInterval(refreshAdminBoardPosts, 60000);
 	scheduleAdminIssueAutoRefresh();
 })();

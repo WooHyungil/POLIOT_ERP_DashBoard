@@ -16,6 +16,7 @@ $logPath = Join-Path $runtimeDir "server_watchdog.log"
 $statePath = Join-Path $runtimeDir "server_watchdog.state.json"
 $managedStdout = Join-Path $runtimeDir "managed_server.stdout.log"
 $managedStderr = Join-Path $runtimeDir "managed_server.stderr.log"
+$lockPath = Join-Path $runtimeDir "server_watchdog.lock"
 
 function Write-WatchdogLog {
   param([string]$Message)
@@ -111,7 +112,49 @@ function Save-State {
   }
 }
 
+function Enter-WatchdogLock {
+  param([string]$Path)
+
+  if (Test-Path $Path) {
+    try {
+      $raw = (Get-Content -Path $Path -Raw -ErrorAction Stop).Trim()
+      $existingPid = 0
+      [void][int]::TryParse($raw, [ref]$existingPid)
+      if ($existingPid -gt 0) {
+        $existing = Get-Process -Id $existingPid -ErrorAction SilentlyContinue
+        if ($existing) {
+          Write-WatchdogLog "another watchdog already running pid=$existingPid; exit"
+          exit 0
+        }
+      }
+    } catch {
+      # stale or unreadable lock; overwrite below
+    }
+  }
+
+  Set-Content -Path $Path -Value "$PID" -Encoding UTF8
+}
+
+function Exit-WatchdogLock {
+  param([string]$Path)
+
+  try {
+    if (Test-Path $Path) {
+      $raw = (Get-Content -Path $Path -Raw -ErrorAction SilentlyContinue).Trim()
+      if ($raw -eq "$PID") {
+        Remove-Item -Path $Path -Force -ErrorAction SilentlyContinue
+      }
+    }
+  } catch {}
+}
+
+trap {
+  Exit-WatchdogLock -Path $lockPath
+  continue
+}
+
 Write-WatchdogLog "watchdog start host=$HostAddr port=$Port lan_only=$($LanOnly.IsPresent)"
+Enter-WatchdogLock -Path $lockPath
 Ensure-LanFirewallRule -TargetPort $Port
 Run-CriticalBackup
 $restartCount = 0

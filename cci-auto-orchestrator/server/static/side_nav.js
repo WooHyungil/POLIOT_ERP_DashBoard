@@ -19,6 +19,12 @@
   function go(href) {
     const url = toAbsoluteUrl(href);
     if (!url) return;
+    if (window.innerWidth <= 700) {
+      nav.classList.remove("is-open");
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+      const overlay = document.getElementById("sideNavOverlay");
+      if (overlay) overlay.classList.remove("active");
+    }
     window.location.assign(url);
   }
 
@@ -146,19 +152,45 @@
   }
 
   if (toggle) {
-    toggle.addEventListener("click", function () {
-      const next = !nav.classList.contains("is-open");
-      nav.classList.toggle("is-open", next);
-      toggle.setAttribute("aria-expanded", next ? "true" : "false");
+    const overlay = document.getElementById("sideNavOverlay");
+
+    function openDrawer() {
+      nav.classList.add("is-open");
+      toggle.setAttribute("aria-expanded", "true");
+      if (overlay) overlay.classList.add("active");
       applySubLinkActiveState();
+    }
+
+    function closeDrawer() {
+      nav.classList.remove("is-open");
+      toggle.setAttribute("aria-expanded", "false");
+      if (overlay) overlay.classList.remove("active");
+      applySubLinkActiveState();
+    }
+
+    toggle.addEventListener("click", function () {
+      if (nav.classList.contains("is-open")) {
+        closeDrawer();
+      } else {
+        openDrawer();
+      }
+    });
+
+    if (overlay) {
+      overlay.addEventListener("click", closeDrawer);
+    }
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") return;
+      if (!nav.classList.contains("is-open")) return;
+      closeDrawer();
     });
 
     document.addEventListener("click", function (event) {
       if (!nav.classList.contains("is-open")) return;
       if (nav.contains(event.target)) return;
-      nav.classList.remove("is-open");
-      toggle.setAttribute("aria-expanded", "false");
-      applySubLinkActiveState();
+      if (toggle.contains(event.target)) return;
+      closeDrawer();
     });
   }
 
@@ -256,5 +288,13 @@
     nav.classList.remove("is-open");
     if (toggle) toggle.setAttribute("aria-expanded", "false");
     applySubLinkActiveState();
+  });
+
+  window.addEventListener("resize", function () {
+    if (window.innerWidth > 700 && nav.classList.contains("is-open")) {
+      nav.classList.remove("is-open");
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+      applySubLinkActiveState();
+    }
   });
 })();
