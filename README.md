@@ -36,6 +36,13 @@ sudo mkdir -p /opt/cci/app /opt/cci/data
 sudo chown -R $USER:$USER /opt/cci
 ```
 
+또는 저장소 반영 후 아래 스크립트 1회 실행:
+
+```bash
+chmod +x /opt/cci/app/scripts/deploy/oracle_vm_bootstrap.sh
+/opt/cci/app/scripts/deploy/oracle_vm_bootstrap.sh
+```
+
 Oracle 보안 목록(Security List) 또는 NSG에서 `TCP 8000` 인바운드 허용이 필요합니다.
 
 ### 2) GitHub Secrets 등록
