@@ -16,6 +16,43 @@
   - Android: `appium driver install uiautomator2`
   - iOS: `appium driver install xcuitest`
 
+## 무료 안정 배포 (GitHub + Oracle Cloud Always Free)
+
+터널 대신 Oracle VM에 상시 배포하면 URL이 훨씬 안정적입니다.
+
+### 1) Oracle VM 1회 초기 준비
+```bash
+sudo dnf -y update || true
+sudo apt-get update -y || true
+
+# Docker 설치 (OS에 맞는 명령으로 진행)
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+sudo systemctl enable docker
+sudo systemctl start docker
+
+# 배포 디렉터리
+sudo mkdir -p /opt/cci/app /opt/cci/data
+sudo chown -R $USER:$USER /opt/cci
+```
+
+Oracle 보안 목록(Security List) 또는 NSG에서 `TCP 8000` 인바운드 허용이 필요합니다.
+
+### 2) GitHub Secrets 등록
+저장소 `Settings > Secrets and variables > Actions`에 아래 3개를 등록합니다.
+
+- `ORACLE_VM_HOST`: VM 공인 IP
+- `ORACLE_VM_USER`: VM SSH 사용자 (예: `ubuntu`, `opc`)
+- `ORACLE_VM_SSH_KEY`: 개인키 전체 내용 (-----BEGIN ...)
+
+### 3) 자동배포 실행
+- 워크플로 파일: `.github/workflows/deploy-oracle-free.yml`
+- `main/master` 푸시 시 자동 배포
+- 또는 Actions 탭에서 `Deploy Oracle Free VM` 수동 실행
+
+배포 완료 후 접속 URL:
+- `http://<ORACLE_VM_PUBLIC_IP>:8000/auth/login`
+
 ## 2. 서버 실행 (노트북에서 1회)
 ```powershell
 cd "c:\Users\poliot\OneDrive\바탕 화면\자동화 프로그램\cci-auto-orchestrator"

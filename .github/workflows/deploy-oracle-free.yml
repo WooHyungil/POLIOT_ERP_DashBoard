@@ -1,0 +1,53 @@
+name: Deploy Oracle Free VM
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "master"]
+    paths:
+      - "cci-auto-orchestrator/**"
+      - ".github/workflows/deploy-oracle-free.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pack application
+        run: |
+          tar \
+            --exclude='.venv' \
+            --exclude='.pytest_cache' \
+            --exclude='.ruff_cache' \
+            --exclude='runtime' \
+            --exclude='server/db' \
+            --exclude='server/artifacts' \
+            --exclude='server/exports' \
+            --exclude='server/reports' \
+            --exclude='server/uploads' \
+            -czf cci-auto-orchestrator.tgz -C cci-auto-orchestrator .
+
+      - name: Upload release archive to VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ORACLE_VM_HOST }}
+          username: ${{ secrets.ORACLE_VM_USER }}
+          key: ${{ secrets.ORACLE_VM_SSH_KEY }}
+          source: cci-auto-orchestrator.tgz
+          target: /tmp
+
+      - name: Deploy on VM
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.ORACLE_VM_HOST }}
+          username: ${{ secrets.ORACLE_VM_USER }}
+          key: ${{ secrets.ORACLE_VM_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            sudo mkdir -p /opt/cci/app
+            sudo tar -xzf /tmp/cci-auto-orchestrator.tgz -C /opt/cci/app
+            sudo chmod +x /opt/cci/app/scripts/deploy/oracle_redeploy.sh
+            sudo CCI_HOST_PORT=8000 /opt/cci/app/scripts/deploy/oracle_redeploy.sh
