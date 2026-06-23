@@ -196,18 +196,65 @@ GOOGLE_DEFECT_SHEET_RANGE = os.getenv("GOOGLE_DEFECT_SHEET_RANGE", "B2:R")
 GOOGLE_DEFECTLIST_SHEET_NAME = os.getenv("GOOGLE_DEFECTLIST_SHEET_NAME", "DefectList")
 GOOGLE_DEFECTLIST_HEADER_RANGE = os.getenv("GOOGLE_DEFECTLIST_HEADER_RANGE", "B17:Z17")
 GOOGLE_DEFECTLIST_DATA_RANGE = os.getenv("GOOGLE_DEFECTLIST_DATA_RANGE", "B18:Z")
-UPLOADED_DEFECT_RAW_FILE = UPLOAD_DIR / "defectlist_raw_uploaded.xlsx"
-UPLOADED_FULL_TC_FILE = UPLOAD_DIR / "full_tc_uploaded.xlsx"
-DEFECT_RAW_UPLOAD_HISTORY_FILE = UPLOAD_DIR / "defectlist_raw_upload_history.json"
-DEFECT_RAW_UPLOAD_HISTORY_DIR = UPLOAD_DIR / "defectlist_raw_history"
+UPLOAD_PERSIST_DIR = str(os.getenv("CCI_UPLOAD_PERSIST_DIR", "") or "").strip()
+UPLOAD_DATA_DIR = (Path(UPLOAD_PERSIST_DIR).expanduser() if UPLOAD_PERSIST_DIR else UPLOAD_DIR)
+UPLOAD_DATA_DIR.mkdir(parents=True, exist_ok=True)
+UPLOADED_DEFECT_RAW_FILE = UPLOAD_DATA_DIR / "defectlist_raw_uploaded.xlsx"
+UPLOADED_FULL_TC_FILE = UPLOAD_DATA_DIR / "full_tc_uploaded.xlsx"
+DEFECT_RAW_UPLOAD_HISTORY_FILE = UPLOAD_DATA_DIR / "defectlist_raw_upload_history.json"
+DEFECT_RAW_UPLOAD_HISTORY_DIR = UPLOAD_DATA_DIR / "defectlist_raw_history"
 DEFECT_RAW_UPLOAD_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 DEFECT_RAW_UPLOAD_HISTORY_LOCK = threading.Lock()
 MAX_DEFECT_RAW_UPLOAD_HISTORY = 50
-FULL_TC_UPLOAD_HISTORY_FILE = UPLOAD_DIR / "full_tc_upload_history.json"
-FULL_TC_UPLOAD_HISTORY_DIR = UPLOAD_DIR / "full_tc_history"
+FULL_TC_UPLOAD_HISTORY_FILE = UPLOAD_DATA_DIR / "full_tc_upload_history.json"
+FULL_TC_UPLOAD_HISTORY_DIR = UPLOAD_DATA_DIR / "full_tc_history"
 FULL_TC_UPLOAD_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 FULL_TC_UPLOAD_HISTORY_LOCK = threading.Lock()
 MAX_FULL_TC_UPLOAD_HISTORY = 80
+
+
+def _migrate_upload_storage_layout_once() -> None:
+    # 기존 uploads 경로에 있던 업로드 산출물을 영구 저장 경로로 1회 이관한다.
+    if UPLOAD_DATA_DIR == UPLOAD_DIR:
+        return
+
+    legacy_defect_file = UPLOAD_DIR / "defectlist_raw_uploaded.xlsx"
+    legacy_full_tc_file = UPLOAD_DIR / "full_tc_uploaded.xlsx"
+    legacy_defect_history_file = UPLOAD_DIR / "defectlist_raw_upload_history.json"
+    legacy_full_tc_history_file = UPLOAD_DIR / "full_tc_upload_history.json"
+    legacy_defect_history_dir = UPLOAD_DIR / "defectlist_raw_history"
+    legacy_full_tc_history_dir = UPLOAD_DIR / "full_tc_history"
+
+    def _copy_file_if_needed(src: Path, dst: Path) -> None:
+        try:
+            if src.exists() and src.is_file() and not dst.exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+        except Exception as exc:
+            logger.warning("Upload storage migration skipped for %s -> %s: %s", src, dst, exc)
+
+    def _copy_dir_xlsx_if_needed(src_dir: Path, dst_dir: Path) -> None:
+        try:
+            if not src_dir.exists() or not src_dir.is_dir():
+                return
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            for src in src_dir.glob("*.xlsx"):
+                dst = dst_dir / src.name
+                if dst.exists():
+                    continue
+                shutil.copy2(src, dst)
+        except Exception as exc:
+            logger.warning("Upload history migration skipped for %s -> %s: %s", src_dir, dst_dir, exc)
+
+    _copy_file_if_needed(legacy_defect_file, UPLOADED_DEFECT_RAW_FILE)
+    _copy_file_if_needed(legacy_full_tc_file, UPLOADED_FULL_TC_FILE)
+    _copy_file_if_needed(legacy_defect_history_file, DEFECT_RAW_UPLOAD_HISTORY_FILE)
+    _copy_file_if_needed(legacy_full_tc_history_file, FULL_TC_UPLOAD_HISTORY_FILE)
+    _copy_dir_xlsx_if_needed(legacy_defect_history_dir, DEFECT_RAW_UPLOAD_HISTORY_DIR)
+    _copy_dir_xlsx_if_needed(legacy_full_tc_history_dir, FULL_TC_UPLOAD_HISTORY_DIR)
+
+
+_migrate_upload_storage_layout_once()
 GOOGLE_RAW_STATUS_RANGE = os.getenv("GOOGLE_RAW_STATUS_RANGE", "B:R")
 GOOGLE_DEFECT_SHEET_GID = os.getenv("GOOGLE_DEFECT_SHEET_GID", "").strip()
 GOOGLE_DEFECT_RAW_UPLOAD_ONLY = str(os.getenv("GOOGLE_DEFECT_RAW_UPLOAD_ONLY", "1")).strip().lower() in {"1", "true", "yes", "y", "on"}
@@ -1805,6 +1852,18 @@ async def auth_guard_middleware(request: Request, call_next):
         return RedirectResponse(url=f"/auth/login?next={next_path}", status_code=303)
 
     request.state.current_user = user
+    # heartbeat 주기와 무관하게 인증된 요청이 들어오면 활성 로그인 상태를 갱신한다.
+    session_data = request.scope.get("session")
+    client_session_key = ""
+    if isinstance(session_data, dict):
+        client_session_key = str(session_data.get("client_session_key", "")).strip()
+        if not client_session_key:
+            client_session_key = _ensure_client_session_key(request)
+            session_data["client_session_key"] = client_session_key
+    if client_session_key:
+        _touch_active_login(str(user.get("email", "")), client_session_key)
+    if isinstance(session_data, dict):
+        session_data["last_active_at"] = datetime.utcnow().isoformat(timespec="seconds")
 
     # RBAC: 일반 사용자는 인원별 이슈 통계 API와 관리 메뉴/API 접근 차단
     admin_only_prefixes = ("/admin", "/api/admin")
@@ -2262,6 +2321,13 @@ def admin_users(request: Request):
     current_user = _current_user_from_request(request)
     current_user_email = str((current_user or {}).get("email", "")).strip().lower()
     can_manage_game_access = current_user_email == GAME_ACCESS_MANAGER_EMAIL
+    now_ts = time.time()
+    with ACTIVE_LOGIN_LOCK:
+        _purge_expired_active_logins(now_ts)
+        active_login_last_seen = {
+            str(email or "").strip().lower(): float((info or {}).get("last_seen", 0) or 0)
+            for email, info in ACTIVE_LOGIN_SESSIONS.items()
+        }
 
     out = []
     for row in _load_users():
@@ -2270,6 +2336,8 @@ def admin_users(request: Request):
             continue
         profile = _merge_user_profile_fields(row)
         password_hash = str(row.get("password_hash", "") or "")
+        last_seen_ts = float(active_login_last_seen.get(email, 0) or 0)
+        is_online = bool(last_seen_ts and (now_ts - last_seen_ts) <= ACTIVE_LOGIN_TTL_SECONDS)
         out.append(
             {
                 "user_id": str(row.get("user_id", "") or ""),
@@ -2284,6 +2352,8 @@ def admin_users(request: Request):
                 "phone": str(profile.get("phone", "") or ""),
                 "birth": str(profile.get("birth", "") or ""),
                 "address": str(profile.get("address", "") or ""),
+                "is_online": is_online,
+                "online_last_seen": datetime.fromtimestamp(last_seen_ts).isoformat(timespec="seconds") if last_seen_ts else "",
                 "password_hash_preview": password_hash if password_hash else "(없음)",
             }
         )
@@ -4576,6 +4646,11 @@ def _build_admin_board_member_issues_payload(
     if perf_meta is not None:
         perf_meta["cache_hit"] = False
 
+    # (1) 필터 적용 전 전체 데이터로 순위 먼저 계산
+    all_reporter_names = sorted(set(str(item.get("reporter", "") or "").strip() or "미지정" for item in prepared_items))
+    all_ranked_core = _build_member_summary_from_issue_rows(prepared_items, all_reporter_names)
+    all_ranked_by_name = {str(row.get("name", "") or "").strip(): row for row in all_ranked_core}
+
     filtered_items: list[dict] = []
     for item in prepared_items:
         item_reporter_key = str(item.get("reporter_key", "") or "")
@@ -4640,8 +4715,14 @@ def _build_admin_board_member_issues_payload(
             group["reporter_key"] = reporter_key_value
 
     reporter_names = sorted(reporter_groups.keys())
+    # (2) 필터된 데이터로 통계 계산하되, 순위는 전체 데이터의 원본 순위 사용
     ranked_core = _build_member_summary_from_issue_rows(filtered_items, reporter_names)
     ranked_by_name = {str(row.get("name", "") or "").strip(): row for row in ranked_core}
+    
+    # (3) 원본 순위 병합
+    for reporter_name in reporter_names:
+        if reporter_name in ranked_by_name and reporter_name in all_ranked_by_name:
+            ranked_by_name[reporter_name]["rank"] = int(all_ranked_by_name[reporter_name].get("rank", 0) or 0)
 
     defect_reflection_map: dict[str, bool] = {}
     try:
@@ -5930,6 +6011,7 @@ def _uploaded_file_datetime_text(path: Path) -> str:
 
 def _get_latest_full_tc_source_file(require_exists: bool = True) -> Path:
     # Full_TC 업로드본을 최우선으로 사용하고, 없을 때만 기본 파일로 폴백한다.
+    _ensure_latest_full_tc_uploaded_file()
     if UPLOADED_FULL_TC_FILE.exists():
         return UPLOADED_FULL_TC_FILE
     if require_exists and not DEFAULT_EXCEL.exists():
@@ -5938,6 +6020,7 @@ def _get_latest_full_tc_source_file(require_exists: bool = True) -> Path:
 
 
 def _current_defect_source_info() -> tuple[str, str]:
+    _ensure_latest_defect_raw_uploaded_file()
     if UPLOADED_DEFECT_RAW_FILE.exists():
         return "uploaded-excel", UPLOADED_DEFECT_RAW_FILE.name
     return "google-sheet", GOOGLE_DEFECT_SHEET_URL
@@ -6046,6 +6129,7 @@ def _fetch_uploaded_defect_rows_if_available(sheet_name: str, cell_range: str) -
         return None
 
     # DefectList_Raw는 업로드 파일만 사용한다.
+    _ensure_latest_defect_raw_uploaded_file()
     if not UPLOADED_DEFECT_RAW_FILE.exists():
         return []
     try:
@@ -6055,16 +6139,26 @@ def _fetch_uploaded_defect_rows_if_available(sheet_name: str, cell_range: str) -
 
 
 def _read_uploaded_full_tc_sheet_names() -> list[str]:
+    _ensure_latest_full_tc_uploaded_file()
     if not UPLOADED_FULL_TC_FILE.exists():
         return []
     wb = load_workbook(str(UPLOADED_FULL_TC_FILE), data_only=True, read_only=True)
     try:
-        return [str(x or "").strip() for x in wb.sheetnames if str(x or "").strip()]
+        # 시트 이름 정규화: 공백 제거, 빈 줄 제거, 순서 보존
+        sheet_names = []
+        for sheet_name in wb.sheetnames:
+            normalized = str(sheet_name or "").strip()
+            # 공백 중복 제거 및 개행 제거
+            normalized = re.sub(r'\s+', ' ', normalized)
+            if normalized and normalized not in sheet_names:  # 중복 제거
+                sheet_names.append(normalized)
+        return sheet_names
     finally:
         wb.close()
 
 
 def _read_uploaded_full_tc_sheet_rows(sheet_name: str, max_rows: int) -> list[list[str]]:
+    _ensure_latest_full_tc_uploaded_file()
     if not UPLOADED_FULL_TC_FILE.exists():
         return []
     wb = load_workbook(str(UPLOADED_FULL_TC_FILE), data_only=True, read_only=True)
@@ -6106,6 +6200,14 @@ def _reset_defect_source_caches() -> None:
     with ADMIN_MEMBER_ISSUES_CACHE_LOCK:
         ADMIN_MEMBER_ISSUES_CACHE_DATA.clear()
         ADMIN_MEMBER_ISSUES_PREPARED_CACHE = {"source_fingerprint": "", "data": {}}
+    _reset_full_tc_derived_caches()
+
+
+def _reset_full_tc_derived_caches() -> None:
+    DEFECT_MATCH_CACHE["ts"] = 0.0
+    DEFECT_MATCH_CACHE["full_tc_uploaded_at"] = ""
+    DEFECT_MATCH_CACHE["defect_uploaded_at"] = ""
+    DEFECT_MATCH_CACHE["data"] = {}
 
 
 def _reset_full_tc_caches() -> None:
@@ -6116,6 +6218,7 @@ def _reset_full_tc_caches() -> None:
     FULL_TC_SUMMARY_CACHE["ts"] = 0.0
     FULL_TC_SUMMARY_CACHE["uploaded_at"] = ""
     FULL_TC_SUMMARY_CACHE["data"] = {}
+    _reset_full_tc_derived_caches()
 
 
 def _load_defect_raw_upload_history() -> list[dict]:
@@ -6342,6 +6445,61 @@ def _load_full_tc_upload_history() -> list[dict]:
     except Exception:
         pass
     return []
+
+
+def _find_latest_existing_history_snapshot(history: list[dict], history_dir: Path) -> tuple[Path | None, str]:
+    for item in history:
+        snap_name = Path(str(item.get("snapshot_file") or "")).name
+        if not snap_name:
+            continue
+        snap_path = history_dir / snap_name
+        if snap_path.exists() and snap_path.is_file():
+            return snap_path, str(item.get("history_id") or "")
+    return None, ""
+
+
+def _ensure_latest_full_tc_uploaded_file() -> bool:
+    if UPLOADED_FULL_TC_FILE.exists():
+        return True
+    _backfill_full_tc_upload_history_from_legacy_files()
+    history = _load_full_tc_upload_history()
+    snap_path, history_id = _find_latest_existing_history_snapshot(history, FULL_TC_UPLOAD_HISTORY_DIR)
+    if not snap_path:
+        return False
+    try:
+        with UPLOAD_LOCK:
+            if not UPLOADED_FULL_TC_FILE.exists():
+                shutil.copy2(snap_path, UPLOADED_FULL_TC_FILE)
+        _reset_full_tc_caches()
+        logger.warning("Recovered missing Full_TC upload from history snapshot: history_id=%s file=%s", history_id or "", snap_path.name)
+        return True
+    except Exception as exc:
+        logger.exception("Failed to recover Full_TC upload from history: %s", exc)
+        return False
+
+
+def _ensure_latest_defect_raw_uploaded_file() -> bool:
+    if UPLOADED_DEFECT_RAW_FILE.exists():
+        return True
+    _backfill_defect_raw_upload_history_from_legacy_files()
+    history = _load_defect_raw_upload_history()
+    snap_path, history_id = _find_latest_existing_history_snapshot(history, DEFECT_RAW_UPLOAD_HISTORY_DIR)
+    if not snap_path:
+        return False
+    try:
+        with UPLOAD_LOCK:
+            if not UPLOADED_DEFECT_RAW_FILE.exists():
+                shutil.copy2(snap_path, UPLOADED_DEFECT_RAW_FILE)
+        _reset_defect_source_caches()
+        with DEFECTLIST_ROWS_CACHE_LOCK:
+            global DEFECTLIST_ROWS_CACHE_TS, DEFECTLIST_ROWS_CACHE_DATA
+            DEFECTLIST_ROWS_CACHE_TS = 0.0
+            DEFECTLIST_ROWS_CACHE_DATA = {}
+        logger.warning("Recovered missing DefectList_Raw upload from history snapshot: history_id=%s file=%s", history_id or "", snap_path.name)
+        return True
+    except Exception as exc:
+        logger.exception("Failed to recover DefectList_Raw upload from history: %s", exc)
+        return False
 
 
 def _hash_file_sha1(path: Path) -> str:
@@ -6897,7 +7055,7 @@ def _get_full_tc_sheet_list(force: bool = False) -> dict:
     script_error = ""
     source = "apps_script"
     using_fallback = False
-    if UPLOADED_FULL_TC_FILE.exists():
+    if _ensure_latest_full_tc_uploaded_file() and UPLOADED_FULL_TC_FILE.exists():
         names = _read_uploaded_full_tc_sheet_names()
         source = "uploaded_excel"
     else:
@@ -6973,7 +7131,7 @@ def _get_full_tc_sheet_data(sheet: str, max_rows: int = 350, force: bool = False
         if c and not force and (now - float(c.get("ts") or 0.0)) < ttl:
             return c.get("data") or {}
 
-    if UPLOADED_FULL_TC_FILE.exists():
+    if _ensure_latest_full_tc_uploaded_file() and UPLOADED_FULL_TC_FILE.exists():
         raw_rows = _read_uploaded_full_tc_sheet_rows(target, max_rows + 1)
         script_error = ""
         source_type = "uploaded_excel"
@@ -7021,7 +7179,7 @@ FULL_TC_COMPONENT_SPECS = [
     {"key": "Control", "aliases": ["Control"], "start_row": 21},
     {"key": "Map", "aliases": ["Map"], "start_row": 29},
     {"key": "MyCar", "aliases": ["MyCar", "My Car"], "start_row": 22},
-    {"key": "HandleLayer/Home", "aliases": ["Home/HL", "Home / HL", "HomeHL", "Handle Layer / Home", "Handle Layer/Home", "HandleLayer/Home", "Handle Layer Home", "Home", "HL"], "start_row": 19},
+    {"key": "Home", "aliases": ["Home/HL", "Home / HL", "HomeHL", "Handle Layer / Home", "Handle Layer/Home", "HandleLayer/Home", "Handle Layer Home", "Home", "HL"], "start_row": 19},
     {"key": "Widget", "aliases": ["Widget"], "start_row": 19},
     {"key": "Watch", "aliases": ["Watch"], "start_row": 19},
     {"key": "Common UI", "aliases": ["Common UI", "Common", "CommonUI"], "start_row": 19},
@@ -7031,7 +7189,7 @@ FULL_TC_COMPONENT_ORDER = [
     "Control",
     "Map",
     "MyCar",
-    "HandleLayer/Home",
+    "Home",
     "Widget",
     "Watch",
     "Common UI",
@@ -7050,7 +7208,7 @@ def _normalize_full_tc_component_name(value: str) -> str:
     if compact == "mycar":
         return "MyCar"
     if compact in {"homehl", "handlelayerhome", "handlelayerhl", "home", "hl"}:
-        return "HandleLayer/Home"
+        return "Home"
     if compact == "widget":
         return "Widget"
     if compact == "watch":
@@ -7069,7 +7227,7 @@ def _full_tc_component_sort_key(value: str) -> tuple[int, str]:
     return rank, normalized.lower()
 
 FULL_TC_SUMMARY_CACHE: dict[str, dict] = {"ts": 0.0, "uploaded_at": "", "data": {}}
-FULL_TC_SUMMARY_CACHE_TTL_SEC = 300.0  # 5분 캐시 (Excel 파싱 비용 절감)
+FULL_TC_SUMMARY_CACHE_TTL_SEC = 3600.0  # 1시간 캐시 (업로드 시 무효화)
 FULL_TC_AGENT_STATUS_LOCK = threading.Lock()
 FULL_TC_AGENT_STATUS: dict[str, dict] = {
     "server": {"last_run_at": "", "last_ok": False, "elapsed_ms": 0.0},
@@ -7081,6 +7239,7 @@ FULL_TC_AGENT_STATUS: dict[str, dict] = {
 
 
 def _full_tc_uploaded_at_text() -> str:
+    _ensure_latest_full_tc_uploaded_file()
     return _uploaded_file_datetime_text(UPLOADED_FULL_TC_FILE) if UPLOADED_FULL_TC_FILE.exists() else ""
 
 
@@ -7313,10 +7472,19 @@ def _normalize_issue_key_token(text: str) -> str:
     raw = str(text or "").strip().upper().replace(" ", "")
     if not raw:
         return ""
-    # 문자열 내 포함된 Jira key 패턴을 우선 추출한다.
-    matched = re.search(r"([A-Z][A-Z0-9_]+-\d+)", raw)
-    if matched:
-        return matched.group(1)
+    # SPAQA-XXXXX 또는 SPAQA_XXXXX (5자리) 형식을 우선으로 추출
+    # 괄호 정보(예: (TASK))는 제거
+    patterns = [
+        r"(SPAQA[-_]\d{5})(?:\([^)]*\))?",  # SPAQA-12345 또는 SPAQA_12345(TASK) (5자리, 가장 일반적)
+        r"(SPAQA[-_]\d{4,6})(?:\([^)]*\))?",  # SPAQA-XXXX~XXXXXX 또는 SPAQA_XXXX (4~6자리 범위)
+        r"([A-Z][A-Z0-9_]+-\d+)",   # 표준 JIRA 패턴: PROJ-123
+    ]
+    for pattern in patterns:
+        matched = re.search(pattern, raw)
+        if matched:
+            # 추출된 값에서 언더스코어를 하이픈으로 통일
+            key = matched.group(1).replace("_", "-")
+            return key
     return raw
 
 
@@ -7324,17 +7492,35 @@ def _extract_issue_key_tokens(text: str) -> list[str]:
     raw = str(text or "").upper()
     if not raw:
         return []
-    tokens = re.findall(r"([A-Z][A-Z0-9_]+-\d+)", raw)
-    if not tokens:
-        normalized = _normalize_issue_key_token(raw)
-        return [normalized] if normalized else []
+    # SPAQA-XXXXX 또는 SPAQA_XXXXX (5자리) 형식을 우선으로 추출
+    # 괄호 정보(예: (TASK))도 함께 허용
+    patterns = [
+        r"\b(SPAQA[-_]\d{5})(?:\([^)]*\))?",  # SPAQA-12345 또는 SPAQA_12345(TASK) (5자리)
+        r"\b(SPAQA[-_]\d{4,6})(?:\([^)]*\))?",  # SPAQA-XXXX~XXXXXX 또는 SPAQA_XXXX (4~6자리)
+        r"\b([A-Z][A-Z0-9_]+-\d+)\b",  # 표준 JIRA: PROJ-123
+    ]
+    
+    tokens = []
+    for pattern in patterns:
+        found = re.findall(pattern, raw)
+        tokens.extend(found)
+    
+    # 중복 제거 및 정규화 (언더스코어 → 하이픈)
     seen: set[str] = set()
     out: list[str] = []
     for token in tokens:
-        if token in seen:
-            continue
-        seen.add(token)
-        out.append(token)
+        # 언더스코어를 하이픈으로 통일
+        normalized = str(token or "").strip().upper().replace("_", "-")
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            out.append(normalized)
+    
+    # 토큰이 없으면 전체 텍스트에서 한번 더 시도
+    if not out:
+        normalized = _normalize_issue_key_token(raw)
+        if normalized and normalized not in seen:
+            out.append(normalized)
+    
     return out
 
 
@@ -7352,6 +7538,8 @@ def _full_tc_slot_label(slot: str) -> str:
 
 
 def _build_full_tc_summary_data(force: bool = False, file_path: "Path | None" = None) -> dict:
+    if file_path is None:
+        _ensure_latest_full_tc_uploaded_file()
     use_file = file_path if file_path is not None else UPLOADED_FULL_TC_FILE
     # 캐시는 기본 파일(최신)에 대해서만 적용
     if use_file == UPLOADED_FULL_TC_FILE:
@@ -8014,8 +8202,17 @@ def qa_full_tc_versions(request: Request):
 
 
 @app.get("/api/qa/full-tc/summary")
-def qa_full_tc_summary(force: bool = False):
-    return _build_full_tc_summary_data(force=bool(force))
+def qa_full_tc_summary(force: bool = False, include_detail_rows: bool = True):
+    data = _build_full_tc_summary_data(force=bool(force))
+    if include_detail_rows:
+        return data
+    # 초기 진입 응답 크기를 줄이기 위해 상세 행은 제외하고 기본 통계만 전달한다.
+    slim = dict(data)
+    detail_rows = list(data.get("detail_rows") or [])
+    slim["detail_rows"] = []
+    slim["detail_rows_included"] = False
+    slim["detail_rows_count"] = len(detail_rows)
+    return slim
 
 
 @app.get("/api/qa/full-tc/color-stats")
@@ -8267,15 +8464,19 @@ def qa_full_tc_agents_status():
 
 # ─── Defect 대조 API ──────────────────────────────────────────────────────────
 
-DEFECT_MATCH_CACHE: dict = {"ts": 0.0, "data": {}}
-DEFECT_MATCH_CACHE_TTL_SEC = 30.0
+DEFECT_MATCH_CACHE: dict = {"ts": 0.0, "full_tc_uploaded_at": "", "defect_uploaded_at": "", "data": {}}
+DEFECT_MATCH_CACHE_TTL_SEC = 3600.0
 
 
 def _build_defect_match_data(force: bool = False, summary_data: dict | None = None) -> dict:
     now = time.monotonic()
     cached = DEFECT_MATCH_CACHE.get("data") or {}
     cached_ts = float(DEFECT_MATCH_CACHE.get("ts") or 0.0)
-    if not force and cached and (now - cached_ts) < DEFECT_MATCH_CACHE_TTL_SEC:
+    current_full_tc_uploaded_at = str(((summary_data or {}).get("uploaded_at") if isinstance(summary_data, dict) else "") or _full_tc_uploaded_at_text() or "")
+    current_defect_uploaded_at = _uploaded_file_datetime_text(UPLOADED_DEFECT_RAW_FILE) if UPLOADED_DEFECT_RAW_FILE.exists() else ""
+    cached_full_tc_uploaded_at = str(DEFECT_MATCH_CACHE.get("full_tc_uploaded_at") or "")
+    cached_defect_uploaded_at = str(DEFECT_MATCH_CACHE.get("defect_uploaded_at") or "")
+    if not force and cached and cached_full_tc_uploaded_at == current_full_tc_uploaded_at and cached_defect_uploaded_at == current_defect_uploaded_at and (now - cached_ts) < DEFECT_MATCH_CACHE_TTL_SEC:
         return cached
 
     # 1. Full_TC 지라 키 수집 (jira_no + closed_jira_no)
@@ -8331,6 +8532,7 @@ def _build_defect_match_data(force: bool = False, summary_data: dict | None = No
                 )
 
     # 2. DefectList_Raw 키 읽기
+    _ensure_latest_defect_raw_uploaded_file()
     defect_source_ok = UPLOADED_DEFECT_RAW_FILE.exists()
     defect_source = UPLOADED_DEFECT_RAW_FILE.name if defect_source_ok else ""
     defect_uploaded_at = _uploaded_file_datetime_text(UPLOADED_DEFECT_RAW_FILE) if defect_source_ok else ""
@@ -8613,6 +8815,8 @@ def _build_defect_match_data(force: bool = False, summary_data: dict | None = No
     }
 
     DEFECT_MATCH_CACHE["ts"] = time.monotonic()
+    DEFECT_MATCH_CACHE["full_tc_uploaded_at"] = current_full_tc_uploaded_at
+    DEFECT_MATCH_CACHE["defect_uploaded_at"] = defect_uploaded_at
     DEFECT_MATCH_CACHE["data"] = data
     return data
 
@@ -11261,6 +11465,7 @@ async def upload_testcases(file: UploadFile = File(...)):
 def upload_source_status(request: Request):
     _require_admin(request)
     defect_type, defect_source = _current_defect_source_info()
+    _ensure_latest_full_tc_uploaded_file()
     full_tc_sheet_count = 0
     if UPLOADED_FULL_TC_FILE.exists():
         try:
@@ -11496,6 +11701,15 @@ async def upload_full_tc_file(request: Request, file: UploadFile = File(...)):
     LAST_UPLOADED_EXCEL = UPLOADED_FULL_TC_FILE
     sheets_data = _get_full_tc_sheet_list(force=True)
     sheets = list(sheets_data.get("sheets") or [])
+
+    # 업로드 직후 고비용 계산을 선반영해 각 페이지 최초 로딩 지연을 줄인다.
+    try:
+        warm_summary = _build_full_tc_summary_data(force=True)
+        if bool(warm_summary.get("ok", False)):
+            _build_defect_match_data(force=True, summary_data=warm_summary)
+    except Exception as exc:
+        logger.warning("Full_TC warm cache failed: %s", exc)
+
     history_entry = _append_full_tc_upload_history(
         uploader_name=str(admin_user.get("name", "") or admin_user.get("username", "") or ""),
         uploader_email=str(admin_user.get("email", "") or ""),
