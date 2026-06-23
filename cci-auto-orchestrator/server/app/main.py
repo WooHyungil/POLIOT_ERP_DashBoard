@@ -7492,6 +7492,12 @@ def _extract_issue_key_tokens(text: str) -> list[str]:
     raw = str(text or "").upper()
     if not raw:
         return []
+    
+    # 줄바꿈, 쉼표, 세미콜론 등으로 분리된 텍스트를 하나씩 처리
+    # 여러 분리자를 사용해 분할: 줄바꿈, 쉼표, 세미콜론, 슬래시, 파이프 등
+    delimiter_pattern = r"[\n\r,;/||\s]{2,}|[\n\r]+|[,;/||\s]*[,;/||]+[,;/||\s]*"
+    lines = re.split(delimiter_pattern, raw)
+    
     # SPAQA-XXXXX 또는 SPAQA_XXXXX (5자리) 형식을 우선으로 추출
     # 괄호 정보(예: (TASK))도 함께 허용
     patterns = [
@@ -7501,9 +7507,14 @@ def _extract_issue_key_tokens(text: str) -> list[str]:
     ]
     
     tokens = []
-    for pattern in patterns:
-        found = re.findall(pattern, raw)
-        tokens.extend(found)
+    # 각 줄에서 개별적으로 티켓 ID 추출
+    for line in lines:
+        line = str(line or "").strip()
+        if not line:
+            continue
+        for pattern in patterns:
+            found = re.findall(pattern, line)
+            tokens.extend(found)
     
     # 중복 제거 및 정규화 (언더스코어 → 하이픈)
     seen: set[str] = set()
